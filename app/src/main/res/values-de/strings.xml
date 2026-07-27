@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AniWorld</string>
+
+    <string name="tab_start">Start</string>
+    <string name="tab_catalog">Katalog</string>
+    <string name="tab_search">Suche</string>
+    <string name="tab_favorites">Favoriten</string>
+    <string name="tab_history">Verlauf</string>
+
+    <string name="seasons_and_movies">Staffeln und Filme</string>
+    <string name="movies">Filme</string>
+    <string name="season_number">Staffel %1$d</string>
+    <string name="season_episode_short">S%1$02dE%2$02d</string>
+    <string name="movie_number">Film %1$d</string>
+    <string name="episode_number">Folge %1$d</string>
+    <string name="back">Zurück</string>
+    <string name="close">Schließen</string>
+    <string name="cancel">Abbrechen</string>
+    <string name="done">Fertig</string>
+    <string name="ok">OK</string>
+    <string name="open">Öffnen</string>
+    <string name="remove">Entfernen</string>
+    <string name="remember">Merken</string>
+    <string name="delete">Löschen</string>
+    <string name="clear">Leeren</string>
+    <string name="copy">Kopieren</string>
+    <string name="share">Teilen</string>
+    <string name="details">Details</string>
+    <string name="retry">Erneut versuchen</string>
+    <string name="refresh">Aktualisieren</string>
+    <string name="refresh_catalog">Katalog aktualisieren</string>
+    <string name="search">Suchen</string>
+    <string name="settings">Einstellungen</string>
+    <string name="diagnostics">Diagnose</string>
+    <string name="verification">Verifizierung</string>
+    <string name="favorite">Favorit</string>
+    <string name="add_favorite">Favorit hinzufügen</string>
+    <string name="remove_favorite">Favorit entfernen</string>
+    <string name="website">Webseite</string>
+    <string name="watched">Gesehen</string>
+    <string name="unwatched">Ungesehen</string>
+    <string name="started">Begonnen</string>
+    <string name="all">Alle</string>
+    <string name="anime">Anime</string>
+
+    <string name="permissions_privacy_title">Berechtigungen &amp; Datenschutz</string>
+    <string name="permissions_privacy_body">Die App benötigt nur Internet-, Netzwerkstatus- und Bildschirm-Aktivhaltungsrechte. Diese normalen Android-Berechtigungen werden automatisch über das Manifest erteilt. Dateien, Standort, Kamera, Mikrofon, Kontakte und Benachrichtigungen werden nicht angefordert.</string>
+    <string name="understood">Verstanden</string>
+    <string name="app_settings">App-Einstellungen</string>
+    <string name="app_settings_open_error">App-Einstellungen konnten nicht geöffnet werden</string>
+
+    <string name="diagnostic_empty">Keine Diagnoseeinträge vorhanden.</string>
+    <string name="diagnostic_title_count">Diagnose &amp; Fehlerprotokoll (%1$d)</string>
+    <string name="diagnostic_clip_label">AniWorld Diagnose</string>
+    <string name="diagnostic_copy_error">Protokoll konnte nicht kopiert werden</string>
+    <string name="diagnostic_share_subject">AniWorld Diagnose</string>
+    <string name="diagnostic_share_chooser">Diagnose teilen</string>
+    <string name="diagnostic_share_error">Protokoll konnte nicht geteilt werden</string>
+
+    <string name="home_empty_title">Noch keine Startseiteninhalte</string>
+    <string name="home_empty_subtitle">Ziehe zum Aktualisieren nach unten oder prüfe die Web-Verifizierung.</string>
+    <string name="continue_watching">Weiterschauen</string>
+    <string name="your_last_position">Dein letzter Stand</string>
+    <string name="popular_at_aniworld">Beliebt bei AniWorld</string>
+    <string name="latest_episodes">Die 50 neuesten Episoden</string>
+    <string name="new_episodes_and_movies">Neue Folgen und Filme</string>
+    <string name="new_animes">Neue Animes</string>
+    <string name="currently_popular">Derzeit beliebt</string>
+    <string name="community_watching">Das sehen andere AniWorld Nutzer</string>
+    <string name="titles_count">%1$d Titel</string>
+
+    <string name="catalog_search_all">Alle Anime durchsuchen</string>
+    <string name="all_genres">Alle Genres</string>
+    <string name="catalog_count">%1$d von %2$d Anime</string>
+    <string name="no_anime_found">Keine Anime gefunden</string>
+    <string name="adjust_catalog_filters">Passe Buchstabe, Genre oder Suchbegriff an.</string>
+
+    <string name="search_anime">Anime suchen</string>
+    <string name="recent_searches">Letzte Suchen</string>
+    <string name="no_results">Keine Treffer</string>
+    <string name="search_empty_hint">Titel eingeben oder eine letzte Suche auswählen.</string>
+    <string name="search_no_results_hint">Versuche einen anderen Suchbegriff.</string>
+
+    <string name="favorites">Favoriten</string>
+    <string name="no_favorites">Noch keine Favoriten</string>
+    <string name="no_favorites_hint">Halte einen Anime lange gedrückt oder tippe auf das Herz.</string>
+    <string name="watched_episodes_count">%1$d Folgen gesehen</string>
+    <string name="history_title">Gesehen &amp; Verlauf</string>
+    <string name="no_history">Kein passender Verlauf</string>
+    <string name="no_history_hint">Starte eine Folge oder ändere den Filter.</string>
+    <string name="history_item_subtitle">%1$d gesehen · zuletzt S%2$d E%3$d</string>
+    <string name="search_in_list">In Liste suchen</string>
+    <string name="sort_custom">Eigene Reihenfolge</string>
+    <string name="sort_updated">Zuletzt geändert</string>
+    <string name="sort_alphabetical">Alphabetisch</string>
+
+    <string name="areas_count">%1$d Bereiche</string>
+    <string name="watched_out_of">%1$d von %2$d gesehen</string>
+    <string name="watched_count">%1$d gesehen</string>
+    <string name="toggle_all">Alle umschalten</string>
+    <string name="no_matching_episodes">Keine passenden Folgen</string>
+    <string name="no_matching_episodes_hint">Ändere den Filter oder markiere Folgen als gesehen.</string>
+    <string name="toggle_watched">Gesehen umschalten</string>
+    <string name="no_description">Keine Beschreibung verfügbar.</string>
+    <string name="action_select">Aktion auswählen</string>
+    <string name="add_to_favorites">Zu Favoriten</string>
+    <string name="move_up">Nach oben</string>
+    <string name="move_down">Nach unten</string>
+    <string name="progress_percent">%1$d%%</string>
+
+    <string name="no_hosters_web_session">Keine Hoster gefunden. Prüfe die Web-Session.</string>
+    <string name="play">Abspielen</string>
+    <string name="preferred_language">Bevorzugte Sprache</string>
+    <string name="hoster_order">Hoster-Reihenfolge</string>
+    <string name="hoster_first">%1$s zuerst</string>
+    <string name="verify_stream_before_start">Stream vor Start prüfen</string>
+    <string name="verify_stream_before_start_desc">Nicht erreichbare HLS-Varianten überspringen.</string>
+    <string name="dynamic_colors">Dynamische Farben</string>
+    <string name="dynamic_colors_desc">Material-3-Farben aus dem Hintergrundbild verwenden (Android 12+).</string>
+    <string name="web_verification">Web-Verifizierung</string>
+    <string name="manage_permissions">Berechtigungen verwalten</string>
+
+    <string name="language_german_dub">Deutsch Dub</string>
+    <string name="language_german_sub">Deutsch Sub</string>
+    <string name="language_english_sub">Englisch Sub</string>
+    <string name="language_unknown">Unbekannt</string>
+    <string name="manual_verification">Manuelle Verifizierung</string>
+
+    <string name="player_close">Player schließen</string>
+    <string name="player_title">%1$s · %2$s</string>
+    <string name="player_gesture_hint">Antippen: Pause/Weiter · links wischen: Helligkeit · rechts wischen: Lautstärke</string>
+    <string name="invalid_stream_url">Ungültige Stream-URL</string>
+    <string name="player_init_error">Player konnte nicht initialisiert werden.</string>
+    <string name="playback_error">Wiedergabefehler</string>
+    <string name="playback_running">Wiedergabe läuft</string>
+    <string name="playback_paused">Wiedergabe pausiert</string>
+    <string name="brightness_percent">Helligkeit %1$d%%</string>
+    <string name="volume_percent">Lautstärke %1$d%%</string>
+
+    <string name="challenge_reload">Neu laden</string>
+    <string name="challenge_page_loading">Seite wird geladen</string>
+    <string name="challenge_http_error">HTTP %1$d auf der Verifizierungsseite</string>
+    <string name="challenge_load_error">Webseite konnte nicht geladen werden: %1$s</string>
+    <string name="challenge_check_session">Session prüfen</string>
+    <string name="challenge_cookies">Cookies</string>
+    <string name="challenge_protected_page">Geschützte Seite</string>
+    <string name="challenge_instruction">Löse eine eventuell angezeigte Prüfung selbst und tippe danach auf „Session prüfen“.</string>
+    <string name="aniworld_verification">AniWorld-Verifizierung</string>
+    <string name="webview_session_checking">WebView-Session wird geprüft …</string>
+    <string name="webview_cookies_cleared">WebView-Cookies gelöscht</string>
+
+    <string name="status_home_no_sections">Keine Startseitenbereiche erkannt.</string>
+    <string name="status_catalog_loading">Anime-Katalog wird geladen …</string>
+    <string name="status_catalog_loaded">%1$d Anime · %2$d Genres</string>
+    <string name="status_searching">Suche läuft …</string>
+    <string name="status_no_results_for">Keine Treffer für „%1$s“</string>
+    <string name="status_results_count">%1$d Treffer</string>
+    <string name="status_anime_loading">Anime wird geladen …</string>
+    <string name="status_no_seasons">Keine Staffeln gefunden</string>
+    <string name="status_areas_found">%1$d Bereiche gefunden</string>
+    <string name="status_episode_opening">Episode wird geöffnet …</string>
+    <string name="status_episodes_loading">Folgen werden geladen …</string>
+    <string name="status_episode_count">%1$d Folgen</string>
+    <string name="status_movie_count">%1$d Filme</string>
+    <string name="status_hosters_loading">Hoster und Sprachen werden gelesen …</string>
+    <string name="status_no_hosters">Keine Hoster gefunden</string>
+    <string name="status_hosters_found">%1$d Hoster gefunden</string>
+    <string name="status_stream_resolving">Stream wird aufgelöst …</string>
+    <string name="status_no_playable_stream">Kein abspielbarer Stream gefunden. Verfügbare Hoster: %1$s</string>
+    <string name="status_none">keine</string>
+    <string name="status_playing_via">Spiele über %1$s · %2$s</string>
+    <string name="status_episode_marked_watched">%1$s als angesehen markiert</string>
+
+    <string name="error_no_internet">Keine Internetverbindung oder Host nicht erreichbar.</string>
+    <string name="error_timeout">Zeitüberschreitung. Bitte erneut versuchen.</string>
+    <string name="error_ssl">Sichere Verbindung fehlgeschlagen.</string>
+    <string name="error_unexpected_response">Die Serverantwort hatte ein unerwartetes Format.</string>
+    <string name="error_unknown">Unbekannter Fehler</string>
+
+    <string name="session_verification_applied">Verifizierung übernommen · %1$s</string>
+    <string name="session_check_failed_http">Session-Prüfung fehlgeschlagen: HTTP %1$d</string>
+    <string name="session_check_failed">Session konnte nicht geprüft werden</string>
+    <string name="cookies_none">Keine WebView-Cookies gespeichert</string>
+    <string name="cookies_one">1 Cookie gespeichert: %1$s</string>
+    <string name="cookies_many">%1$d Cookies gespeichert: %2$s%3$s</string>
+    <string name="cookies_more">…</string>
+    <string name="challenge_captcha_required">%1$s verlangt eine manuelle CAPTCHA-/Turnstile-Prüfung.</string>
+    <string name="challenge_browser_required">%1$s verlangt eine manuelle Browser-Verifizierung.</string>
+</resources>
