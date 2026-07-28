@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.lootdev78.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 56
-        versionName = "1.6.6-cover-watch-adblock"
+        versionCode = 57
+        versionName = "1.7.0-production-candidate"
         vectorDrawables.useSupportLibrary = true
     }
 

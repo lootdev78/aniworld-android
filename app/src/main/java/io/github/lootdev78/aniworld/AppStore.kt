@@ -589,12 +589,12 @@ class AppStore(
         buildList { for (i in 0 until array.length()) add(array.optString(i)) }.filter(String::isNotBlank)
     }.getOrDefault(emptyList())
 
-    private inline fun <T> parseArray(raw: String?, mapper: (JSONObject) -> T): List<T> = if (raw.isNullOrBlank()) emptyList() else runCatching {
+    private fun <T> parseArray(raw: String?, mapper: (JSONObject) -> T): List<T> = if (raw.isNullOrBlank()) emptyList() else runCatching {
         val array = JSONArray(raw)
         buildList { for (i in 0 until array.length()) add(mapper(array.getJSONObject(i))) }
     }.getOrDefault(emptyList())
 
-    private inline fun <T> parseObjectMap(raw: String?, mapper: (JSONObject) -> T): Map<String, T> = if (raw.isNullOrBlank()) emptyMap() else runCatching {
+    private fun <T> parseObjectMap(raw: String?, mapper: (JSONObject) -> T): Map<String, T> = if (raw.isNullOrBlank()) emptyMap() else runCatching {
         val root = JSONObject(raw)
         buildMap { root.keys().forEach { key -> put(key, mapper(root.getJSONObject(key))) } }
     }.getOrDefault(emptyMap())

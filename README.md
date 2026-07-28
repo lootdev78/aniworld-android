@@ -3,19 +3,17 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
-## 1.6.6 Cover, Gesehen-Status und Adblocker
+## 1.7.0 Production-Debug Candidate
 
-- Katalogcover werden pro Anime-DOM-Container und exakter Serien-URL zugeordnet, statt aus einem gemeinsamen Listencontainer übernommen
-- Alte falsche Cover-Zuordnungen und der Coil-Bildcache werden einmalig zurückgesetzt; anschließend startet automatisch eine neue Metadatenaktualisierung
-- Begonnene Episoden und Filme können in der Wiedergabeauswahl und in „Weiterschauen“ manuell als gesehen markiert oder wieder auf ungesehen gesetzt werden
-- Beim Entfernen der Gesehen-Markierung bleibt eine vorhandene Wiedergabeposition erhalten
-- Der WebView-Werbeblocker ist wieder in den Einstellungen sichtbar, einschließlich einzeln schaltbarer Filterlisten
-- Der Werbeblocker ist bei einer Neuinstallation standardmäßig deaktiviert
+- konsolidiert den vollständigen Funktionsumfang der vorherigen Projektstände in einer gemeinsamen Codebasis
+- behebt den Kotlin-Compilerfehler im generischen DataStore-Migrationsparser: Callback-Funktionen werden nicht mehr fälschlich als `inline` durch eine Java-Iteration gereicht
+- enthält einen statischen Release-Gate-Checker für Paket, Ressourcen, Manifest, Featuremarker und bekannte Regressionen
+- enthält eine CI-Pipeline, die den statischen Gate, einen sauberen Debug-Build und Android Lint ausführt und anschließend APK plus SHA-256-Prüfsumme bereitstellt
+- behält den Debug-Paket-Suffix `.debug`; es werden keine privaten Signing-Schlüssel ausgeliefert
 
 ## Version
 
-`1.6.6-cover-watch-adblock`
-
+`1.7.0-production-candidate`
 
 ## Paket und Projekt
 
@@ -156,6 +154,10 @@ AniWorldAndroid/
 │   ├── schemas/          # Room-Schemata beim lokalen Build
 │   └── src/main/         # Compose-UI, Datenbank, Parser, Resolver und Player
 ├── gradle/               # Version Catalog und Wrapper
+├── .github/workflows/ # CI für Prüfung, Lint und Debug-APK
+├── tools/             # statisches Release-Gate
+├── FEATURE_MATRIX.md
+├── PRODUCTION_AUDIT_REPORT.md
 ├── THIRD_PARTY_NOTICES/
 ├── build.gradle.kts
 ├── settings.gradle.kts
@@ -163,7 +165,7 @@ AniWorldAndroid/
 └── gradlew.bat
 ```
 
-Es sind kein mpv-Modul, keine CI-Konfiguration, keine Testmodule und keine Dateien mit `.sh`-Endung enthalten.
+Es ist kein mpv-Modul enthalten. Die CI-Konfiguration erzeugt ausschließlich ein Debug-APK; private Signing-Schlüssel und Release-Signaturen sind absichtlich nicht enthalten.
 
 ## Build
 
@@ -174,17 +176,27 @@ Voraussetzungen:
 - Android SDK 36
 - Internetzugriff beim ersten Gradle-Sync
 
+Statischer Projektcheck:
+
+```text
+python3 tools/verify_project.py
+```
+
 Linux/macOS:
 
 ```text
-./gradlew assembleDebug
+./gradlew --no-daemon --stacktrace clean :app:assembleDebug
 ```
 
 Windows:
 
 ```text
-gradlew.bat assembleDebug
+gradlew.bat --no-daemon --stacktrace clean :app:assembleDebug
 ```
+
+CI-Debug-Build:
+
+Die Workflow-Datei `.github/workflows/android-debug.yml` führt den statischen Gate, `:app:assembleDebug` und `:app:lintDebug` aus. Das erzeugte Debug-APK und seine SHA-256-Datei werden als GitHub-Actions-Artefakt hochgeladen.
 
 Release-Build:
 
