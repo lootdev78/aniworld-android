@@ -117,7 +117,9 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                             addAll(prefs.favorites.map(FavoriteEntry::asSeries))
                             addAll(prefs.watchedSeries().map(WatchedSeriesEntry::asSeries))
                         }.distinctBy(Series::slug)
-                        librarySeries.forEach(store::ensureOfflineMetadata)
+                        for (series in librarySeries) {
+                            store.ensureOfflineMetadata(series)
+                        }
                     }
                 }
                 if (!startupTriggered) {
