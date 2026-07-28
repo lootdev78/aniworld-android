@@ -3,7 +3,7 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
-## 1.7.0 Production-Debug Candidate
+## 1.7.1 Production-Debug Build-Fix
 
 - konsolidiert den vollständigen Funktionsumfang der vorherigen Projektstände in einer gemeinsamen Codebasis
 - behebt den Kotlin-Compilerfehler im generischen DataStore-Migrationsparser: Callback-Funktionen werden nicht mehr fälschlich als `inline` durch eine Java-Iteration gereicht
@@ -13,7 +13,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.7.0-production-candidate`
+`1.7.1-production-build-fix`
 
 ## Paket und Projekt
 

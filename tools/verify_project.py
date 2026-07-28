@@ -17,8 +17,8 @@ SRC = APP / "src" / "main"
 KOTLIN = SRC / "java" / "io" / "github" / "lootdev78" / "aniworld"
 RES = SRC / "res"
 EXPECTED_PACKAGE = "io.github.lootdev78.aniworld"
-EXPECTED_VERSION_CODE = 57
-EXPECTED_VERSION_NAME = "1.7.0-production-candidate"
+EXPECTED_VERSION_CODE = 58
+EXPECTED_VERSION_NAME = "1.7.1-production-build-fix"
 
 errors: list[str] = []
 notes: list[str] = []
@@ -151,6 +151,8 @@ for pattern, description in {
     r"TODO\b": "TODO-Markierung",
     r"FIXME\b": "FIXME-Markierung",
     r"onClick\s*=\s*\{\s*\}": "Leerer onClick-Handler",
+    r"librarySeries\.forEach\(store::ensureOfflineMetadata\)": "Suspend-Metadatenfunktion in nicht-suspendierender forEach-Referenz",
+    r"item\.episode\.localizedDisplayTitle\(\)\.contains": "Composable Texthelfer innerhalb von remember",
 }.items():
     if re.search(pattern, all_kotlin):
         fail(f"Regression gefunden: {description}")

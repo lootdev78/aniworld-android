@@ -1764,7 +1764,7 @@ fun SeriesCollectionScreen(
     val items = remember(page.items, query) {
         page.items.filter { query.isBlank() || it.title.contains(query, true) || it.genres.any { genre -> genre.contains(query, true) } }
     }
-    val suggestions = remember(page.items, query, context) {
+    val suggestions = remember(page.items, query) {
         if (query.isBlank()) emptyList() else page.items.filter { item ->
             item.title.contains(query, true) || item.genres.any { it.contains(query, true) }
         }.take(3)
@@ -1844,8 +1844,8 @@ fun EpisodeCollectionScreen(
     vm: AppViewModel,
     onBack: () -> Unit
 ) {
-    var query by rememberSaveable(page.title) { mutableStateOf("") }
     val context = LocalContext.current
+    var query by rememberSaveable(page.title) { mutableStateOf("") }
     val items = remember(page.items, query) {
         page.items.filter { item ->
             query.isBlank() || item.series.title.contains(query, true) ||

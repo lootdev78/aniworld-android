@@ -1,4 +1,4 @@
-# Feature-Matrix – 1.7.0 Production-Debug Candidate
+# Feature-Matrix – 1.7.1 Production-Debug Build-Fix
 
 Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen zu. Sie dient als Schutz gegen versehentlich verlorene Funktionen bei späteren Änderungen.
 

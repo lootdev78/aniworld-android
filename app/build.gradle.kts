@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.lootdev78.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 57
-        versionName = "1.7.0-production-candidate"
+        versionCode = 58
+        versionName = "1.7.1-production-build-fix"
         vectorDrawables.useSupportLibrary = true
     }
 
