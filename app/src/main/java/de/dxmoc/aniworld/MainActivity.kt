@@ -2,6 +2,8 @@ package de.dxmoc.aniworld
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -12,11 +14,15 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.matchParentSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -47,13 +53,18 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -61,25 +72,63 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.math.roundToInt
 
 private const val DETAIL_ROUTE = "detail"
 
 class MainActivity : ComponentActivity() {
     private val deepLink = MutableStateFlow<String?>(null)
+    private val playbackAction = MutableStateFlow<String?>(null)
+    private var playbackReceiverRegistered = false
+    private val playbackReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            playbackAction.value = intent?.action
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         deepLink.value = intent?.dataString
+        if (!playbackReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                playbackReceiver,
+                IntentFilter().apply {
+                    addAction(PlaybackService.ACTION_PREVIOUS)
+                    addAction(PlaybackService.ACTION_NEXT)
+                    addAction(PlaybackService.ACTION_STOPPED)
+                },
+                ContextCompat.RECEIVER_NOT_EXPORTED
+            )
+            playbackReceiverRegistered = true
+        }
         setContent {
             val vm: AppViewModel = viewModel()
             val state by vm.state.collectAsStateWithLifecycle()
             val link by deepLink.collectAsStateWithLifecycle()
+            val mediaAction by playbackAction.collectAsStateWithLifecycle()
             LaunchedEffect(link) { vm.openDeepLink(link) }
+            LaunchedEffect(mediaAction) {
+                when (mediaAction) {
+                    PlaybackService.ACTION_PREVIOUS -> vm.playPreviousEpisode()
+                    PlaybackService.ACTION_NEXT -> vm.playNextEpisode()
+                    PlaybackService.ACTION_STOPPED -> vm.closePlayer()
+                }
+                if (mediaAction != null) playbackAction.value = null
+            }
             AniWorldTheme(useDynamicColors = state.preferences.useDynamicColors) {
                 AniWorldApp(vm)
             }
         }
+    }
+
+    override fun onDestroy() {
+        if (playbackReceiverRegistered) {
+            unregisterReceiver(playbackReceiver)
+            playbackReceiverRegistered = false
+        }
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -135,7 +184,7 @@ fun AniWorldApp(vm: AppViewModel) {
     val currentTab = HomeTab.fromRoute(currentRoute)
     var settingsOpen by remember { mutableStateOf(false) }
     var diagnosticsOpen by remember { mutableStateOf(false) }
-    var permissionOpen by remember(st.preferences.permissionIntroSeen) { mutableStateOf(!st.preferences.permissionIntroSeen) }
+    var permissionOpen by remember { mutableStateOf(false) }
     var restoredTab by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -175,6 +224,12 @@ fun AniWorldApp(vm: AppViewModel) {
             request = request,
             checking = st.challengeChecking,
             sessionStatus = st.challengeStatus,
+            adBlockEnabled = st.preferences.webAdBlockEnabled,
+            enabledFilterLists = st.preferences.webFilterLists,
+            sessionPanelExpanded = st.preferences.webSessionPanelExpanded,
+            mediaPanelExpanded = st.preferences.webMediaPanelExpanded,
+            onSessionPanelExpanded = vm::setWebSessionPanelExpanded,
+            onMediaPanelExpanded = vm::setWebMediaPanelExpanded,
             onVerify = vm::verifyChallenge,
             onClearSession = vm::clearChallengeSession,
             onPlayDetectedMedia = vm::playDetectedMedia,
@@ -188,6 +243,7 @@ fun AniWorldApp(vm: AppViewModel) {
             playback = playback,
             hasPrevious = currentIndex > 0,
             hasNext = currentIndex >= 0 && currentIndex < st.episodes.lastIndex,
+            autoNextEnabled = st.preferences.autoNextEnabled,
             onPrevious = vm::playPreviousEpisode,
             onNext = vm::playNextEpisode,
             onClose = vm::closePlayer,
@@ -215,13 +271,6 @@ fun AniWorldApp(vm: AppViewModel) {
             Scaffold(
                 modifier = Modifier.weight(1f),
                 snackbarHost = { SnackbarHost(snackbarHostState) },
-                floatingActionButton = {
-                    if (!inDetail) {
-                        androidx.compose.material3.SmallFloatingActionButton(onClick = { settingsOpen = true }) {
-                            Icon(Icons.Default.Settings, stringResource(R.string.settings))
-                        }
-                    }
-                },
                 bottomBar = { if (!expanded && !inDetail) AppBottomBar(currentTab, ::navigateToTab) }
             ) { padding ->
                 Box(Modifier.padding(padding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -236,6 +285,13 @@ fun AniWorldApp(vm: AppViewModel) {
                         }
                     }
                     st.error?.let { AppErrorBanner(it, { diagnosticsOpen = true }, vm::dismissError) }
+                    DraggableSettingsButton(
+                        x = st.preferences.settingsButtonX,
+                        y = st.preferences.settingsButtonY,
+                        onOpen = { settingsOpen = true },
+                        onPosition = vm::setSettingsButtonPosition,
+                        modifier = Modifier.matchParentSize()
+                    )
                 }
             }
         }
@@ -254,6 +310,23 @@ fun AniWorldApp(vm: AppViewModel) {
             { hoster -> vm.openHosterPage(episode, hoster) }
         )
     }
+    st.infoSeries?.let { series ->
+        AnimeInfoDialog(
+            series = series,
+            episode = st.infoEpisode,
+            loading = st.infoLoading,
+            error = st.infoError,
+            onDismiss = vm::dismissInfoDialog,
+            onOpenAnime = {
+                vm.dismissInfoDialog()
+                vm.select(series)
+            },
+            onOpenImdb = {
+                vm.dismissInfoDialog()
+                vm.openManualPage(series.imdbUrl, "IMDb · ${series.title}")
+            }
+        )
+    }
     if (settingsOpen) SettingsDialog(
         prefs = st.preferences,
         vm = vm,
@@ -266,6 +339,49 @@ fun AniWorldApp(vm: AppViewModel) {
         onDone = { vm.markPermissionIntroSeen(); permissionOpen = false },
         onDismiss = { vm.markPermissionIntroSeen(); permissionOpen = false }
     )
+}
+
+@Composable
+private fun DraggableSettingsButton(
+    x: Float,
+    y: Float,
+    onOpen: () -> Unit,
+    onPosition: (Float, Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    BoxWithConstraints(modifier) {
+        val density = LocalDensity.current
+        val buttonSize = 56.dp
+        val buttonPx = with(density) { buttonSize.toPx() }
+        val maxXPx = with(density) { maxWidth.toPx() }.minus(buttonPx).coerceAtLeast(0f)
+        val maxYPx = with(density) { maxHeight.toPx() }.minus(buttonPx).coerceAtLeast(0f)
+        var localX by remember(maxXPx, x) { mutableFloatStateOf(x.coerceIn(0f, 1f) * maxXPx) }
+        var localY by remember(maxYPx, y) { mutableFloatStateOf(y.coerceIn(0f, 1f) * maxYPx) }
+
+        androidx.compose.material3.SmallFloatingActionButton(
+            onClick = onOpen,
+            modifier = Modifier
+                .offset { IntOffset(localX.roundToInt(), localY.roundToInt()) }
+                .size(buttonSize)
+                .pointerInput(maxXPx, maxYPx) {
+                    detectDragGestures(
+                        onDragEnd = {
+                            onPosition(
+                                if (maxXPx == 0f) 0f else localX / maxXPx,
+                                if (maxYPx == 0f) 0f else localY / maxYPx
+                            )
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            localX = (localX + dragAmount.x).coerceIn(0f, maxXPx)
+                            localY = (localY + dragAmount.y).coerceIn(0f, maxYPx)
+                        }
+                    )
+                }
+        ) {
+            Icon(Icons.Default.Settings, stringResource(R.string.settings))
+        }
+    }
 }
 
 @Composable

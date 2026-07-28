@@ -11,7 +11,14 @@ data class Series(
     val coverUrl: String = "",
     val genres: List<String> = emptyList(),
     val year: String = "",
-    val ageRating: String = ""
+    val ageRating: String = "",
+    val directors: List<String> = emptyList(),
+    val producers: List<String> = emptyList(),
+    val actors: List<String> = emptyList(),
+    val countries: List<String> = emptyList(),
+    val imdbUrl: String = "",
+    val userRating: String = "",
+    val ratingCount: Int = 0
 )
 
 data class Episode(
@@ -43,10 +50,11 @@ data class HomeFeed(
     val newAnimes: List<Series> = emptyList(),
     val currentlyPopular: List<Series> = emptyList(),
     val communityWatching: List<Series> = emptyList(),
+    val mostWatched: List<Series> = emptyList(),
     val loadedAt: Long = 0L
 ) {
     val isEmpty: Boolean get() = popularAtAniWorld.isEmpty() && latestEpisodes.isEmpty() &&
-        newAnimes.isEmpty() && currentlyPopular.isEmpty() && communityWatching.isEmpty()
+        newAnimes.isEmpty() && currentlyPopular.isEmpty() && communityWatching.isEmpty() && mostWatched.isEmpty()
 }
 
 data class CatalogData(
@@ -114,6 +122,12 @@ enum class LibrarySort(@StringRes val labelRes: Int) {
     CUSTOM(R.string.sort_custom),
     UPDATED(R.string.sort_updated),
     ALPHABETICAL(R.string.sort_alphabetical)
+}
+
+enum class LibraryViewMode(@StringRes val labelRes: Int) {
+    COMPACT(R.string.view_compact),
+    DETAILED(R.string.view_detailed),
+    GRID(R.string.view_grid)
 }
 
 data class ProgressEntry(
@@ -223,7 +237,16 @@ data class AppPreferences(
     val permissionIntroSeen: Boolean = false,
     val useDynamicColors: Boolean = false,
     val lastHomeTab: String = "START",
-    val initialPreloadCompleted: Boolean = false
+    val initialPreloadCompleted: Boolean = false,
+    val webAdBlockEnabled: Boolean = true,
+    val webFilterLists: Set<String> = setOf("advertising", "tracking", "popups", "redirects"),
+    val webSessionPanelExpanded: Boolean = true,
+    val webMediaPanelExpanded: Boolean = true,
+    val autoNextEnabled: Boolean = true,
+    val settingsButtonX: Float = 0.92f,
+    val settingsButtonY: Float = 0.72f,
+    val catalogViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
+    val favoritesViewMode: LibraryViewMode = LibraryViewMode.DETAILED
 ) {
     fun isFavorite(slug: String): Boolean = favorites.any { it.slug == slug }
     fun episodeState(episode: Episode): EpisodeWatchState? = episodeWatchStates[episode.key]

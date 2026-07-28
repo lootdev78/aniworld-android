@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 
 data class UiState(
     val query: String = "",
@@ -30,9 +32,6 @@ data class UiState(
     val catalogGenre: String? = null,
     val catalogPage: Int = 0,
     val catalogPageSize: Int = 15,
-    val catalogPreloading: Boolean = false,
-    val catalogPreloadCompleted: Int = 0,
-    val catalogPreloadTotal: Int = 0,
     val results: List<Series> = emptyList(),
     val selected: Series? = null,
     val seasons: List<Int> = emptyList(),
@@ -41,6 +40,10 @@ data class UiState(
     val hosters: List<Hoster> = emptyList(),
     val pendingEpisode: Episode? = null,
     val pendingHosters: List<Hoster> = emptyList(),
+    val infoSeries: Series? = null,
+    val infoEpisode: Episode? = null,
+    val infoLoading: Boolean = false,
+    val infoError: String? = null,
     val playback: ResolvedPlayback? = null,
     val preferences: AppPreferences = AppPreferences(),
     val preferencesReady: Boolean = false,
@@ -50,7 +53,11 @@ data class UiState(
     val challengeStatus: String? = null,
     val status: String? = null,
     val error: String? = null,
-    val resolveLog: List<String> = emptyList()
+    val resolveLog: List<String> = emptyList(),
+    val detailScrollIndex: Int = 0,
+    val detailScrollOffset: Int = 0,
+    val episodeScrollIndex: Int = 0,
+    val episodeScrollOffset: Int = 0
 ) {
     val filteredCatalog: List<Series>
         get() = catalog.items.asSequence()
@@ -88,7 +95,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     private var searchJob: Job? = null
     private var searchGeneration = 0L
     private var startupTriggered = false
-    private var catalogPreloadJob: Job? = null
     private var catalogSearchRememberJob: Job? = null
     private var manualMediaContext: ManualMediaContext? = null
 
@@ -128,6 +134,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                         addAll(feed.newAnimes)
                         addAll(feed.currentlyPopular)
                         addAll(feed.communityWatching)
+                        addAll(feed.mostWatched)
                     }
                 )
                 _state.update { it.copy(homeFeed = feed, homeError = if (feed.isEmpty) text(R.string.status_home_no_sections) else null) }
@@ -148,17 +155,14 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             _state.update { it.copy(catalogLoading = true, error = null, status = text(R.string.status_catalog_loading)) }
             try {
                 val catalog = repo.catalog(forceRefresh = force)
-                app.prefetchCovers(catalog.items.filter { it.coverUrl.isNotBlank() })
                 _state.update {
                     it.copy(
                         catalog = catalog,
                         catalogPage = 0,
-                        catalogPreloadTotal = catalog.items.size,
                         status = text(R.string.status_catalog_loaded, catalog.items.size, catalog.genres.size)
                     )
                 }
                 AppLogger.info("Katalog", "${catalog.items.size} Anime geladen", "Genres: ${catalog.genres.joinToString()}")
-                startCatalogMetadataPreload(catalog.items, force = force)
             } catch (error: Exception) {
                 handleFailure(error) { loadCatalog(true) }
             } finally { _state.update { it.copy(catalogLoading = false) } }
@@ -177,45 +181,27 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     }
     fun setCatalogLetter(value: String?) = _state.update { it.copy(catalogLetter = value, catalogPage = 0) }
     fun setCatalogGenre(value: String?) = _state.update { it.copy(catalogGenre = value, catalogPage = 0) }
+    fun setCatalogPage(value: Int) = _state.update { state ->
+        state.copy(catalogPage = value.coerceIn(0, state.catalogPageCount - 1))
+    }
     fun catalogNextPage() = _state.update { state -> state.copy(catalogPage = (state.catalogPage + 1).coerceAtMost(state.catalogPageCount - 1)) }
     fun catalogPreviousPage() = _state.update { state -> state.copy(catalogPage = (state.catalogPage - 1).coerceAtLeast(0)) }
 
-    private fun startCatalogMetadataPreload(items: List<Series>, force: Boolean) {
-        if (items.isEmpty()) return
-        if (!force && _state.value.preferences.initialPreloadCompleted && items.all { it.coverUrl.isNotBlank() && it.description.isNotBlank() }) return
-        catalogPreloadJob?.cancel()
-        catalogPreloadJob = viewModelScope.launch {
-            _state.update { it.copy(catalogPreloading = true, catalogPreloadCompleted = 0, catalogPreloadTotal = items.size) }
-            try {
-                repo.preloadCatalogMetadata(items) { completed, total, series ->
-                    series?.let { detailed ->
-                        mergeSeriesIntoState(detailed)
-                        app.prefetchCover(detailed.coverUrl)
-                        runCatching { store.mergeSeriesMetadata(detailed) }
-                    }
-                    _state.update { it.copy(catalogPreloadCompleted = completed, catalogPreloadTotal = total) }
-                }
-                store.setInitialPreloadCompleted()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                AppLogger.warn("Metadaten", "Katalog-Vorladen wurde unterbrochen", error.message.orEmpty())
-            } finally {
-                _state.update { it.copy(catalogPreloading = false) }
-            }
-        }
+    fun refreshCatalogMetadata() {
+        CatalogMetadataWorker.enqueue(app, force = true)
+        _state.update { it.copy(status = text(R.string.metadata_update_started)) }
     }
 
     fun enrichCatalogItem(series: Series) {
-        if (series.coverUrl.isNotBlank() && series.description.isNotBlank() && series.genres.isNotEmpty()) return
+        if (isUsableCoverUrl(series.coverUrl) && series.description.isNotBlank() && series.genres.isNotEmpty()) return
         if (!metadataInFlight.add(series.slug)) return
         viewModelScope.launch {
             try {
                 metadataSemaphore.withPermit {
-                    val detailed = repo.enrichSeries(series)
+                    val catalogItem = _state.value.catalog.items.any { it.slug == series.slug }
+                    val detailed = repo.enrichSeries(series, cacheCatalogMetadata = catalogItem)
                     mergeSeriesIntoState(detailed)
-                    app.prefetchCover(detailed.coverUrl)
-                    store.mergeSeriesMetadata(detailed)
+                    app.prefetchCover(detailed.coverUrl, detailed.slug)
                 }
             } catch (error: Exception) {
                 if (error is ChallengeRequiredException) {
@@ -253,10 +239,21 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                     },
                     newAnimes = state.homeFeed.newAnimes.map(update),
                     currentlyPopular = state.homeFeed.currentlyPopular.map(update),
-                    communityWatching = state.homeFeed.communityWatching.map(update)
+                    communityWatching = state.homeFeed.communityWatching.map(update),
+                    mostWatched = state.homeFeed.mostWatched.map(update)
                 )
             )
         }
+    }
+
+    private fun isUsableCoverUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val lower = url.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return false
+        return listOf(
+            "aniworld_logo", "aniworld-logo", "/logo.", "/logos/", "favicon", "placeholder",
+            "loading", "spinner", "avatar", "profile", "tracking", "pixel.gif", "blank.gif"
+        ).none(lower::contains)
     }
 
     fun query(value: String) = _state.update { it.copy(query = value) }
@@ -303,9 +300,8 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             _state.update { it.copy(selected = series, season = null, episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), resolveLog = emptyList(), error = null) }
             runLoad(text(R.string.status_anime_loading), { select(series) }) {
                 val detailed = repo.enrichSeries(series)
-                app.prefetchCover(detailed.coverUrl)
+                app.prefetchCover(detailed.coverUrl, detailed.slug)
                 store.rememberSeries(detailed)
-                store.mergeSeriesMetadata(detailed)
                 val seasons = repo.seasons(detailed)
                 mergeSeriesIntoState(detailed)
                 _state.update { state -> state.copy(selected = detailed, seasons = seasons, status = if (seasons.isEmpty()) text(R.string.status_no_seasons) else text(R.string.status_areas_found, seasons.size)) }
@@ -322,7 +318,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val seasons = repo.seasons(detailed)
                 val episodes = repo.episodes(detailed, item.episode.season)
                 store.rememberSeries(detailed)
-                store.mergeSeriesMetadata(detailed)
                 store.rememberSeasonTotal(detailed.slug, item.episode.season, episodes.size)
                 _state.update { it.copy(selected = detailed, seasons = seasons, episodes = episodes) }
                 episodes.firstOrNull { it.number == item.episode.number }?.let(::inspectEpisode)
@@ -343,7 +338,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val detailed = runCatching { repo.enrichSeries(series) }.getOrDefault(series)
                 val seasons = repo.seasons(detailed)
                 val episodes = repo.episodes(detailed, progress.season)
-                store.mergeSeriesMetadata(detailed)
                 store.rememberSeasonTotal(detailed.slug, progress.season, episodes.size)
                 _state.update { it.copy(selected = detailed, seasons = seasons, episodes = episodes) }
             }
@@ -394,6 +388,70 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     }
 
     fun dismissEpisodeOptions() = _state.update { it.copy(pendingEpisode = null, pendingHosters = emptyList()) }
+
+    fun openAnimeInfo(series: Series) {
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    infoSeries = series,
+                    infoEpisode = null,
+                    infoLoading = true,
+                    infoError = null
+                )
+            }
+            try {
+                val detailed = repo.enrichSeries(series, forceRefresh = true)
+                mergeSeriesIntoState(detailed)
+                _state.update { it.copy(infoSeries = detailed) }
+            } catch (error: Exception) {
+                _state.update { it.copy(infoError = error.message ?: text(R.string.error_unknown)) }
+            } finally {
+                _state.update { it.copy(infoLoading = false) }
+            }
+        }
+    }
+
+    fun openEpisodeInfo(episode: Episode) {
+        val series = _state.value.selected
+            ?.takeIf { it.slug == episode.seriesSlug }
+            ?: Series(
+                title = episode.seriesTitle,
+                slug = episode.seriesSlug,
+                url = "https://aniworld.to/anime/stream/${episode.seriesSlug}"
+            )
+        viewModelScope.launch {
+            _state.update {
+                it.copy(
+                    infoSeries = series,
+                    infoEpisode = episode,
+                    infoLoading = true,
+                    infoError = null
+                )
+            }
+            try {
+                val detailedSeries = repo.enrichSeries(series, forceRefresh = true)
+                val detailedEpisode = repo.episodeDetails(episode)
+                mergeSeriesIntoState(detailedSeries)
+                _state.update {
+                    it.copy(
+                        infoSeries = detailedSeries,
+                        infoEpisode = detailedEpisode,
+                        episodes = it.episodes.map { existing ->
+                            if (existing.key == detailedEpisode.key) detailedEpisode else existing
+                        }
+                    )
+                }
+            } catch (error: Exception) {
+                _state.update { it.copy(infoError = error.message ?: text(R.string.error_unknown)) }
+            } finally {
+                _state.update { it.copy(infoLoading = false) }
+            }
+        }
+    }
+
+    fun dismissInfoDialog() = _state.update {
+        it.copy(infoSeries = null, infoEpisode = null, infoLoading = false, infoError = null)
+    }
 
     fun playEpisode(episode: Episode, languageOverride: Language? = null, hosterOverride: Hoster? = null) {
         val series = _state.value.selected ?: return
@@ -463,10 +521,17 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         }
     }
 
-    fun onPlaybackEnded() {
+    fun onPlaybackEnded(positionMs: Long, durationMs: Long) {
         val playback = _state.value.playback ?: return
         viewModelScope.launch {
-            store.savePlaybackProgress(playback.series, playback.episode, Long.MAX_VALUE, _state.value.preferences.episodeWatchStates[playback.episode.key]?.durationMs ?: 0L, true)
+            val safeDuration = durationMs.takeIf { it > 0L } ?: positionMs.coerceAtLeast(0L)
+            store.savePlaybackProgress(
+                playback.series,
+                playback.episode,
+                positionMs.coerceAtLeast(0L),
+                safeDuration,
+                true
+            )
             _state.update { it.copy(status = text(R.string.status_episode_marked_watched, episodeName(playback.episode))) }
         }
     }
@@ -510,6 +575,8 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun moveWatched(slug: String, delta: Int) = viewModelScope.launch { store.moveWatched(slug, delta) }.let { Unit }
     fun setFavoriteSort(sort: LibrarySort) = viewModelScope.launch { store.setFavoriteSort(sort) }.let { Unit }
     fun setWatchedSort(sort: LibrarySort) = viewModelScope.launch { store.setWatchedSort(sort) }.let { Unit }
+    fun setCatalogViewMode(mode: LibraryViewMode) = viewModelScope.launch { store.setCatalogViewMode(mode) }.let { Unit }
+    fun setFavoritesViewMode(mode: LibraryViewMode) = viewModelScope.launch { store.setFavoritesViewMode(mode) }.let { Unit }
     fun clearRecentSearches() = viewModelScope.launch { store.clearRecentSearches() }.let { Unit }
     fun markPermissionIntroSeen() = viewModelScope.launch { store.setPermissionIntroSeen() }.let { Unit }
     fun clearDiagnostics() = AppLogger.clear()
@@ -639,6 +706,67 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun setPrimaryHoster(hoster: String) = viewModelScope.launch { val picked = HosterCatalog.displayName(hoster); store.setHosterPriority(listOf(picked) + HosterCatalog.DEFAULT_PRIORITY.filterNot { HosterCatalog.normalize(it) == HosterCatalog.normalize(picked) }) }.let { Unit }
     fun setVerifyStreams(enabled: Boolean) = viewModelScope.launch { store.setVerifyStreams(enabled) }.let { Unit }
     fun setDynamicColors(enabled: Boolean) = viewModelScope.launch { store.setDynamicColors(enabled) }.let { Unit }
+    fun setAutoNextEnabled(enabled: Boolean) = viewModelScope.launch { store.setAutoNextEnabled(enabled) }.let { Unit }
+    fun setWebAdBlockEnabled(enabled: Boolean) = viewModelScope.launch { store.setWebAdBlockEnabled(enabled) }.let { Unit }
+    fun setWebFilterLists(ids: Set<String>) = viewModelScope.launch { store.setWebFilterLists(ids) }.let { Unit }
+    fun setWebSessionPanelExpanded(expanded: Boolean) = viewModelScope.launch { store.setWebSessionPanelExpanded(expanded) }.let { Unit }
+    fun setWebMediaPanelExpanded(expanded: Boolean) = viewModelScope.launch { store.setWebMediaPanelExpanded(expanded) }.let { Unit }
+    fun setSettingsButtonPosition(x: Float, y: Float) = viewModelScope.launch { store.setSettingsButtonPosition(x, y) }.let { Unit }
+    fun resetSettingsButtonPosition() = viewModelScope.launch { store.resetSettingsButtonPosition() }.let { Unit }
+
+    fun resetCoverDataAndCache() {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    app.database.seriesMetadataDao().clear()
+                    app.database.pageCacheDao().clear()
+                    store.clearStoredCovers()
+                    app.clearImageCaches()
+                }
+            }.onSuccess {
+                _state.update { state ->
+                    state.copy(
+                        homeFeed = HomeFeed(),
+                        catalog = CatalogData(),
+                        status = text(R.string.cover_cache_reset_done)
+                    )
+                }
+                loadHome(true)
+                loadCatalog(true)
+            }.onFailure { error ->
+                AppLogger.error("Cover", "Coverdaten konnten nicht zurückgesetzt werden", error)
+                _state.update { it.copy(error = friendlyMessage(error)) }
+            }
+        }
+    }
+
+    fun saveDetailScroll(index: Int, offset: Int) = _state.update {
+        it.copy(detailScrollIndex = index.coerceAtLeast(0), detailScrollOffset = offset.coerceAtLeast(0))
+    }
+
+    fun saveEpisodeScroll(index: Int, offset: Int) = _state.update {
+        it.copy(episodeScrollIndex = index.coerceAtLeast(0), episodeScrollOffset = offset.coerceAtLeast(0))
+    }
+
+    fun resumeSelected() {
+        val series = _state.value.selected ?: return
+        val progress = _state.value.preferences.progress[series.slug]
+        viewModelScope.launch {
+            runLoad(text(R.string.status_episodes_loading), { resumeSelected() }) {
+                val detailed = repo.enrichSeries(series)
+                val seasons = repo.seasons(detailed)
+                val targetSeason = progress?.season ?: seasons.firstOrNull { it == 1 } ?: seasons.firstOrNull() ?: return@runLoad
+                val episodes = repo.episodes(detailed, targetSeason)
+                store.rememberSeasonTotal(detailed.slug, targetSeason, episodes.size)
+                _state.update { it.copy(selected = detailed, seasons = seasons, season = targetSeason, episodes = episodes) }
+                val target = progress?.let { saved -> episodes.firstOrNull { it.number == saved.episode } }
+                    ?: episodes.firstOrNull { _state.value.preferences.episodeWatchStates[it.key]?.completed != true }
+                    ?: episodes.firstOrNull()
+                target?.let(::playEpisode)
+            }
+        }
+    }
+
     fun setLastHomeTab(tab: HomeTab) = viewModelScope.launch { store.setLastHomeTab(tab.name) }.let { Unit }
 
     private fun saveSelection(series: Series, season: Int?) {
@@ -688,7 +816,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     }
 
     private fun handleFailure(error: Exception, retry: () -> Unit) {
-        if (error is ChallengeRequiredException) {
+        if (error is ChallengeRequiredException && isAniWorldUrl(error.challengeUrl)) {
             pendingChallengeRetry = retry
             AppLogger.warn("Web-Schutz", error.challengeReason, error.challengeUrl)
             _state.update { it.copy(loading = false, resolving = false, challenge = ChallengeRequest(error.challengeUrl, error.challengeReason), challengeStatus = repo.challengeCookieSummary(error.challengeUrl), status = error.challengeReason, error = null) }
@@ -698,6 +826,11 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             _state.update { it.copy(error = message, status = null) }
         }
     }
+
+    private fun isAniWorldUrl(value: String): Boolean = runCatching {
+        val host = Uri.parse(value).host.orEmpty().lowercase()
+        host == "aniworld.to" || host.endsWith(".aniworld.to")
+    }.getOrDefault(false)
 
     private fun friendlyMessage(error: Throwable): String = when (error) {
         is java.net.UnknownHostException -> text(R.string.error_no_internet)

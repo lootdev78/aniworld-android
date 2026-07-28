@@ -1,9 +1,14 @@
 package de.dxmoc.aniworld
 
+import android.Manifest
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -24,7 +30,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,26 +44,53 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import kotlinx.coroutines.delay
 
 @Composable
 fun PlayerScreen(
     playback: ResolvedPlayback,
     hasPrevious: Boolean,
     hasNext: Boolean,
+    autoNextEnabled: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onClose: (Long, Long) -> Unit,
     onProgress: (Long, Long, Boolean) -> Unit,
-    onEnded: () -> Unit,
+    onEnded: (Long, Long) -> Unit,
     onError: (String) -> Unit
 ) {
-    val activity = LocalContext.current as? Activity
+    val context = LocalContext.current
+    val activity = context as? Activity
     var position by remember(playback.id) { mutableLongStateOf(playback.startPositionMs) }
     var duration by remember(playback.id) { mutableLongStateOf(0L) }
     var playerError by remember(playback.id) { mutableStateOf<String?>(null) }
+    var autoNextVisible by remember(playback.id) { mutableStateOf(false) }
+    var autoNextSeconds by remember(playback.id) { mutableIntStateOf(8) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    LaunchedEffect(playback.id) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(autoNextVisible, autoNextSeconds) {
+        if (!autoNextVisible) return@LaunchedEffect
+        if (autoNextSeconds <= 0) {
+            autoNextVisible = false
+            onProgress(position, duration, true)
+            onNext()
+        } else {
+            delay(1_000L)
+            autoNextSeconds--
+        }
+    }
 
     DisposableEffect(activity) {
         activity?.let { host ->
@@ -77,7 +112,13 @@ fun PlayerScreen(
         }
     }
 
-    BackHandler { onClose(position, duration) }
+    fun closePlayer() {
+        autoNextVisible = false
+        PlaybackService.stop(context)
+        onClose(position, duration)
+    }
+
+    BackHandler { closePlayer() }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         EmbeddedExoPlayer(
@@ -88,7 +129,15 @@ fun PlayerScreen(
                 duration = dur
                 onProgress(pos, dur, false)
             },
-            onEnded = onEnded,
+            onEnded = { finalPosition, finalDuration ->
+                position = finalPosition
+                duration = finalDuration
+                onEnded(finalPosition, finalDuration)
+                if (autoNextEnabled && hasNext) {
+                    autoNextSeconds = 8
+                    autoNextVisible = true
+                }
+            },
             onError = { message ->
                 playerError = message
                 onError(message)
@@ -96,12 +145,13 @@ fun PlayerScreen(
         )
 
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { onClose(position, duration) }) {
+            IconButton(onClick = ::closePlayer) {
                 Icon(Icons.Default.Close, stringResource(R.string.player_close), tint = Color.White)
             }
             Spacer(Modifier.weight(1f))
             IconButton(
                 onClick = {
+                    autoNextVisible = false
                     onProgress(position, duration, true)
                     onPrevious()
                 },
@@ -111,12 +161,28 @@ fun PlayerScreen(
             }
             IconButton(
                 onClick = {
+                    autoNextVisible = false
                     onProgress(position, duration, true)
                     onNext()
                 },
                 enabled = hasNext
             ) {
                 Icon(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), tint = if (hasNext) Color.White else Color.White.copy(alpha = .32f))
+            }
+        }
+
+        if (autoNextVisible) {
+            Surface(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(24.dp),
+                color = Color.Black.copy(alpha = .84f),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stringResource(R.string.auto_next_countdown, autoNextSeconds), color = Color.White, fontWeight = FontWeight.Bold)
+                    Button(onClick = { autoNextVisible = false }, modifier = Modifier.padding(top = 12.dp)) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
             }
         }
 

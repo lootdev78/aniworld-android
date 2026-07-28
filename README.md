@@ -4,7 +4,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.4.0-direct-media-detector`
+`1.5.0-complete-integration`
 
 
 ## App-Icon und Sprachen
@@ -27,8 +27,11 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 - „Neue Animes“
 - „Derzeit beliebt“
 - „Das sehen andere AniWorld Nutzer“
+- eigene Top-50-/Meistgesehen-Sammlung
+- Vollansichten für alle Startseiten-Sammlungen über die anklickbaren Abschnittsüberschriften
 - persönliche „Weiterschauen“-Reihe
 - reduzierte Navigation ohne obere App-Leiste; schwebende Bottom Bar auf Smartphones und Navigation Rail auf größeren Displays
+- frei verschiebbarer Einstellungsbutton mit begrenzter, rotationsfester DataStore-Position und Rücksetzfunktion
 - Material-3-Dark-Mode, optional dynamische Android-Farben
 - Pull-to-refresh, Skeleton-Ladezustände, leere Zustände und verständliche Fehlermeldungen
 - Cover, Anime-/Film-/Folgentitel, Genres, Veröffentlichungsjahr, Altersangabe, Beschreibungen und Fortschrittsanzeigen
@@ -51,14 +54,15 @@ Die Nutzerdaten werden ausschließlich lokal in einer Room-Datenbank gespeichert
 
 ## Offline und Performance
 
-- Startseite und vollständiger alphabetischer Katalog werden beim ersten Start im Hintergrund vorgeladen
-- lokaler Room-Cache für Startseite, Katalog und Anime-Metadaten
-- Coil-Disk-Cache und Hintergrund-Prefetch für bereits ermittelte Anime-Cover
-- zeitlich begrenzte Cache-Einträge
-- veraltete Cache-Kopie als Offline-Fallback bei Netzwerkfehlern
-- begrenzte parallele Katalog- und Metadatenanfragen
-- automatische Wiederholungsversuche mit kurzem Backoff
-- Metadaten werden in Favoriten, Verlauf und Weiterschauen nachgeführt
+- Startseite, Anime-Details, Staffeln und Episodenseiten werden live geladen und nicht als Webseiten-Metadaten gecacht
+- Room speichert Metadaten ausschließlich für Einträge des alphabetischen Katalogs
+- Katalogseiten besitzen einen zeitlich begrenzten Room-Cache und eine veraltete Offline-Kopie als Netzwerk-Fallback
+- manuell startbarer WorkManager-Hintergrundauftrag für die vollständige Katalog-Metadatenaktualisierung
+- Fortschritt und Abbrechen ausschließlich über eine Android-Systembenachrichtigung; der Auftrag läuft bei geschlossener Ansicht weiter
+- Coil-Disk- und Memory-Cache mit anime- und URL-spezifischen Cover-Schlüsseln
+- zentrale Filterung von Logo-, Branding-, Header-, Placeholder-, Tracking- und unplausibel dimensionierten Bildern
+- Rücksetzfunktion für gespeicherte Coverdaten, Katalogseiten, Metadaten sowie Coil-Bildcache
+- begrenzte parallele Katalog- und Metadatenanfragen sowie automatische Wiederholungsversuche mit Backoff
 
 ## AniWorld-Workflow
 
@@ -72,7 +76,9 @@ Die Nutzerdaten werden ausschließlich lokal in einer Room-Datenbank gespeichert
 - manuell bedienbare WebView für eine eventuell erforderliche CAPTCHA-/Cloudflare-Verifizierung
 - gemeinsamer Cookie-Speicher für WebView und OkHttp
 - Fortsetzen der unterbrochenen Aktion nach erfolgreicher manueller Verifizierung
-- generische Erkennung direkt angeforderter HLS-, DASH-, SmoothStreaming- und progressiver Medien-URLs in der manuellen Hoster-WebView
+- Erkennung direkt angeforderter HLS-, DASH-, SmoothStreaming- und progressiver Medien-URLs erst nach vollständig geladener Hoster-Seite
+- getrennte AniWorld-Verifizierung und Hoster-WebView, einklappbare und gespeicherte Session-/Medienbereiche
+- nativer, konfigurierbarer WebView-Filter für typische Werbung, Tracking, Popups und Weiterleitungen sowie temporäre Domain-Ausnahme
 - Übergabe von Referer, User-Agent und vorhandenen Session-Cookies an Media3
 
 Die App löst Web-Challenges nicht automatisch und umgeht keine Schutzprüfung. Der Nutzer führt eine eventuell angezeigte Prüfung selbst durch. Der Medien-Detector verarbeitet ausschließlich bereits sichtbare HTTP(S)-Anfragen mit einem eindeutig Media3-kompatiblen Format. Er entschlüsselt keine Skripte, rekonstruiert keine Tokens und umgeht keine Zugriffskontrollen.
@@ -85,11 +91,16 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - vertikale Geste links: Bildschirmhelligkeit
 - vertikale Geste rechts: Medienlautstärke
 - HLS-, DASH-, SmoothStreaming- und progressive Media3-Wiedergabe
-- Schließen und lokales Speichern des Fortschritts
+- Wiedergabe über einen `MediaSessionService` mit offizieller Android-Medienbenachrichtigung
+- Titel/Folge, Pause/Wiedergabe, Stop sowie vorherige/nächste Folge in der Systemoberfläche
+- kontextbezogene `POST_NOTIFICATIONS`-Abfrage ab Android 13
+- Schließen und lokales Speichern des realen Fortschritts
 - vorherige/nächste Folge innerhalb der geöffneten Staffel
-- Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste
+- optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
+- stabilisierte Helligkeits-/Lautstärkegesten mit seitlichen Zonen und Bewegungsschwelle
+- Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
 
-Es gibt keine Qualitäts-, Spur-, Geschwindigkeits-, Chromecast-, Picture-in-Picture- oder Auto-Weiter-Menüs.
+Es gibt weiterhin keine Qualitäts-, Spur-, Geschwindigkeits-, Chromecast- oder Picture-in-Picture-Menüs.
 
 ## Navigation
 
@@ -98,6 +109,21 @@ Die App verwendet Navigation Compose für Start, Katalog, Favoriten, Verlauf und
 ```text
 aniworldapp://anime/<slug>
 ```
+
+## Cover-, Info- und Listenansichten
+
+- AniWorld-Cover werden bevorzugt aus den eigentlichen Cover-/Poster-Elementen gelesen; Logo-, Icon-, Tracking- und Placeholder-Bilder werden verworfen.
+- Katalogeinträge bleiben bewusst ohne Cover und können als kompakte Liste, Detail-Liste oder Raster angezeigt werden.
+- Favoriten unterstützen dieselben drei Ansichtsarten; die Auswahl wird dauerhaft gespeichert.
+- Optionale Zähler werden erst ab einem Wert von 1 angezeigt.
+- Langes Drücken auf einen Anime lädt nur aktuelle Anime-Informationen. Langes Drücken auf eine Episode zeigt Anime- und Episodeninformationen.
+- Startseitenbereiche zeigen zunächst zehn Einträge; Überschrift und „Mehr anzeigen“ öffnen eine nahezu vollflächige, deduplizierte Sammlung.
+- Die Detailseite besitzt einen kompakten Netflix-artigen Bildheader, Verlauf für lesbaren Text, direkte Wiedergabe/Fortsetzen-Aktion, Staffelchips und kompakte Episodenzeilen.
+- Detailinformationen können Jahr, Altersfreigabe, Genres, Regie, Produzenten, Darsteller, Land, IMDb und Nutzerbewertung enthalten, sofern AniWorld diese Angaben bereitstellt.
+
+## Webfilter-Hinweis
+
+Der integrierte Filter ist eine native, bewusst konservative WebView-Implementierung. Eine unveränderte 1:1-Ausführung der Browser-Erweiterung uBlock Origin ist in Android WebView nicht möglich; das Projekt behauptet daher keine vollständige uBlock-Origin-Kompatibilität. Die vorhandenen Filterkategorien können in den Einstellungen einzeln aktiviert und bei Hoster-Problemen temporär für die aktuelle Domain ausgesetzt werden.
 
 ## Projektstruktur
 

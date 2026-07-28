@@ -144,7 +144,7 @@ data class SeriesMetadataEntity(
             title = series.title,
             url = series.url,
             description = series.description,
-            coverUrl = series.coverUrl,
+            coverUrl = "",
             genres = encodeList(series.genres),
             year = series.year,
             ageRating = series.ageRating,
@@ -281,6 +281,18 @@ interface LibraryDao {
     @Query("UPDATE episode_states SET seriesTitle = :title, seriesUrl = :url, coverUrl = CASE WHEN :coverUrl = '' THEN coverUrl ELSE :coverUrl END WHERE seriesSlug = :slug")
     suspend fun updateEpisodeMetadata(slug: String, title: String, url: String, coverUrl: String)
 
+    @Query("UPDATE favorites SET coverUrl = ''")
+    suspend fun clearFavoriteCovers()
+
+    @Query("UPDATE watchlist SET coverUrl = ''")
+    suspend fun clearWatchlistCovers()
+
+    @Query("UPDATE progress SET coverUrl = ''")
+    suspend fun clearProgressCovers()
+
+    @Query("UPDATE episode_states SET coverUrl = ''")
+    suspend fun clearEpisodeStateCovers()
+
     @Transaction
     suspend fun moveFavorite(slug: String, delta: Int) {
         val items = favoritesNow().toMutableList()
@@ -321,6 +333,9 @@ interface SeriesMetadataDao {
 
     @Query("SELECT COUNT(*) FROM series_metadata")
     suspend fun count(): Int
+
+    @Query("DELETE FROM series_metadata")
+    suspend fun clear()
 }
 
 @Dao
@@ -336,6 +351,9 @@ interface PageCacheDao {
 
     @Query("DELETE FROM page_cache WHERE updatedAt < :before")
     fun deleteOlderThan(before: Long)
+
+    @Query("DELETE FROM page_cache")
+    fun clear()
 }
 
 @Database(

@@ -35,21 +35,42 @@ class AniWorldApplication : Application(), SingletonImageLoader.Factory {
             }
             .build()
 
-    fun prefetchCover(url: String) {
-        if (url.isBlank()) return
+    fun prefetchCover(url: String, animeKey: String = url) {
+        if (!isUsableCoverUrl(url)) return
+        val cacheKey = coverCacheKey(animeKey, url)
         SingletonImageLoader.get(this).enqueue(
             ImageRequest.Builder(this)
                 .data(url)
+                .memoryCacheKey(cacheKey)
+                .diskCacheKey(cacheKey)
                 .build()
         )
     }
 
     fun prefetchCovers(series: Iterable<Series>) {
         series.asSequence()
-            .map(Series::coverUrl)
-            .filter(String::isNotBlank)
-            .distinct()
-            .forEach(::prefetchCover)
+            .filter { isUsableCoverUrl(it.coverUrl) }
+            .distinctBy { it.slug to it.coverUrl }
+            .forEach { prefetchCover(it.coverUrl, it.slug) }
+    }
+
+    fun clearImageCaches() {
+        val loader = SingletonImageLoader.get(this)
+        loader.memoryCache?.clear()
+        loader.diskCache?.clear()
+    }
+
+    fun coverCacheKey(animeKey: String, url: String): String =
+        "anime-cover:${animeKey.trim().lowercase()}:${url.trim()}"
+
+    private fun isUsableCoverUrl(url: String): Boolean {
+        if (url.isBlank()) return false
+        val lower = url.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return false
+        return listOf(
+            "aniworld_logo", "aniworld-logo", "/logo.", "/logos/", "favicon", "placeholder",
+            "loading", "spinner", "avatar", "profile", "tracking", "pixel.gif", "blank.gif"
+        ).none(lower::contains)
     }
 
     override fun onCreate() {

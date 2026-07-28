@@ -13,8 +13,8 @@ android {
         applicationId = "de.dxmoc.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 44
-        versionName = "1.4.1-build-fix"
+        versionCode = 48
+        versionName = "1.5.0-complete-integration"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -92,6 +92,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer.dash)
     implementation(libs.androidx.media3.exoplayer.smoothstreaming)
     implementation(libs.androidx.media3.ui)
+    implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource.okhttp)
 
     implementation(libs.coil.compose)
@@ -100,5 +101,6 @@ dependencies {
     implementation(libs.jsoup)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
 
 }

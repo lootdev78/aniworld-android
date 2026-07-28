@@ -99,7 +99,7 @@ class AniWorldRepository(
                     slug = slug,
                     url = "$baseUrl$link",
                     description = clean(o.optString("description")),
-                    coverUrl = normalizeUrl(
+                    coverUrl = normalizeAnimeImageUrl(
                         o.optString("image")
                             .ifBlank { o.optString("cover") }
                             .ifBlank { o.optString("poster") },
@@ -113,8 +113,7 @@ class AniWorldRepository(
 
     suspend fun homeFeed(forceRefresh: Boolean = false): HomeFeed = withContext(Dispatchers.IO) {
         val parsed = parseHomeFeed(getText("$baseUrl/", forceRefresh = forceRefresh))
-        val cached = metadataDao?.all().orEmpty().associateBy { it.slug }
-        var feed = parsed.withMetadata(cached)
+        var feed = parsed
         val hero = feed.featured
         if (hero != null && (hero.coverUrl.isBlank() || hero.description.isBlank())) {
             val detailed = runCatching { enrichSeries(hero, forceRefresh) }.getOrDefault(hero)
@@ -170,7 +169,6 @@ class AniWorldRepository(
                 bySlug[cached.slug] = mergeSeriesMetadata(current, cached)
             }
             val items = bySlug.values.sortedBy { it.title.lowercase() }
-            if (items.isNotEmpty()) metadataDao?.upsertAll(items.map { SeriesMetadataEntity.from(it) })
             CatalogData(
                 items = items,
                 genres = items.flatMap { it.genres }.filter(String::isNotBlank).distinct().sortedBy { it.lowercase() },
@@ -190,31 +188,44 @@ class AniWorldRepository(
         }
     }
 
-    suspend fun enrichSeries(series: Series, forceRefresh: Boolean = false): Series = withContext(Dispatchers.IO) {
-        val cached = metadataDao?.get(series.slug)
+    suspend fun enrichSeries(
+        series: Series,
+        forceRefresh: Boolean = false,
+        cacheCatalogMetadata: Boolean = false
+    ): Series = withContext(Dispatchers.IO) {
+        val cached = if (cacheCatalogMetadata) metadataDao?.get(series.slug) else null
         val cacheFresh = cached != null && System.currentTimeMillis() - cached.updatedAt < METADATA_TTL_MS
         val cachedModel = cached?.toModel()
-        val mergedCached = cachedModel?.let { mergeSeriesMetadata(series, it) } ?: series
-        if (!forceRefresh && cacheFresh && mergedCached.hasCompleteMetadata()) return@withContext mergedCached
-        if (!forceRefresh && series.hasCompleteMetadata()) {
-            metadataDao?.upsert(SeriesMetadataEntity.from(series))
-            return@withContext series
+        val seed = cachedModel?.let { mergeSeriesMetadata(series, it) } ?: series
+
+        if (!forceRefresh && cacheCatalogMetadata && cacheFresh && seed.hasCatalogMetadata()) {
+            return@withContext seed
         }
-        val detailed = parseSeriesDetails(getText(series.url, forceRefresh = forceRefresh), mergedCached)
-        metadataDao?.upsert(SeriesMetadataEntity.from(detailed))
+
+        val parsed = parseSeriesDetails(
+            getText(series.url, forceRefresh = forceRefresh || !cacheCatalogMetadata),
+            seed
+        )
+        val detailed = mergeSeriesMetadata(series, parsed)
+        if (cacheCatalogMetadata) metadataDao?.upsert(SeriesMetadataEntity.from(detailed))
         detailed
     }
 
     suspend fun preloadCatalogMetadata(
         items: List<Series>,
+        force: Boolean = false,
         onProgress: suspend (completed: Int, total: Int, series: Series?) -> Unit
     ) = withContext(Dispatchers.IO) {
         val existing = metadataDao?.all().orEmpty().associateBy { it.slug }
         val total = items.size
-        val queue = items.filter { item ->
-            val cached = existing[item.slug]
-            cached == null || !cached.toModel().hasCompleteMetadata() ||
-                System.currentTimeMillis() - cached.updatedAt >= METADATA_TTL_MS
+        val queue = if (force) {
+            items
+        } else {
+            items.filter { item ->
+                val cached = existing[item.slug]
+                cached == null || !cached.toModel().hasCatalogMetadata() ||
+                    System.currentTimeMillis() - cached.updatedAt >= METADATA_TTL_MS
+            }
         }
         var completed = total - queue.size
         onProgress(completed, total, null)
@@ -222,7 +233,7 @@ class AniWorldRepository(
             val results = coroutineScope {
                 batch.map { item ->
                     async {
-                        runCatching { enrichSeries(item, forceRefresh = true) }
+                        runCatching { enrichSeries(item, forceRefresh = true, cacheCatalogMetadata = true) }
                             .onFailure { AppLogger.warn("Metadaten", "${item.title} konnte nicht vorgeladen werden", it.message.orEmpty()) }
                             .getOrDefault(item)
                     }
@@ -250,6 +261,10 @@ class AniWorldRepository(
     suspend fun episodePage(episode: Episode): EpisodePage = withContext(Dispatchers.IO) {
         val markup = getText(episode.url)
         EpisodePage(parseEpisodeDetails(markup, episode), parseHosters(markup))
+    }
+
+    suspend fun episodeDetails(episode: Episode): Episode = withContext(Dispatchers.IO) {
+        parseEpisodeDetails(getText(episode.url), episode)
     }
 
     suspend fun listHosters(episode: Episode): List<Hoster> = episodePage(episode).hosters
@@ -334,14 +349,27 @@ class AniWorldRepository(
     private fun mergeSeriesMetadata(base: Series, metadata: Series): Series = base.copy(
         title = metadata.title.ifBlank { base.title },
         description = metadata.description.ifBlank { base.description },
-        coverUrl = metadata.coverUrl.ifBlank { base.coverUrl },
+        coverUrl = normalizeAnimeImageUrl(metadata.coverUrl, metadata.url.ifBlank { base.url })
+            ?: normalizeAnimeImageUrl(base.coverUrl, base.url)
+            ?: "",
         genres = (base.genres + metadata.genres).filter(String::isNotBlank).distinct(),
         year = metadata.year.ifBlank { base.year },
-        ageRating = metadata.ageRating.ifBlank { base.ageRating }
+        ageRating = metadata.ageRating.ifBlank { base.ageRating },
+        directors = (base.directors + metadata.directors).filter(String::isNotBlank).distinct(),
+        producers = (base.producers + metadata.producers).filter(String::isNotBlank).distinct(),
+        actors = (base.actors + metadata.actors).filter(String::isNotBlank).distinct(),
+        countries = (base.countries + metadata.countries).filter(String::isNotBlank).distinct(),
+        imdbUrl = metadata.imdbUrl.ifBlank { base.imdbUrl },
+        userRating = metadata.userRating.ifBlank { base.userRating },
+        ratingCount = metadata.ratingCount.takeIf { it > 0 } ?: base.ratingCount
     )
 
     private fun Series.hasCompleteMetadata(): Boolean =
-        title.isNotBlank() && coverUrl.isNotBlank() && description.isNotBlank() && genres.isNotEmpty()
+        title.isNotBlank() && normalizeAnimeImageUrl(coverUrl, url) != null &&
+            description.isNotBlank() && genres.isNotEmpty()
+
+    private fun Series.hasCatalogMetadata(): Boolean =
+        title.isNotBlank() && description.isNotBlank() && genres.isNotEmpty()
 
     private fun HomeFeed.withMetadata(cached: Map<String, SeriesMetadataEntity>): HomeFeed {
         fun apply(series: Series): Series = cached[series.slug]?.toModel()?.let { mergeSeriesMetadata(series, it) } ?: series
@@ -354,7 +382,8 @@ class AniWorldRepository(
             },
             newAnimes = newAnimes.map(::apply),
             currentlyPopular = currentlyPopular.map(::apply),
-            communityWatching = communityWatching.map(::apply)
+            communityWatching = communityWatching.map(::apply),
+            mostWatched = mostWatched.map(::apply)
         )
     }
 
@@ -370,7 +399,8 @@ class AniWorldRepository(
             },
             newAnimes = newAnimes.map(::replace),
             currentlyPopular = currentlyPopular.map(::replace),
-            communityWatching = communityWatching.map(::replace)
+            communityWatching = communityWatching.map(::replace),
+            mostWatched = mostWatched.map(::replace)
         )
     }
 
@@ -381,6 +411,12 @@ class AniWorldRepository(
         val newAnimes = parseSeriesSection(doc, "Neue Animes").take(30)
         val currentlyPopular = parseSeriesSection(doc, "Derzeit beliebt").take(24)
         val community = parseSeriesSection(doc, "Das sehen andere AniWorld Nutzer").take(24)
+        val mostWatched = sequenceOf("Top 50", "Meistgesehen", "Top 50 Animes")
+            .map(::parseSeriesSection)
+            .firstOrNull { it.isNotEmpty() }
+            .orEmpty()
+            .distinctBy(Series::slug)
+            .take(50)
         val featured = community.firstOrNull { it.description.isNotBlank() && it.coverUrl.isNotBlank() }
             ?: popular.firstOrNull { it.coverUrl.isNotBlank() }
             ?: currentlyPopular.firstOrNull()
@@ -392,6 +428,7 @@ class AniWorldRepository(
             newAnimes = newAnimes,
             currentlyPopular = currentlyPopular,
             communityWatching = community,
+            mostWatched = mostWatched,
             loadedAt = System.currentTimeMillis()
         )
     }
@@ -550,21 +587,59 @@ class AniWorldRepository(
             ?: anchor.parent()
 
     private fun imageUrl(source: Element, base: String): String {
-        val img = source.selectFirst("img") ?: return backgroundImageUrl(source, base)
-        val candidate = listOf(
-            img.attr("data-src"),
-            img.attr("data-lazy-src"),
-            img.attr("data-original"),
-            img.attr("src"),
-            img.attr("srcset").substringBefore(' ')
-        ).firstOrNull { it.isNotBlank() }
-        return candidate?.let { normalizeUrl(it, base) }.orEmpty().ifBlank { backgroundImageUrl(source, base) }
+        data class Candidate(val url: String, val score: Int)
+        val candidates = source.select("img").flatMap { image ->
+            val context = listOf(
+                image.attr("alt"), image.attr("title"), image.className(), image.id(),
+                image.parent()?.className().orEmpty(), image.parent()?.id().orEmpty()
+            ).joinToString(" ").lowercase()
+            val rejectedContext = listOf(
+                "logo", "brand", "header", "navigation", "navbar", "avatar", "icon",
+                "placeholder", "banner", "social", "tracking", "pixel", "spinner"
+            ).any(context::contains)
+            val width = image.attr("width").filter(Char::isDigit).toIntOrNull()
+            val height = image.attr("height").filter(Char::isDigit).toIntOrNull()
+            val implausibleSize = width != null && height != null &&
+                (width < 100 || height < 120 || width.toFloat() / height.coerceAtLeast(1) > 1.65f)
+            if (rejectedContext || implausibleSize) return@flatMap emptyList()
+            val baseScore = when {
+                image.matches(".seriesCoverBox img, .seriesCover img, .cover img, [class*=cover] img, [class*=poster] img") -> 80
+                image.hasAttr("itemprop") && image.attr("itemprop").equals("image", true) -> 70
+                context.contains("cover") || context.contains("poster") -> 60
+                else -> 0
+            }
+            sequenceOf(
+                image.attr("data-src") to 12,
+                image.attr("data-lazy-src") to 11,
+                image.attr("data-original") to 10,
+                image.attr("data-url") to 8,
+                image.attr("srcset").substringBefore(' ') to 6,
+                image.attr("src") to 4
+            ).mapNotNull { (raw, sourceScore) ->
+                normalizeAnimeImageUrl(raw, base)?.let { normalized ->
+                    val path = normalized.lowercase()
+                    val pathScore = when {
+                        path.contains("/cover/") || path.contains("poster") -> 35
+                        path.contains("anime") || path.contains("series") -> 15
+                        else -> 0
+                    }
+                    Candidate(normalized, baseScore + sourceScore + pathScore)
+                }
+            }.toList()
+        }
+        return candidates
+            .groupBy(Candidate::url)
+            .map { (url, matches) -> Candidate(url, matches.maxOf(Candidate::score)) }
+            .maxByOrNull(Candidate::score)
+            ?.url
+            .orEmpty()
+            .ifBlank { backgroundImageUrl(source, base) }
     }
 
     private fun backgroundImageUrl(source: Element, base: String): String {
         val style = source.attr("style") + " " + source.selectFirst("[style*=background-image]")?.attr("style").orEmpty()
         val raw = Regex("url\\(['\"]?([^'\")]+)").find(style)?.groupValues?.get(1) ?: return ""
-        return normalizeUrl(raw, base).orEmpty()
+        return normalizeAnimeImageUrl(raw, base).orEmpty()
     }
 
     private fun genreTexts(source: Element, title: String): List<String> {
@@ -755,20 +830,27 @@ class AniWorldRepository(
                 ?.substringBefore(" - AniWorld"),
             series.title
         )
-        val coverCandidates = listOf(
-            doc.selectFirst("meta[property=og:image]")?.attr("content"),
-            doc.selectFirst("meta[name=twitter:image]")?.attr("content"),
-            doc.selectFirst(".seriesCoverBox img, .seriesCover img, .cover img, img[itemprop=image]")?.let { image ->
-                listOf(
-                    image.attr("data-src"),
-                    image.attr("data-lazy-src"),
-                    image.attr("data-original"),
-                    image.attr("src")
-                ).firstOrNull(String::isNotBlank)
-            }
+        val coverImages = doc.select(
+            ".seriesCoverBox img, .seriesCover img, .cover img, [class*=cover] img, " +
+                "[class*=poster] img, img[itemprop=image], img[alt*=Cover], " +
+                "img[src*='/cover/'], img[data-src*='/cover/']"
         )
-        val cover = coverCandidates.firstOrNull { !it.isNullOrBlank() }
-            ?.let { normalizeUrl(it, series.url) }
+        val coverCandidates = buildList {
+            coverImages.forEach { image ->
+                add(image.attr("data-src"))
+                add(image.attr("data-lazy-src"))
+                add(image.attr("data-original"))
+                add(image.attr("data-url"))
+                add(image.attr("srcset").substringBefore(' '))
+                add(image.attr("src"))
+            }
+            add(doc.selectFirst("meta[property=og:image]")?.attr("content").orEmpty())
+            add(doc.selectFirst("meta[name=twitter:image]")?.attr("content").orEmpty())
+        }
+        val cover = coverCandidates.asSequence()
+            .filterNotNull()
+            .mapNotNull { normalizeAnimeImageUrl(it, series.url) }
+            .firstOrNull()
             .orEmpty()
             .ifBlank { series.coverUrl }
         val description = listOf(
@@ -800,14 +882,53 @@ class AniWorldRepository(
             Regex("""\bAb:\s*(\d{1,2})\b""", RegexOption.IGNORE_CASE).find(pageText)?.groupValues?.getOrNull(1)?.let { "FSK $it" },
             series.ageRating
         )
+        val directors = detailValues(doc, "Regisseure", "Regisseur", "Regie")
+        val producers = detailValues(doc, "Produzenten", "Produzent")
+        val actors = detailValues(doc, "Schauspieler", "Darsteller")
+        val countries = detailValues(doc, "Land", "Länder")
+        val imdbUrl = doc.selectFirst("a[href*=imdb.com]")?.absUrl("href")
+            ?.ifBlank { doc.selectFirst("a[href*=imdb.com]")?.attr("href") }
+            .orEmpty()
+        val ratingMatch = Regex(
+            """([0-5](?:[\.,]\d+)?)\s*/\s*5\s*von\s*(\d+)\s*Bewertungen""",
+            RegexOption.IGNORE_CASE
+        ).find(pageText)
+        val userRating = ratingMatch?.groupValues?.getOrNull(1)?.replace(',', '.').orEmpty()
+        val ratingCount = ratingMatch?.groupValues?.getOrNull(2)?.toIntOrNull() ?: 0
         return series.copy(
             title = title,
             coverUrl = cover,
             description = description,
             genres = genres,
             year = year,
-            ageRating = ageRating
+            ageRating = ageRating,
+            directors = directors.ifEmpty { series.directors },
+            producers = producers.ifEmpty { series.producers },
+            actors = actors.ifEmpty { series.actors },
+            countries = countries.ifEmpty { series.countries },
+            imdbUrl = imdbUrl.ifBlank { series.imdbUrl },
+            userRating = userRating.ifBlank { series.userRating },
+            ratingCount = ratingCount.takeIf { it > 0 } ?: series.ratingCount
         )
+    }
+
+    private fun detailValues(doc: Document, vararg labels: String): List<String> {
+        val normalizedLabels = labels.map { normalizeHeading(it).removeSuffix(":") }.toSet()
+        val labelNode = doc.allElements.firstOrNull { element ->
+            normalizeHeading(element.ownText()).removeSuffix(":") in normalizedLabels
+        } ?: return emptyList()
+        val container = labelNode.closest("li, tr, dd, div") ?: labelNode.parent() ?: return emptyList()
+        return container.select("a[href]")
+            .eachText()
+            .map(::clean)
+            .filter { value ->
+                value.isNotBlank() &&
+                    normalizeHeading(value).removeSuffix(":") !in normalizedLabels &&
+                    !value.startsWith("&") &&
+                    !value.contains("weitere", ignoreCase = true)
+            }
+            .distinct()
+            .take(40)
     }
 
     private fun cleanDescription(value: String): String = clean(value)
@@ -956,7 +1077,8 @@ class AniWorldRepository(
         return runCatching {
             val target = URI(url)
             val base = URI(baseUrl)
-            target.host.equals(base.host, ignoreCase = true)
+            target.host.equals(base.host, ignoreCase = true) &&
+                target.path.orEmpty().startsWith("/katalog/", ignoreCase = true)
         }.getOrDefault(false)
     }
 
@@ -1026,6 +1148,28 @@ class AniWorldRepository(
         val cleaned = decodeHtmlEntities(value).trim()
         if (cleaned.isBlank()) return null
         return runCatching { URI(base).resolve(cleaned).toString() }.getOrNull()
+    }
+
+    private fun normalizeAnimeImageUrl(value: String, base: String): String? {
+        val normalized = normalizeUrl(value, base) ?: return null
+        val lower = normalized.lowercase()
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return null
+        if (lower.startsWith("data:")) return null
+        val blockedTokens = listOf(
+            "aniworld_logo", "aniworld-logo", "/logo.", "/logos/", "favicon", "apple-touch-icon",
+            "placeholder", "loading", "spinner", "avatar", "profile", "facebook", "twitter",
+            "instagram", "discord", "yandex", "tracking", "pixel.gif", "blank.gif", "transparent",
+            "/branding/", "/header/", "default-avatar", "no-image", "no_image"
+        )
+        if (blockedTokens.any(lower::contains)) return null
+        val path = runCatching { URI(normalized).path.orEmpty().lowercase() }.getOrDefault(lower)
+        val fileName = path.substringAfterLast('/')
+        if (fileName.startsWith("logo") || fileName.startsWith("header") || fileName.startsWith("brand")) return null
+        val extensionLooksLikeImage = listOf(".jpg", ".jpeg", ".png", ".webp", ".avif").any { token ->
+            path.endsWith(token) || path.contains("$token/")
+        }
+        val coverPath = path.contains("cover") || path.contains("poster") || path.contains("series") || path.contains("anime")
+        return normalized.takeIf { extensionLooksLikeImage || coverPath }
     }
 
     private fun clean(v: String): String = Jsoup.parse(v).text().trim()

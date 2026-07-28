@@ -3,6 +3,7 @@ package de.dxmoc.aniworld
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -27,7 +28,16 @@ private data class SettingsSnapshot(
     val permissionIntroSeen: Boolean,
     val useDynamicColors: Boolean,
     val lastHomeTab: String,
-    val initialPreloadCompleted: Boolean
+    val initialPreloadCompleted: Boolean,
+    val webAdBlockEnabled: Boolean,
+    val webFilterLists: Set<String>,
+    val webSessionPanelExpanded: Boolean,
+    val webMediaPanelExpanded: Boolean,
+    val autoNextEnabled: Boolean,
+    val settingsButtonX: Float,
+    val settingsButtonY: Float,
+    val catalogViewMode: LibraryViewMode,
+    val favoritesViewMode: LibraryViewMode
 )
 
 private data class LibrarySnapshot(
@@ -67,7 +77,16 @@ class AppStore(
                 permissionIntroSeen = prefs[PERMISSION_INTRO_SEEN] ?: false,
                 useDynamicColors = prefs[DYNAMIC_COLORS] ?: false,
                 lastHomeTab = prefs[LAST_HOME_TAB] ?: "START",
-                initialPreloadCompleted = prefs[INITIAL_PRELOAD_COMPLETED] ?: false
+                initialPreloadCompleted = prefs[INITIAL_PRELOAD_COMPLETED] ?: false,
+                webAdBlockEnabled = prefs[WEB_ADBLOCK_ENABLED] ?: true,
+                webFilterLists = parseFilterLists(prefs[WEB_FILTER_LISTS]),
+                webSessionPanelExpanded = prefs[WEB_SESSION_PANEL_EXPANDED] ?: true,
+                webMediaPanelExpanded = prefs[WEB_MEDIA_PANEL_EXPANDED] ?: true,
+                autoNextEnabled = prefs[AUTO_NEXT_ENABLED] ?: true,
+                settingsButtonX = (prefs[SETTINGS_BUTTON_X] ?: 0.92f).coerceIn(0f, 1f),
+                settingsButtonY = (prefs[SETTINGS_BUTTON_Y] ?: 0.72f).coerceIn(0f, 1f),
+                catalogViewMode = parseViewMode(prefs[CATALOG_VIEW_MODE], LibraryViewMode.DETAILED),
+                favoritesViewMode = parseViewMode(prefs[FAVORITES_VIEW_MODE], LibraryViewMode.DETAILED)
             )
         }
 
@@ -118,7 +137,16 @@ class AppStore(
             permissionIntroSeen = settings.permissionIntroSeen,
             useDynamicColors = settings.useDynamicColors,
             lastHomeTab = settings.lastHomeTab,
-            initialPreloadCompleted = settings.initialPreloadCompleted
+            initialPreloadCompleted = settings.initialPreloadCompleted,
+            webAdBlockEnabled = settings.webAdBlockEnabled,
+            webFilterLists = settings.webFilterLists,
+            webSessionPanelExpanded = settings.webSessionPanelExpanded,
+            webMediaPanelExpanded = settings.webMediaPanelExpanded,
+            autoNextEnabled = settings.autoNextEnabled,
+            settingsButtonX = settings.settingsButtonX,
+            settingsButtonY = settings.settingsButtonY,
+            catalogViewMode = settings.catalogViewMode,
+            favoritesViewMode = settings.favoritesViewMode
         )
     }
 
@@ -181,6 +209,38 @@ class AppStore(
     suspend fun setDynamicColors(enabled: Boolean) = editSafely("Farbschema speichern") { it[DYNAMIC_COLORS] = enabled }
     suspend fun setLastHomeTab(tab: String) = editSafely("Navigation speichern") { it[LAST_HOME_TAB] = tab }
     suspend fun setInitialPreloadCompleted() = editSafely("Erstinitialisierung speichern") { it[INITIAL_PRELOAD_COMPLETED] = true }
+    suspend fun setWebAdBlockEnabled(enabled: Boolean) = editSafely("Webfilter speichern") { it[WEB_ADBLOCK_ENABLED] = enabled }
+    suspend fun setWebFilterLists(ids: Set<String>) = editSafely("Filterlisten speichern") {
+        it[WEB_FILTER_LISTS] = ids.intersect(WebFilterList.ALL_IDS).sorted().joinToString(",")
+    }
+    suspend fun setWebSessionPanelExpanded(expanded: Boolean) = editSafely("Webbereich speichern") {
+        it[WEB_SESSION_PANEL_EXPANDED] = expanded
+    }
+    suspend fun setWebMediaPanelExpanded(expanded: Boolean) = editSafely("Medienbereich speichern") {
+        it[WEB_MEDIA_PANEL_EXPANDED] = expanded
+    }
+    suspend fun setAutoNextEnabled(enabled: Boolean) = editSafely("Auto-Next speichern") {
+        it[AUTO_NEXT_ENABLED] = enabled
+    }
+    suspend fun setSettingsButtonPosition(x: Float, y: Float) = editSafely("Einstellungsposition speichern") {
+        it[SETTINGS_BUTTON_X] = x.coerceIn(0f, 1f)
+        it[SETTINGS_BUTTON_Y] = y.coerceIn(0f, 1f)
+    }
+    suspend fun resetSettingsButtonPosition() = setSettingsButtonPosition(0.92f, 0.72f)
+
+    suspend fun clearStoredCovers() = database.withTransaction {
+        dao.clearFavoriteCovers()
+        dao.clearWatchlistCovers()
+        dao.clearProgressCovers()
+        dao.clearEpisodeStateCovers()
+    }
+
+    suspend fun setCatalogViewMode(mode: LibraryViewMode) = editSafely("Katalogansicht speichern") {
+        it[CATALOG_VIEW_MODE] = mode.name
+    }
+    suspend fun setFavoritesViewMode(mode: LibraryViewMode) = editSafely("Favoritenansicht speichern") {
+        it[FAVORITES_VIEW_MODE] = mode.name
+    }
 
     suspend fun rememberSearch(query: String) {
         val clean = query.trim()
@@ -218,7 +278,6 @@ class AppStore(
             dao.updateWatchlistMetadata(series.slug, series.title, series.url, series.coverUrl)
             dao.updateProgressMetadata(series.slug, series.title, series.url, series.coverUrl)
             dao.updateEpisodeMetadata(series.slug, series.title, series.url, series.coverUrl)
-            database.seriesMetadataDao().upsert(SeriesMetadataEntity.from(series))
         }
     }
 
@@ -388,6 +447,15 @@ class AppStore(
     private fun parseSort(raw: String?, default: LibrarySort): LibrarySort =
         runCatching { LibrarySort.valueOf(raw.orEmpty()) }.getOrDefault(default)
 
+    private fun parseViewMode(raw: String?, default: LibraryViewMode): LibraryViewMode =
+        runCatching { LibraryViewMode.valueOf(raw.orEmpty()) }.getOrDefault(default)
+
+    private fun parseFilterLists(raw: String?): Set<String> = raw.orEmpty().split(',')
+        .map(String::trim)
+        .filter { it in WebFilterList.ALL_IDS }
+        .toSet()
+        .ifEmpty { WebFilterList.ALL_IDS }
+
     private fun parseLegacyWatchlist(raw: String?): List<WatchEntry> = parseArray(raw) { o ->
         WatchEntry(o.optString("title"), o.optString("slug"), o.optString("url"), o.optString("coverUrl"), o.optLong("updatedAt"))
     }.filter { it.title.isNotBlank() && it.slug.isNotBlank() && it.url.isNotBlank() }
@@ -453,6 +521,15 @@ class AppStore(
         private val DYNAMIC_COLORS = booleanPreferencesKey("dynamic_colors")
         private val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
         private val INITIAL_PRELOAD_COMPLETED = booleanPreferencesKey("initial_preload_completed")
+        private val WEB_ADBLOCK_ENABLED = booleanPreferencesKey("web_adblock_enabled")
+        private val WEB_FILTER_LISTS = stringPreferencesKey("web_filter_lists")
+        private val WEB_SESSION_PANEL_EXPANDED = booleanPreferencesKey("web_session_panel_expanded")
+        private val WEB_MEDIA_PANEL_EXPANDED = booleanPreferencesKey("web_media_panel_expanded")
+        private val AUTO_NEXT_ENABLED = booleanPreferencesKey("auto_next_enabled")
+        private val SETTINGS_BUTTON_X = floatPreferencesKey("settings_button_x")
+        private val SETTINGS_BUTTON_Y = floatPreferencesKey("settings_button_y")
+        private val CATALOG_VIEW_MODE = stringPreferencesKey("catalog_view_mode")
+        private val FAVORITES_VIEW_MODE = stringPreferencesKey("favorites_view_mode")
         private val ROOM_MIGRATION_DONE = booleanPreferencesKey("room_migration_done")
 
         private val LEGACY_WATCHLIST_JSON = stringPreferencesKey("watchlist_json")
