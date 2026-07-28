@@ -99,7 +99,16 @@ fun EmbeddedExoPlayer(
                 .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
                 .build()
                 .apply {
-                    setMediaItem(MediaItem.Builder().setUri(playback.stream.url).setMediaId(playback.episode.key).build())
+                    val mediaItem = MediaItem.Builder()
+                        .setUri(playback.stream.url)
+                        .setMediaId(playback.episode.key)
+                        .apply {
+                            playback.stream.mimeType
+                                ?.takeIf(String::isNotBlank)
+                                ?.let { setMimeType(it) }
+                        }
+                        .build()
+                    setMediaItem(mediaItem)
                     if (playback.startPositionMs > 0L) seekTo(playback.startPositionMs)
                     playWhenReady = true
                     prepare()

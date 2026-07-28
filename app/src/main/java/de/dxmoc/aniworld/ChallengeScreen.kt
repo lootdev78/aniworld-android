@@ -13,46 +13,54 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 
 @SuppressLint("SetJavaScriptEnabled")
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChallengeScreen(
     request: ChallengeRequest,
@@ -60,13 +68,45 @@ fun ChallengeScreen(
     sessionStatus: String?,
     onVerify: (String) -> Unit,
     onClearSession: () -> Unit,
+    onPlayDetectedMedia: (DetectedMediaCandidate) -> Unit,
     onClose: () -> Unit
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var currentUrl by remember(request.url) { mutableStateOf(request.url) }
-    var pageTitle by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(true) }
-    var pageError by remember { mutableStateOf<String?>(null) }
+    var pageTitle by remember(request.url) { mutableStateOf("") }
+    var loading by remember(request.url) { mutableStateOf(true) }
+    var pageError by remember(request.url) { mutableStateOf<String?>(null) }
+    var detectedMedia by remember(request.url) { mutableStateOf<List<DetectedMediaCandidate>>(emptyList()) }
+
+    fun scheduleDetection(
+        view: WebView,
+        url: String,
+        headers: Map<String, String> = emptyMap()
+    ) {
+        if (!request.mediaDetectionEnabled) return
+
+        view.post {
+            val cookie = CookieManager.getInstance().getCookie(url)
+            val candidate = DirectMediaDetector.detect(
+                rawUrl = url,
+                requestHeaders = headers,
+                pageUrl = view.url ?: currentUrl,
+                cookie = cookie,
+                userAgent = view.settings.userAgentString ?: AniWorldRepository.UA
+            ) ?: return@post
+
+            val isNew = detectedMedia.none { it.key == candidate.key }
+            detectedMedia = DirectMediaDetector.merge(detectedMedia, candidate)
+
+            if (isNew) {
+                AppLogger.info(
+                    area = "Media-Detector",
+                    message = "${candidate.formatLabel}-Quelle erkannt",
+                    details = candidate.host
+                )
+            }
+        }
+    }
 
     BackHandler {
         val view = webView
@@ -85,174 +125,356 @@ fun ChallengeScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(request.title.ifBlank { stringResource(R.string.manual_verification) })
-                        Text(
-                            pageTitle.ifBlank { Uri.parse(currentUrl).host.orEmpty() },
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1
-                        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                WebView(context).apply {
+                    webView = this
+                    val currentWebView = this
+
+                    CookieManager.getInstance().apply {
+                        setAcceptCookie(true)
+                        setAcceptThirdPartyCookies(currentWebView, true)
                     }
-                },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        val view = webView
-                        if (view?.canGoBack() == true) view.goBack() else onClose()
-                    }) {
+
+                    settings.apply {
+                        javaScriptEnabled = true
+                        domStorageEnabled = true
+                        databaseEnabled = true
+                        userAgentString = AniWorldRepository.UA
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        javaScriptCanOpenWindowsAutomatically = false
+                        setSupportMultipleWindows(false)
+                        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        cacheMode = WebSettings.LOAD_DEFAULT
+                        mediaPlaybackRequiresUserGesture = true
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            safeBrowsingEnabled = true
+                        }
+                    }
+
+                    webChromeClient = WebChromeClient()
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean {
+                            scheduleDetection(view, url)
+                            return !isAllowedWebUrl(url)
+                        }
+
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView,
+                            request: WebResourceRequest
+                        ): Boolean {
+                            scheduleDetection(view, request.url.toString(), request.requestHeaders)
+                            return !isAllowedWebUrl(request.url.toString())
+                        }
+
+                        override fun shouldInterceptRequest(
+                            view: WebView,
+                            request: WebResourceRequest
+                        ): WebResourceResponse? {
+                            scheduleDetection(view, request.url.toString(), request.requestHeaders)
+                            return null
+                        }
+
+                        @Deprecated("Deprecated in Android API")
+                        override fun shouldInterceptRequest(
+                            view: WebView,
+                            url: String
+                        ): WebResourceResponse? {
+                            scheduleDetection(view, url)
+                            return null
+                        }
+
+                        override fun onLoadResource(view: WebView, url: String) {
+                            scheduleDetection(view, url)
+                            super.onLoadResource(view, url)
+                        }
+
+                        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+                            loading = true
+                            pageError = null
+                            currentUrl = url
+                            AppLogger.info(
+                                "WebView",
+                                context.getString(R.string.challenge_page_loading),
+                                Uri.parse(url).host.orEmpty()
+                            )
+                        }
+
+                        override fun onPageFinished(view: WebView, url: String) {
+                            loading = false
+                            currentUrl = url
+                            pageTitle = view.title.orEmpty()
+                            CookieManager.getInstance().flush()
+                        }
+
+                        override fun onReceivedHttpError(
+                            view: WebView,
+                            request: WebResourceRequest,
+                            errorResponse: WebResourceResponse
+                        ) {
+                            if (request.isForMainFrame) {
+                                pageError = context.getString(
+                                    R.string.challenge_http_error,
+                                    errorResponse.statusCode
+                                )
+                                AppLogger.warn("WebView", pageError.orEmpty(), request.url.toString())
+                            }
+                        }
+
+                        override fun onReceivedError(
+                            view: WebView,
+                            request: WebResourceRequest,
+                            error: WebResourceError
+                        ) {
+                            if (request.isForMainFrame) {
+                                pageError = context.getString(
+                                    R.string.challenge_load_error,
+                                    error.description
+                                )
+                                AppLogger.warn("WebView", pageError.orEmpty(), request.url.toString())
+                            }
+                        }
+                    }
+
+                    loadUrl(request.url)
+                }
+            },
+            update = { view ->
+                if (view.url.isNullOrBlank()) view.loadUrl(request.url)
+            }
+        )
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            tonalElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalIconButton(
+                        onClick = {
+                            val view = webView
+                            if (view?.canGoBack() == true) view.goBack() else onClose()
+                        }
+                    ) {
                         Icon(Icons.Default.ArrowBack, stringResource(R.string.back))
                     }
-                },
-                actions = {
-                    IconButton(onClick = { webView?.reload() }) {
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = request.title.ifBlank {
+                                stringResource(R.string.manual_verification)
+                            },
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = pageTitle.ifBlank {
+                                Uri.parse(currentUrl).host.orEmpty()
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+
+                    FilledTonalIconButton(onClick = { webView?.reload() }) {
                         Icon(Icons.Default.Refresh, stringResource(R.string.challenge_reload))
                     }
-                    IconButton(onClick = onClose) {
+                    FilledTonalIconButton(onClick = onClose) {
                         Icon(Icons.Default.Close, stringResource(R.string.close))
                     }
                 }
-            )
+
+                if (loading || checking) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            }
         }
-    ) { padding ->
+
         Column(
             modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Security, null, Modifier.size(20.dp))
-                        Text(request.reason, style = MaterialTheme.typography.bodySmall)
-                    }
-                    sessionStatus?.let {
-                        Text(it, style = MaterialTheme.typography.labelMedium)
-                    }
-                    pageError?.let {
-                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            if (request.mediaDetectionEnabled) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                stringResource(R.string.media_detector_title),
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                stringResource(
+                                    R.string.media_detector_count,
+                                    detectedMedia.size
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        if (detectedMedia.isEmpty()) {
+                            Text(
+                                stringResource(R.string.media_detector_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier
+                                    .heightIn(max = 210.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                detectedMedia.forEach { candidate ->
+                                    Surface(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = MaterialTheme.shapes.large,
+                                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.82f)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(
+                                                    candidate.formatLabel,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    candidate.displayName,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    candidate.host,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Button(onClick = { onPlayDetectedMedia(candidate) }) {
+                                                Icon(
+                                                    Icons.Default.PlayArrow,
+                                                    null,
+                                                    Modifier.size(18.dp)
+                                                )
+                                                Spacer(Modifier.width(4.dp))
+                                                Text(stringResource(R.string.media_detector_play))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            stringResource(R.string.media_detector_direct_only),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
 
-            if (loading || checking) LinearProgressIndicator(Modifier.fillMaxWidth())
-
-            AndroidView(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                factory = { context ->
-                    WebView(context).apply {
-                        webView = this
-                        val currentWebView = this
-                        CookieManager.getInstance().apply {
-                            setAcceptCookie(true)
-                            setAcceptThirdPartyCookies(currentWebView, true)
-                        }
-                        settings.apply {
-                            javaScriptEnabled = true
-                            domStorageEnabled = true
-                            databaseEnabled = true
-                            userAgentString = AniWorldRepository.UA
-                            allowFileAccess = false
-                            allowContentAccess = false
-                            javaScriptCanOpenWindowsAutomatically = false
-                            setSupportMultipleWindows(false)
-                            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                            cacheMode = WebSettings.LOAD_DEFAULT
-                            mediaPlaybackRequiresUserGesture = true
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
-                        }
-                        webChromeClient = WebChromeClient()
-                        webViewClient = object : WebViewClient() {
-                            override fun shouldOverrideUrlLoading(view: WebView, url: String): Boolean =
-                                !isAllowedWebUrl(url)
-
-                            override fun shouldOverrideUrlLoading(
-                                view: WebView,
-                                request: WebResourceRequest
-                            ): Boolean = !isAllowedWebUrl(request.url.toString())
-
-                            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-                                loading = true
-                                pageError = null
-                                currentUrl = url
-                                AppLogger.info("WebView", context.getString(R.string.challenge_page_loading), Uri.parse(url).host.orEmpty())
-                            }
-
-                            override fun onPageFinished(view: WebView, url: String) {
-                                loading = false
-                                currentUrl = url
-                                pageTitle = view.title.orEmpty()
-                                CookieManager.getInstance().flush()
-                            }
-
-                            override fun onReceivedHttpError(
-                                view: WebView,
-                                request: WebResourceRequest,
-                                errorResponse: WebResourceResponse
-                            ) {
-                                if (request.isForMainFrame) {
-                                    pageError = context.getString(R.string.challenge_http_error, errorResponse.statusCode)
-                                    AppLogger.warn("WebView", pageError.orEmpty(), request.url.toString())
-                                }
-                            }
-
-                            override fun onReceivedError(
-                                view: WebView,
-                                request: WebResourceRequest,
-                                error: WebResourceError
-                            ) {
-                                if (request.isForMainFrame) {
-                                    pageError = context.getString(R.string.challenge_load_error, error.description)
-                                    AppLogger.warn("WebView", pageError.orEmpty(), request.url.toString())
-                                }
-                            }
-
-                        }
-                        loadUrl(request.url)
-                    }
-                },
-                update = { view ->
-                    if (view.url.isNullOrBlank()) view.loadUrl(request.url)
-                }
-            )
-
-            Spacer(Modifier.height(8.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
+                )
             ) {
-                Button(
-                    modifier = Modifier.weight(1f),
-                    enabled = !checking && currentUrl.isNotBlank(),
-                    onClick = {
-                        CookieManager.getInstance().flush()
-                        onVerify(currentUrl)
-                    }
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.Security, null, Modifier.size(18.dp))
-                    Text(" " + stringResource(R.string.challenge_check_session))
-                }
-                OutlinedButton(
-                    enabled = !checking,
-                    onClick = {
-                        onClearSession()
-                        webView?.clearCache(true)
-                        webView?.reload()
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Security, null, Modifier.size(20.dp))
+                        Text(request.reason, style = MaterialTheme.typography.bodySmall)
                     }
-                ) {
-                    Icon(Icons.Default.DeleteSweep, null, Modifier.size(18.dp))
-                    Text(" " + stringResource(R.string.challenge_cookies))
+
+                    sessionStatus?.let {
+                        Text(it, style = MaterialTheme.typography.labelMedium)
+                    }
+
+                    pageError?.let {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            modifier = Modifier.weight(1f),
+                            enabled = !checking && currentUrl.isNotBlank(),
+                            onClick = {
+                                CookieManager.getInstance().flush()
+                                onVerify(currentUrl)
+                            }
+                        ) {
+                            Icon(Icons.Default.Security, null, Modifier.size(18.dp))
+                            Text(" " + stringResource(R.string.challenge_check_session))
+                        }
+
+                        OutlinedButton(
+                            enabled = !checking,
+                            onClick = {
+                                detectedMedia = emptyList()
+                                onClearSession()
+                                webView?.clearCache(true)
+                                webView?.reload()
+                            }
+                        ) {
+                            Icon(Icons.Default.DeleteSweep, null, Modifier.size(18.dp))
+                            Text(" " + stringResource(R.string.challenge_cookies))
+                        }
+                    }
                 }
             }
         }

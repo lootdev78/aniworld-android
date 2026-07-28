@@ -26,7 +26,8 @@ private data class SettingsSnapshot(
     val watchedSort: LibrarySort,
     val permissionIntroSeen: Boolean,
     val useDynamicColors: Boolean,
-    val lastHomeTab: String
+    val lastHomeTab: String,
+    val initialPreloadCompleted: Boolean
 )
 
 private data class LibrarySnapshot(
@@ -65,7 +66,8 @@ class AppStore(
                 watchedSort = parseSort(prefs[WATCHED_SORT], LibrarySort.UPDATED),
                 permissionIntroSeen = prefs[PERMISSION_INTRO_SEEN] ?: false,
                 useDynamicColors = prefs[DYNAMIC_COLORS] ?: false,
-                lastHomeTab = prefs[LAST_HOME_TAB] ?: "START"
+                lastHomeTab = prefs[LAST_HOME_TAB] ?: "START",
+                initialPreloadCompleted = prefs[INITIAL_PRELOAD_COMPLETED] ?: false
             )
         }
 
@@ -115,7 +117,8 @@ class AppStore(
             watchedSort = settings.watchedSort,
             permissionIntroSeen = settings.permissionIntroSeen,
             useDynamicColors = settings.useDynamicColors,
-            lastHomeTab = settings.lastHomeTab
+            lastHomeTab = settings.lastHomeTab,
+            initialPreloadCompleted = settings.initialPreloadCompleted
         )
     }
 
@@ -177,6 +180,7 @@ class AppStore(
     suspend fun setWatchedSort(sort: LibrarySort) = editSafely("Verlauf-Sortierung speichern") { it[WATCHED_SORT] = sort.name }
     suspend fun setDynamicColors(enabled: Boolean) = editSafely("Farbschema speichern") { it[DYNAMIC_COLORS] = enabled }
     suspend fun setLastHomeTab(tab: String) = editSafely("Navigation speichern") { it[LAST_HOME_TAB] = tab }
+    suspend fun setInitialPreloadCompleted() = editSafely("Erstinitialisierung speichern") { it[INITIAL_PRELOAD_COMPLETED] = true }
 
     suspend fun rememberSearch(query: String) {
         val clean = query.trim()
@@ -214,6 +218,7 @@ class AppStore(
             dao.updateWatchlistMetadata(series.slug, series.title, series.url, series.coverUrl)
             dao.updateProgressMetadata(series.slug, series.title, series.url, series.coverUrl)
             dao.updateEpisodeMetadata(series.slug, series.title, series.url, series.coverUrl)
+            database.seriesMetadataDao().upsert(SeriesMetadataEntity.from(series))
         }
     }
 
@@ -447,6 +452,7 @@ class AppStore(
         private val PERMISSION_INTRO_SEEN = booleanPreferencesKey("permission_intro_seen")
         private val DYNAMIC_COLORS = booleanPreferencesKey("dynamic_colors")
         private val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
+        private val INITIAL_PRELOAD_COMPLETED = booleanPreferencesKey("initial_preload_completed")
         private val ROOM_MIGRATION_DONE = booleanPreferencesKey("room_migration_done")
 
         private val LEGACY_WATCHLIST_JSON = stringPreferencesKey("watchlist_json")

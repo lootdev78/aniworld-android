@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,11 +34,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.BugReport
@@ -66,6 +72,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,11 +102,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.delay
 
 @Composable
 fun HomeScreen(st: UiState, vm: AppViewModel) {
@@ -117,6 +124,18 @@ fun HomeScreen(st: UiState, vm: AppViewModel) {
                 EmptyState(stringResource(R.string.home_empty_title), stringResource(R.string.home_empty_subtitle), Modifier.fillMaxWidth().height(260.dp))
             }
             st.homeFeed.featured?.let { series -> item { HomeHero(series, st.preferences.isFavorite(series.slug), { vm.select(series) }, { vm.toggleFavorite(series) }) } }
+            if (st.catalogPreloading) item {
+                Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .68f)) {
+                    Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.catalog_preloading_metadata), fontWeight = FontWeight.SemiBold)
+                            LinearProgressIndicator(progress = { if (st.catalogPreloadTotal <= 0) 0f else st.catalogPreloadCompleted.toFloat() / st.catalogPreloadTotal.toFloat() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                        }
+                    }
+                }
+            }
             val continueWatching = st.preferences.progress.values.sortedByDescending { it.updatedAt }.take(12)
             if (continueWatching.isNotEmpty()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -197,6 +216,8 @@ private fun LatestEpisodesRow(episodes: List<HomeEpisode>, st: UiState, vm: AppV
 
 @Composable
 fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(st.catalogPage, st.catalogQuery, st.catalogLetter, st.catalogGenre) { gridState.scrollToItem(0) }
     if (st.catalog.items.isEmpty() && !st.catalogLoading) LaunchedEffect(Unit) { vm.loadCatalog() }
     PullToRefreshBox(
         isRefreshing = st.catalogLoading,
@@ -207,20 +228,51 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
             OutlinedTextField(
                 value = st.catalogQuery,
                 onValueChange = vm::setCatalogQuery,
-                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 label = { Text(stringResource(R.string.catalog_search_all)) },
                 singleLine = true
             )
+            if (st.catalogQuery.isBlank() && st.preferences.recentSearches.isNotEmpty()) {
+                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(st.preferences.recentSearches.take(8), key = { it.query }) { entry ->
+                        AssistChip(onClick = { vm.setCatalogQuery(entry.query) }, label = { Text(entry.query) })
+                    }
+                    item { AssistChip(onClick = vm::clearRecentSearches, label = { Text(stringResource(R.string.clear)) }, leadingIcon = { Icon(Icons.Default.ClearAll, null, Modifier.size(16.dp)) }) }
+                }
+            }
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 item { FilterChip(selected = st.catalogLetter == null, onClick = { vm.setCatalogLetter(null) }, label = { Text(stringResource(R.string.all)) }) }
                 items(st.catalog.letters) { letter -> FilterChip(selected = st.catalogLetter == letter, onClick = { vm.setCatalogLetter(letter) }, label = { Text(letter) }) }
             }
-            LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            LazyRow(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 item { FilterChip(selected = st.catalogGenre == null, onClick = { vm.setCatalogGenre(null) }, label = { Text(stringResource(R.string.all_genres)) }, leadingIcon = { Icon(Icons.Default.FilterAlt, null, Modifier.size(16.dp)) }) }
                 items(st.catalog.genres, key = { it }) { genre -> FilterChip(selected = st.catalogGenre == genre, onClick = { vm.setCatalogGenre(genre) }, label = { Text(genre) }) }
             }
-            Text(stringResource(R.string.catalog_count, st.filteredCatalog.size, st.catalog.items.size), Modifier.padding(horizontal = 16.dp, vertical = 8.dp), style = MaterialTheme.typography.labelMedium)
+            if (st.catalogPreloading) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f)
+                ) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CloudDownload, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text(stringResource(R.string.catalog_preloading_metadata), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text("${st.catalogPreloadCompleted}/${st.catalogPreloadTotal}", style = MaterialTheme.typography.labelMedium)
+                        }
+                        LinearProgressIndicator(
+                            progress = { if (st.catalogPreloadTotal <= 0) 0f else st.catalogPreloadCompleted.toFloat() / st.catalogPreloadTotal.toFloat() },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.catalog_count, st.filteredCatalog.size, st.catalog.items.size), style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.catalog_page_indicator, st.catalogPage + 1, st.catalogPageCount), style = MaterialTheme.typography.labelMedium)
+            }
             if (st.catalog.items.isEmpty() && st.catalogLoading) {
                 CatalogSkeleton(Modifier.weight(1f))
             } else if (!st.catalogLoading && st.filteredCatalog.isEmpty()) {
@@ -228,12 +280,13 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
             } else {
                 LazyVerticalGrid(
                     columns = GridCells.Adaptive(if (expanded) 180.dp else 148.dp),
+                    state = gridState,
                     modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(12.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(st.filteredCatalog, key = { it.slug }) { series ->
+                    items(st.pagedCatalog, key = { it.slug }) { series ->
                         AnimePosterCard(
                             series = series,
                             favorite = st.preferences.isFavorite(series.slug),
@@ -245,58 +298,20 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                         )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun SearchScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
-    LaunchedEffect(st.query) {
-        val query = st.query.trim()
-        if (query.length >= 3) {
-            delay(550L)
-            vm.search(query, rememberQuery = false)
-        }
-    }
-    Column(Modifier.fillMaxSize()) {
-        OutlinedTextField(
-            value = st.query,
-            onValueChange = vm::query,
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            label = { Text(stringResource(R.string.search_anime)) },
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = { IconButton(onClick = { vm.search() }) { Icon(Icons.Default.Search, stringResource(R.string.search)) } },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { vm.search() })
-        )
-        if (st.preferences.recentSearches.isNotEmpty()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.recent_searches), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                TextButton(onClick = vm::clearRecentSearches) { Icon(Icons.Default.ClearAll, null); Text(stringResource(R.string.clear)) }
-            }
-            LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(st.preferences.recentSearches, key = { it.query }) { entry -> AssistChip(onClick = { vm.search(entry.query) }, label = { Text(entry.query) }) }
-            }
-        }
-        if (st.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (!st.loading && st.results.isEmpty()) {
-            EmptyState(
-                if (st.query.isBlank()) stringResource(R.string.search_anime) else stringResource(R.string.no_results),
-                if (st.query.isBlank()) stringResource(R.string.search_empty_hint) else stringResource(R.string.search_no_results_hint),
-                Modifier.weight(1f)
-            )
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(if (expanded) 260.dp else 220.dp),
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(st.results, key = { it.slug }) { series ->
-                    AnimeListCard(series, st.preferences.isFavorite(series.slug), st.preferences.watchedCount(series.slug), { vm.select(series) }, { vm.toggleFavorite(series) })
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(onClick = vm::catalogPreviousPage, enabled = st.catalogPage > 0) {
+                        Icon(Icons.Default.ChevronLeft, null)
+                        Text(stringResource(R.string.previous_page))
+                    }
+                    Text(stringResource(R.string.catalog_page_indicator, st.catalogPage + 1, st.catalogPageCount), fontWeight = FontWeight.Bold)
+                    FilledTonalButton(onClick = vm::catalogNextPage, enabled = st.catalogPage + 1 < st.catalogPageCount) {
+                        Text(stringResource(R.string.next_page))
+                        Icon(Icons.Default.ChevronRight, null)
+                    }
                 }
             }
         }
@@ -409,6 +424,9 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     if (st.season == null) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             item {
+                IconButton(onClick = vm::backToSearch) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
+            }
+            item {
                 if (expanded) Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
                     Cover(series.coverUrl, series.title, Modifier.width(240.dp).aspectRatio(.70f))
                     SeriesInfo(series, st, vm, Modifier.weight(1f))
@@ -441,6 +459,7 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     } else {
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = vm::backToSeasons) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
                 Text(if (st.season == 0) stringResource(R.string.movies) else stringResource(R.string.season_number, st.season ?: 0), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 TextButton(onClick = vm::toggleSeasonWatched) { Icon(Icons.Default.DoneAll, null); Text(stringResource(R.string.toggle_all)) }
             }
@@ -472,6 +491,8 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                                 Column(Modifier.weight(1f)) {
                                     Text("${episode.localizedLabel()} · ${episode.localizedDisplayTitle()}", fontWeight = FontWeight.Bold)
                                     if (episode.secondaryTitle.isNotBlank()) Text(episode.secondaryTitle, style = MaterialTheme.typography.bodySmall)
+                                    if (episode.releasedAt.isNotBlank()) Text(episode.releasedAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                    if (episode.description.isNotBlank()) Text(episode.description, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     if (watch != null && !watch.completed && watch.progressFraction > 0f) {
                                         LinearProgressIndicator(progress = { watch.progressFraction }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
                                         Text(stringResource(R.string.progress_percent, (watch.progressFraction * 100).toInt()), style = MaterialTheme.typography.labelSmall)
@@ -491,6 +512,7 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
 private fun SeriesInfo(series: Series, st: UiState, vm: AppViewModel, modifier: Modifier) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(series.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
+        if (series.year.isNotBlank() || series.ageRating.isNotBlank()) Text(listOf(series.year, series.ageRating).filter { it.isNotBlank() }.joinToString("  •  "), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
         if (series.genres.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             series.genres.forEach { AssistChip(onClick = {}, label = { Text(it) }) }
         }
@@ -515,9 +537,10 @@ fun AnimePosterCard(
 ) {
     var menu by remember { mutableStateOf(false) }
     LaunchedEffect(series.slug) { onVisible() }
-    Card(modifier = modifier.combinedClickable(onClick = onOpen, onLongClick = { menu = true }), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(modifier = modifier.combinedClickable(onClick = onOpen, onLongClick = { menu = true }), colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
         Box {
             Cover(series.coverUrl, series.title, Modifier.fillMaxWidth().aspectRatio(.68f))
+            Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Transparent, Color.Black.copy(alpha = .78f)))))
             if (watchedCount > 0) {
                 Surface(
                     modifier = Modifier.align(Alignment.TopStart).padding(6.dp),
@@ -695,31 +718,89 @@ fun EpisodeOptionsDialog(
     onDismiss: () -> Unit,
     onAuto: () -> Unit,
     onLanguage: (Language) -> Unit,
-    onManualHoster: (Hoster) -> Unit
+    onHoster: (Hoster) -> Unit,
+    onHosterWeb: (Hoster) -> Unit
 ) {
     val languages = hosters.map { it.lang }.filter { it != Language.UNKNOWN }.distinct()
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("${episode.localizedLabel()} · ${episode.localizedDisplayTitle()}") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (resolving) LinearProgressIndicator(Modifier.fillMaxWidth())
-                if (languages.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    languages.forEach { lang -> FilterChip(selected = prefs.languagePriority.firstOrNull() == lang, onClick = { onLanguage(lang) }, label = { Text(lang.localizedLabel()) }, leadingIcon = { Icon(Icons.Default.Subtitles, null, Modifier.size(16.dp)) }) }
-                }
-                if (hosters.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    hosters.forEach { hoster -> AssistChip(onClick = { onManualHoster(hoster) }, label = { Text("${localizedHosterName(hoster.name)} · ${hoster.lang.localizedLabel()}") }, leadingIcon = { Icon(Icons.Default.OpenInBrowser, null, Modifier.size(16.dp)) }) }
-                } else Text(stringResource(R.string.no_hosters_web_session))
+    val ordered = hosters.sortedWith(compareBy<Hoster> {
+        prefs.languagePriority.indexOf(it.lang).let { index -> if (index < 0) Int.MAX_VALUE else index }
+    }.thenBy {
+        prefs.hosterPriority.indexOfFirst { preferred -> HosterCatalog.normalize(preferred) == HosterCatalog.normalize(it.name) }.let { index -> if (index < 0) Int.MAX_VALUE else index }
+    })
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Text("${episode.localizedLabel()} · ${episode.localizedDisplayTitle()}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            if (episode.secondaryTitle.isNotBlank()) Text(episode.secondaryTitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (episode.releasedAt.isNotBlank()) Text(episode.releasedAt, color = MaterialTheme.colorScheme.secondary, style = MaterialTheme.typography.labelLarge)
+            if (episode.description.isNotBlank()) Text(episode.description, maxLines = 4, overflow = TextOverflow.Ellipsis)
+            if (resolving) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Button(onClick = onAuto, enabled = !resolving && hosters.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.PlayCircle, null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.play_best_hoster))
             }
-        },
-        confirmButton = { TextButton(onClick = onAuto, enabled = !resolving) { Text(stringResource(R.string.play)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
-    )
+            if (languages.isNotEmpty()) {
+                Text(stringResource(R.string.choose_language), fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    languages.forEach { lang -> FilterChip(selected = prefs.languagePriority.firstOrNull() == lang, onClick = { onLanguage(lang) }, label = { Text(lang.localizedLabel()) }, leadingIcon = { Icon(Icons.Default.Language, null, Modifier.size(16.dp)) }) }
+                }
+            }
+            Text(stringResource(R.string.choose_hoster), fontWeight = FontWeight.Bold)
+            if (ordered.isEmpty()) {
+                Text(stringResource(R.string.no_hosters_web_session), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                ordered.groupBy(Hoster::lang).forEach { (language, languageHosters) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Language, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(8.dp))
+                        Text(language.localizedLabel(), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text(stringResource(R.string.status_hosters_found, languageHosters.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    languageHosters.forEach { hoster ->
+                        val preferred = ordered.firstOrNull()?.redirectUrl == hoster.redirectUrl
+                        Card(
+                            onClick = { onHoster(hoster) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (preferred) {
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = .55f)
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .78f)
+                                }
+                            )
+                        ) {
+                            ListItem(
+                                headlineContent = { Text(localizedHosterName(hoster.name), fontWeight = FontWeight.Bold) },
+                                supportingContent = {
+                                    Text(if (preferred) stringResource(R.string.preferred) else hoster.lang.localizedLabel())
+                                },
+                                leadingContent = {
+                                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary) {
+                                        Icon(Icons.Default.PlayArrow, null, Modifier.padding(9.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                                    }
+                                },
+                                trailingContent = {
+                                    IconButton(onClick = { onHosterWeb(hoster) }) {
+                                        Icon(Icons.Default.OpenInBrowser, stringResource(R.string.media_detector_open))
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text(stringResource(R.string.cancel)) }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsDialog(prefs: AppPreferences, vm: AppViewModel, onDismiss: () -> Unit, onPermissions: () -> Unit) {
+fun SettingsDialog(prefs: AppPreferences, vm: AppViewModel, onDismiss: () -> Unit, onPermissions: () -> Unit, onDiagnostics: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.settings)) },
@@ -736,6 +817,7 @@ fun SettingsDialog(prefs: AppPreferences, vm: AppViewModel, onDismiss: () -> Uni
                 item { SettingSwitch(stringResource(R.string.verify_stream_before_start), stringResource(R.string.verify_stream_before_start_desc), prefs.verifyStreams, vm::setVerifyStreams) }
                 item { SettingSwitch(stringResource(R.string.dynamic_colors), stringResource(R.string.dynamic_colors_desc), prefs.useDynamicColors, vm::setDynamicColors) }
                 item { OutlinedButton(onClick = vm::openDefaultChallenge) { Icon(Icons.Default.Security, null); Text(stringResource(R.string.web_verification)) } }
+                item { OutlinedButton(onClick = onDiagnostics) { Icon(Icons.Default.BugReport, null); Text(stringResource(R.string.diagnostics)) } }
                 item { OutlinedButton(onClick = onPermissions) { Text(stringResource(R.string.manage_permissions)) } }
             }
         },

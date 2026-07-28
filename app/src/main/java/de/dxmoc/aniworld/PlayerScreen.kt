@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -41,6 +43,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 @Composable
 fun PlayerScreen(
     playback: ResolvedPlayback,
+    hasPrevious: Boolean,
+    hasNext: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
     onClose: (Long, Long) -> Unit,
     onProgress: (Long, Long, Boolean) -> Unit,
     onEnded: () -> Unit,
@@ -94,6 +100,24 @@ fun PlayerScreen(
                 Icon(Icons.Default.Close, stringResource(R.string.player_close), tint = Color.White)
             }
             Spacer(Modifier.weight(1f))
+            IconButton(
+                onClick = {
+                    onProgress(position, duration, true)
+                    onPrevious()
+                },
+                enabled = hasPrevious
+            ) {
+                Icon(Icons.Default.SkipPrevious, stringResource(R.string.player_previous_episode), tint = if (hasPrevious) Color.White else Color.White.copy(alpha = .32f))
+            }
+            IconButton(
+                onClick = {
+                    onProgress(position, duration, true)
+                    onNext()
+                },
+                enabled = hasNext
+            ) {
+                Icon(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), tint = if (hasNext) Color.White else Color.White.copy(alpha = .32f))
+            }
         }
 
         Surface(

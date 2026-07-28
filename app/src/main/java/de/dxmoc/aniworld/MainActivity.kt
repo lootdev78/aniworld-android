@@ -14,26 +14,19 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -44,7 +37,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
@@ -56,10 +48,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -123,7 +114,6 @@ fun AniWorldTheme(useDynamicColors: Boolean, content: @Composable () -> Unit) {
 enum class HomeTab(val route: String, @StringRes val labelRes: Int) {
     START("start", R.string.tab_start),
     CATALOG("catalog", R.string.tab_catalog),
-    SEARCH("search", R.string.tab_search),
     FAVORITES("favorites", R.string.tab_favorites),
     HISTORY("history", R.string.tab_history);
 
@@ -180,12 +170,25 @@ fun AniWorldApp(vm: AppViewModel) {
     }
 
     st.challenge?.let { request ->
-        ChallengeScreen(request, st.challengeChecking, st.challengeStatus, vm::verifyChallenge, vm::clearChallengeSession, vm::closeChallenge)
+        ChallengeScreen(
+            request = request,
+            checking = st.challengeChecking,
+            sessionStatus = st.challengeStatus,
+            onVerify = vm::verifyChallenge,
+            onClearSession = vm::clearChallengeSession,
+            onPlayDetectedMedia = vm::playDetectedMedia,
+            onClose = vm::closeChallenge
+        )
         return
     }
     st.playback?.let { playback ->
+        val currentIndex = st.episodes.indexOfFirst { it.key == playback.episode.key }
         PlayerScreen(
             playback = playback,
+            hasPrevious = currentIndex > 0,
+            hasNext = currentIndex >= 0 && currentIndex < st.episodes.lastIndex,
+            onPrevious = vm::playPreviousEpisode,
+            onNext = vm::playNextEpisode,
             onClose = vm::closePlayer,
             onProgress = vm::onPlaybackProgress,
             onEnded = vm::onPlaybackEnded,
@@ -211,47 +214,12 @@ fun AniWorldApp(vm: AppViewModel) {
             Scaffold(
                 modifier = Modifier.weight(1f),
                 snackbarHost = { SnackbarHost(snackbarHostState) },
-                topBar = {
-                    TopAppBar(
-                        title = {
-                            Column {
-                                Text(st.selected?.takeIf { inDetail }?.title ?: stringResource(R.string.app_name), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    when {
-                                        inDetail && st.season == null -> stringResource(R.string.seasons_and_movies)
-                                        inDetail && st.season == 0 -> stringResource(R.string.movies)
-                                        inDetail -> stringResource(R.string.season_number, st.season ?: 0)
-                                        else -> stringResource(currentTab.labelRes)
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        },
-                        navigationIcon = {
-                            if (inDetail) IconButton(onClick = {
-                                if (st.season != null) vm.backToSeasons() else {
-                                    vm.backToSearch()
-                                    navController.popBackStack()
-                                }
-                            }) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
-                        },
-                        actions = {
-                            val selected = st.selected
-                            if (inDetail && selected != null) {
-                                IconButton(onClick = { vm.toggleFavorite(selected) }) {
-                                    Icon(Icons.Default.Favorite, if (st.preferences.isFavorite(selected.slug)) stringResource(R.string.remove_favorite) else stringResource(R.string.add_favorite), tint = if (st.preferences.isFavorite(selected.slug)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                                }
-                            } else when (currentTab) {
-                                HomeTab.START -> IconButton(onClick = { vm.loadHome(true) }) { Icon(Icons.Default.Refresh, stringResource(R.string.refresh)) }
-                                HomeTab.CATALOG -> IconButton(onClick = { vm.loadCatalog(true) }) { Icon(Icons.Default.Refresh, stringResource(R.string.refresh_catalog)) }
-                                else -> Unit
-                            }
-                            IconButton(onClick = { diagnosticsOpen = true }) { Icon(Icons.Default.BugReport, stringResource(R.string.diagnostics)) }
-                            IconButton(onClick = vm::openDefaultChallenge) { Icon(Icons.Default.Security, stringResource(R.string.verification)) }
-                            IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
+                floatingActionButton = {
+                    if (!inDetail) {
+                        androidx.compose.material3.SmallFloatingActionButton(onClick = { settingsOpen = true }) {
+                            Icon(Icons.Default.Settings, stringResource(R.string.settings))
                         }
-                    )
+                    }
                 },
                 bottomBar = { if (!expanded && !inDetail) AppBottomBar(currentTab, ::navigateToTab) }
             ) { padding ->
@@ -259,7 +227,6 @@ fun AniWorldApp(vm: AppViewModel) {
                     NavHost(navController = navController, startDestination = HomeTab.START.route) {
                         composable(HomeTab.START.route) { HomeScreen(st, vm) }
                         composable(HomeTab.CATALOG.route) { CatalogScreen(st, vm, expanded) }
-                        composable(HomeTab.SEARCH.route) { SearchScreen(st, vm, expanded) }
                         composable(HomeTab.FAVORITES.route) { FavoritesScreen(st, vm, expanded) }
                         composable(HomeTab.HISTORY.route) { HistoryScreen(st, vm, expanded) }
                         composable(DETAIL_ROUTE) {
@@ -282,10 +249,17 @@ fun AniWorldApp(vm: AppViewModel) {
             vm::dismissEpisodeOptions,
             { vm.playEpisode(episode) },
             { vm.playEpisode(episode, it) },
-            { vm.openManualPage(it.redirectUrl, localizedHosterName(context, it.name)) }
+            { hoster -> vm.playEpisode(episode, hoster.lang.takeIf { it != Language.UNKNOWN }, hoster) },
+            { hoster -> vm.openHosterPage(episode, hoster) }
         )
     }
-    if (settingsOpen) SettingsDialog(st.preferences, vm, { settingsOpen = false }, { permissionOpen = true })
+    if (settingsOpen) SettingsDialog(
+        prefs = st.preferences,
+        vm = vm,
+        onDismiss = { settingsOpen = false },
+        onPermissions = { permissionOpen = true },
+        onDiagnostics = { settingsOpen = false; diagnosticsOpen = true }
+    )
     if (diagnosticsOpen) DiagnosticDialog(st.diagnostics, vm::clearDiagnostics, { diagnosticsOpen = false }, context)
     if (permissionOpen) PermissionDialog(
         onDone = { vm.markPermissionIntroSeen(); permissionOpen = false },
@@ -295,16 +269,22 @@ fun AniWorldApp(vm: AppViewModel) {
 
 @Composable
 private fun AppBottomBar(tab: HomeTab, onTab: (HomeTab) -> Unit) {
-    NavigationBar {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+    NavigationBar(
+        modifier = Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp)),
+        containerColor = Color(0xF2111216),
+        tonalElevation = 8.dp
+    ) {
         HomeTab.entries.forEach { item ->
             NavigationBarItem(selected = tab == item, onClick = { onTab(item) }, icon = { Icon(tabIcon(item), null) }, label = { Text(stringResource(item.labelRes)) })
         }
+    }
     }
 }
 
 @Composable
 private fun AppNavigationRail(tab: HomeTab, onTab: (HomeTab) -> Unit) {
-    NavigationRail(Modifier.width(92.dp)) {
+    NavigationRail(Modifier.width(92.dp), containerColor = Color(0xFF0B0C10)) {
         HomeTab.entries.forEach { item ->
             NavigationRailItem(selected = tab == item, onClick = { onTab(item) }, icon = { Icon(tabIcon(item), null) }, label = { Text(stringResource(item.labelRes)) })
         }
@@ -314,7 +294,6 @@ private fun AppNavigationRail(tab: HomeTab, onTab: (HomeTab) -> Unit) {
 private fun tabIcon(tab: HomeTab) = when (tab) {
     HomeTab.START -> Icons.Default.Home
     HomeTab.CATALOG -> Icons.Default.Explore
-    HomeTab.SEARCH -> Icons.Default.Search
     HomeTab.FAVORITES -> Icons.Default.Favorite
     HomeTab.HISTORY -> Icons.Default.History
 }

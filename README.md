@@ -4,7 +4,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.1.3-icons-i18n`
+`1.4.0-direct-media-detector`
 
 
 ## App-Icon und Sprachen
@@ -28,10 +28,12 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 - „Derzeit beliebt“
 - „Das sehen andere AniWorld Nutzer“
 - persönliche „Weiterschauen“-Reihe
-- responsive Navigation mit Bottom Bar auf Smartphones und Navigation Rail auf größeren Displays
+- reduzierte Navigation ohne obere App-Leiste; schwebende Bottom Bar auf Smartphones und Navigation Rail auf größeren Displays
 - Material-3-Dark-Mode, optional dynamische Android-Farben
 - Pull-to-refresh, Skeleton-Ladezustände, leere Zustände und verständliche Fehlermeldungen
-- Cover, Titel, Genres, Beschreibungen und Fortschrittsanzeigen
+- Cover, Anime-/Film-/Folgentitel, Genres, Veröffentlichungsjahr, Altersangabe, Beschreibungen und Fortschrittsanzeigen
+- Katalogsuche mit gespeicherten Suchbegriffen, A–Z- und Genre-Filter
+- lokale Katalogseiten mit genau 15 Einträgen pro Seite
 
 ## Bibliothek und Verlauf
 
@@ -42,17 +44,19 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 - Staffelstatus und Fortschrittsanzeige
 - Filter für alle, begonnene, ungesehene und gesehene Inhalte
 - zuletzt verwendete Suchbegriffe
-- Suchvorschläge mit verzögerter Live-Suche
+- gespeicherte Katalogsuchbegriffe mit verzögerter Speicherung
 - Wiederherstellung der zuletzt geöffneten Serie und Staffel nach einem Prozess-Neustart
 
 Die Nutzerdaten werden ausschließlich lokal in einer Room-Datenbank gespeichert. Android-Backup, Geräteübertragung, Cloud-Backup sowie Export/Import sind nicht enthalten; `android:allowBackup` ist deaktiviert.
 
 ## Offline und Performance
 
-- lokaler Cache für Startseite, Katalog und Metadatenseiten
+- Startseite und vollständiger alphabetischer Katalog werden beim ersten Start im Hintergrund vorgeladen
+- lokaler Room-Cache für Startseite, Katalog und Anime-Metadaten
+- Coil-Disk-Cache und Hintergrund-Prefetch für bereits ermittelte Anime-Cover
 - zeitlich begrenzte Cache-Einträge
 - veraltete Cache-Kopie als Offline-Fallback bei Netzwerkfehlern
-- begrenzte parallele Metadatenanfragen
+- begrenzte parallele Katalog- und Metadatenanfragen
 - automatische Wiederholungsversuche mit kurzem Backoff
 - Metadaten werden in Favoriten, Verlauf und Weiterschauen nachgeführt
 
@@ -62,13 +66,16 @@ Die Nutzerdaten werden ausschließlich lokal in einer Room-Datenbank gespeichert
 - Serien-, Staffel-, Film- und Episodennavigation
 - Startseiten- und Katalogparser
 - Sprach- und Hosterprioritäten
+- gruppierte Hoster-Auswahl nach Sprache, direkter bevorzugter Hoster und interner Medien-Detector
 - Hoster-Fallback und optionale Stream-Erreichbarkeitsprüfung
 - Resolver-Diagnose
 - manuell bedienbare WebView für eine eventuell erforderliche CAPTCHA-/Cloudflare-Verifizierung
 - gemeinsamer Cookie-Speicher für WebView und OkHttp
 - Fortsetzen der unterbrochenen Aktion nach erfolgreicher manueller Verifizierung
+- generische Erkennung direkt angeforderter HLS-, DASH-, SmoothStreaming- und progressiver Medien-URLs in der manuellen Hoster-WebView
+- Übergabe von Referer, User-Agent und vorhandenen Session-Cookies an Media3
 
-Die App löst Web-Challenges nicht automatisch und umgeht keine Schutzprüfung. Der Nutzer führt eine eventuell angezeigte Prüfung selbst durch.
+Die App löst Web-Challenges nicht automatisch und umgeht keine Schutzprüfung. Der Nutzer führt eine eventuell angezeigte Prüfung selbst durch. Der Medien-Detector verarbeitet ausschließlich bereits sichtbare HTTP(S)-Anfragen mit einem eindeutig Media3-kompatiblen Format. Er entschlüsselt keine Skripte, rekonstruiert keine Tokens und umgeht keine Zugriffskontrollen.
 
 ## Player
 
@@ -77,13 +84,16 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - Tippen: Pause oder Weiter
 - vertikale Geste links: Bildschirmhelligkeit
 - vertikale Geste rechts: Medienlautstärke
+- HLS-, DASH-, SmoothStreaming- und progressive Media3-Wiedergabe
 - Schließen und lokales Speichern des Fortschritts
+- vorherige/nächste Folge innerhalb der geöffneten Staffel
+- Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste
 
 Es gibt keine Qualitäts-, Spur-, Geschwindigkeits-, Chromecast-, Picture-in-Picture- oder Auto-Weiter-Menüs.
 
 ## Navigation
 
-Die App verwendet Navigation Compose für Start, Katalog, Suche, Favoriten, Verlauf und Details. Ein lokaler Deep Link kann eine Serie öffnen:
+Die App verwendet Navigation Compose für Start, Katalog, Favoriten, Verlauf und Details. Die separate Suchseite wurde entfernt; Suche und Filter befinden sich direkt im Katalog. Ein lokaler Deep Link kann eine Serie öffnen:
 
 ```text
 aniworldapp://anime/<slug>

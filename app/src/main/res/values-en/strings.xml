@@ -187,4 +187,26 @@
     <string name="cookies_more">…</string>
     <string name="challenge_captcha_required">%1$s requires a manual CAPTCHA/Turnstile check.</string>
     <string name="challenge_browser_required">%1$s requires manual browser verification.</string>
+
+    <string name="catalog_preloading_metadata">Preparing anime metadata for offline use</string>
+    <string name="catalog_page_indicator">Page %1$d of %2$d</string>
+    <string name="previous_page">Previous</string>
+    <string name="next_page">Next</string>
+    <string name="player_previous_episode">Previous episode</string>
+    <string name="player_next_episode">Next episode</string>
+    <string name="play_best_hoster">Play with best available hoster</string>
+    <string name="choose_language">Choose language</string>
+    <string name="choose_hoster">Choose hoster</string>
+    <string name="preferred">Preferred</string>
+
+    <string name="media_detector_title">Detected media</string>
+    <string name="media_detector_count">%1$d found</string>
+    <string name="media_detector_empty">Start the video on the page. Direct HLS, DASH, SmoothStreaming and progressive media requests will appear here.</string>
+    <string name="media_detector_play">Play</string>
+    <string name="media_detector_direct_only">Only directly requested media URLs are detected. Script decryption, token reconstruction and access-control bypasses are not performed.</string>
+    <string name="media_detector_instruction">Open or start the video on this page. The app will list direct Media3-compatible requests that the page makes.</string>
+    <string name="media_detector_opening">Opening hoster page for direct media detection</string>
+    <string name="media_detector_playing">Playing %1$s from %2$s</string>
+    <string name="media_detector_open">Detect direct media</string>
+
 </resources>

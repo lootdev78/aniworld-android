@@ -8,14 +8,13 @@ plugins {
 android {
     namespace = "de.dxmoc.aniworld"
     compileSdk = 36
-    ndkVersion = "29.0.14033849"
 
     defaultConfig {
         applicationId = "de.dxmoc.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 33
-        versionName = "1.1.3"
+        versionCode = 43
+        versionName = "1.4.0-direct-media-detector"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -90,6 +89,8 @@ dependencies {
 
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.exoplayer.dash)
+    implementation(libs.androidx.media3.exoplayer.smoothstreaming)
     implementation(libs.androidx.media3.ui)
     implementation(libs.androidx.media3.datasource.okhttp)
 

@@ -9,7 +9,9 @@ data class Series(
     val url: String,
     val description: String = "",
     val coverUrl: String = "",
-    val genres: List<String> = emptyList()
+    val genres: List<String> = emptyList(),
+    val year: String = "",
+    val ageRating: String = ""
 )
 
 data class Episode(
@@ -17,6 +19,8 @@ data class Episode(
     val number: Int,
     val title: String,
     val secondaryTitle: String = "",
+    val description: String = "",
+    val releasedAt: String = "",
     val url: String,
     val seriesSlug: String,
     val seriesTitle: String
@@ -49,7 +53,8 @@ data class CatalogData(
     val items: List<Series> = emptyList(),
     val genres: List<String> = emptyList(),
     val letters: List<String> = listOf("#") + ('A'..'Z').map(Char::toString),
-    val loadedAt: Long = 0L
+    val loadedAt: Long = 0L,
+    val sourcePages: Int = 0
 )
 
 data class Hoster(val name: String, val langKey: Int, val lang: Language, val redirectUrl: String)
@@ -58,7 +63,8 @@ data class StreamSource(
     val url: String,
     val headers: Map<String, String> = emptyMap(),
     val hoster: String = "",
-    val language: Language = Language.GER_DUB
+    val language: Language = Language.GER_DUB,
+    val mimeType: String? = null
 )
 
 data class ResolvedPlayback(
@@ -75,7 +81,8 @@ data class ChallengeRequest(
     val url: String,
     val reason: String,
     val title: String = "",
-    val retryAfterSuccess: Boolean = true
+    val retryAfterSuccess: Boolean = true,
+    val mediaDetectionEnabled: Boolean = false
 )
 
 data class SessionCheck(val success: Boolean, val message: String)
@@ -85,6 +92,11 @@ data class ResolveResult(
     val selectedHoster: Hoster?,
     val availableHosters: List<Hoster>,
     val log: List<String>
+)
+
+data class EpisodePage(
+    val episode: Episode,
+    val hosters: List<Hoster>
 )
 
 enum class Language(val token: String, @StringRes val labelRes: Int) {
@@ -210,7 +222,8 @@ data class AppPreferences(
     val watchedSort: LibrarySort = LibrarySort.UPDATED,
     val permissionIntroSeen: Boolean = false,
     val useDynamicColors: Boolean = false,
-    val lastHomeTab: String = "START"
+    val lastHomeTab: String = "START",
+    val initialPreloadCompleted: Boolean = false
 ) {
     fun isFavorite(slug: String): Boolean = favorites.any { it.slug == slug }
     fun episodeState(episode: Episode): EpisodeWatchState? = episodeWatchStates[episode.key]

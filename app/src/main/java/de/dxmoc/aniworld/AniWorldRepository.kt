@@ -3,6 +3,10 @@ package de.dxmoc.aniworld
 import android.content.Context
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -20,6 +24,7 @@ class AniWorldRepository(
     private val baseUrl: String = "https://aniworld.to",
     private val sessions: ChallengeSessionManager = ChallengeSessionManager(context),
     private val cache: RepositoryCache? = null,
+    private val metadataDao: SeriesMetadataDao? = null,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor(WebViewCookieBridgeInterceptor(sessions))
         .followRedirects(true)
@@ -107,36 +112,131 @@ class AniWorldRepository(
     }
 
     suspend fun homeFeed(forceRefresh: Boolean = false): HomeFeed = withContext(Dispatchers.IO) {
-        val feed = parseHomeFeed(getText("$baseUrl/", forceRefresh = forceRefresh))
+        val parsed = parseHomeFeed(getText("$baseUrl/", forceRefresh = forceRefresh))
+        val cached = metadataDao?.all().orEmpty().associateBy { it.slug }
+        var feed = parsed.withMetadata(cached)
         val hero = feed.featured
-        if (hero == null || (hero.coverUrl.isNotBlank() && hero.description.isNotBlank())) {
-            feed
-        } else {
-            val detailed = runCatching { parseSeriesDetails(getText(hero.url), hero) }.getOrDefault(hero)
-            feed.copy(
-                featured = detailed,
-                popularAtAniWorld = feed.popularAtAniWorld.map { if (it.slug == detailed.slug) detailed else it },
-                communityWatching = feed.communityWatching.map { if (it.slug == detailed.slug) detailed else it },
-                currentlyPopular = feed.currentlyPopular.map { if (it.slug == detailed.slug) detailed else it },
-                newAnimes = feed.newAnimes.map { if (it.slug == detailed.slug) detailed else it }
-            )
+        if (hero != null && (hero.coverUrl.isBlank() || hero.description.isBlank())) {
+            val detailed = runCatching { enrichSeries(hero, forceRefresh) }.getOrDefault(hero)
+            feed = feed.replaceSeries(detailed)
         }
+        feed
     }
 
     suspend fun catalog(forceRefresh: Boolean = false): CatalogData = withContext(Dispatchers.IO) {
-        val markup = getText("$baseUrl/animes", forceRefresh = forceRefresh)
-        parseCatalog(markup)
+        val cachedModels = metadataDao?.all().orEmpty().map(SeriesMetadataEntity::toModel)
+        try {
+            val bySlug = linkedMapOf<String, Series>()
+            val firstPages = mutableListOf<CatalogPage>()
+            for (keys in CATALOG_KEYS.chunked(CATALOG_FETCH_CONCURRENCY)) {
+                firstPages.addAll(
+                    coroutineScope {
+                        keys.map { catalogKey ->
+                            async {
+                                val url = "$baseUrl/katalog/$catalogKey"
+                                CatalogPage(catalogKey, 1, url, getText(url, forceRefresh = forceRefresh))
+                            }
+                        }.awaitAll()
+                    }
+                )
+            }
+            firstPages.forEach { page ->
+                parseCatalogPage(page.markup, page.url).forEach { mergeCatalogSeries(bySlug, it) }
+            }
+            val remaining = firstPages.flatMap { first ->
+                val pageCount = parseCatalogPageCount(first.markup, first.catalogKey)
+                (2..pageCount).map { page ->
+                    val url = "$baseUrl/katalog/${first.catalogKey}/$page"
+                    Triple(first.catalogKey, page, url)
+                }
+            }
+            val additionalPages = mutableListOf<CatalogPage>()
+            for (pages in remaining.chunked(CATALOG_FETCH_CONCURRENCY)) {
+                additionalPages.addAll(
+                    coroutineScope {
+                        pages.map { (catalogKey, page, url) ->
+                            async {
+                                CatalogPage(catalogKey, page, url, getText(url, forceRefresh = forceRefresh))
+                            }
+                        }.awaitAll()
+                    }
+                )
+            }
+            additionalPages.forEach { page ->
+                parseCatalogPage(page.markup, page.url).forEach { mergeCatalogSeries(bySlug, it) }
+            }
+            cachedModels.forEach { cached ->
+                val current = bySlug[cached.slug] ?: return@forEach
+                bySlug[cached.slug] = mergeSeriesMetadata(current, cached)
+            }
+            val items = bySlug.values.sortedBy { it.title.lowercase() }
+            if (items.isNotEmpty()) metadataDao?.upsertAll(items.map { SeriesMetadataEntity.from(it) })
+            CatalogData(
+                items = items,
+                genres = items.flatMap { it.genres }.filter(String::isNotBlank).distinct().sortedBy { it.lowercase() },
+                loadedAt = System.currentTimeMillis(),
+                sourcePages = firstPages.size + additionalPages.size
+            )
+        } catch (error: Exception) {
+            if (cachedModels.isNotEmpty()) {
+                AppLogger.warn("Katalog", "Offline-Metadaten werden verwendet", error.message.orEmpty())
+                CatalogData(
+                    items = cachedModels.sortedBy { it.title.lowercase() },
+                    genres = cachedModels.flatMap { it.genres }.filter(String::isNotBlank).distinct().sortedBy { it.lowercase() },
+                    loadedAt = System.currentTimeMillis(),
+                    sourcePages = 0
+                )
+            } else throw error
+        }
     }
 
-    suspend fun enrichSeries(series: Series): Series = withContext(Dispatchers.IO) {
-        if (series.coverUrl.isNotBlank() && series.description.isNotBlank()) series
-        else parseSeriesDetails(getText(series.url), series)
+    suspend fun enrichSeries(series: Series, forceRefresh: Boolean = false): Series = withContext(Dispatchers.IO) {
+        val cached = metadataDao?.get(series.slug)
+        val cacheFresh = cached != null && System.currentTimeMillis() - cached.updatedAt < METADATA_TTL_MS
+        val cachedModel = cached?.toModel()
+        val mergedCached = cachedModel?.let { mergeSeriesMetadata(series, it) } ?: series
+        if (!forceRefresh && cacheFresh && mergedCached.hasCompleteMetadata()) return@withContext mergedCached
+        if (!forceRefresh && series.hasCompleteMetadata()) {
+            metadataDao?.upsert(SeriesMetadataEntity.from(series))
+            return@withContext series
+        }
+        val detailed = parseSeriesDetails(getText(series.url, forceRefresh = forceRefresh), mergedCached)
+        metadataDao?.upsert(SeriesMetadataEntity.from(detailed))
+        detailed
     }
 
-    suspend fun seriesDetails(series: Series): Series = withContext(Dispatchers.IO) {
-        val markup = getText(series.url)
-        parseSeriesDetails(markup, series)
+    suspend fun preloadCatalogMetadata(
+        items: List<Series>,
+        onProgress: suspend (completed: Int, total: Int, series: Series?) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        val existing = metadataDao?.all().orEmpty().associateBy { it.slug }
+        val total = items.size
+        val queue = items.filter { item ->
+            val cached = existing[item.slug]
+            cached == null || !cached.toModel().hasCompleteMetadata() ||
+                System.currentTimeMillis() - cached.updatedAt >= METADATA_TTL_MS
+        }
+        var completed = total - queue.size
+        onProgress(completed, total, null)
+        for (batch in queue.chunked(3)) {
+            val results = coroutineScope {
+                batch.map { item ->
+                    async {
+                        runCatching { enrichSeries(item, forceRefresh = true) }
+                            .onFailure { AppLogger.warn("Metadaten", "${item.title} konnte nicht vorgeladen werden", it.message.orEmpty()) }
+                            .getOrDefault(item)
+                    }
+                }.awaitAll()
+            }
+            for (result in results) {
+                completed++
+                onProgress(completed, total, result)
+            }
+            delay(180L)
+        }
     }
+
+    suspend fun seriesDetails(series: Series): Series = enrichSeries(series)
 
     suspend fun seasons(series: Series): List<Int> = withContext(Dispatchers.IO) {
         parseSeasons(getText(series.url), series.slug)
@@ -147,20 +247,28 @@ class AniWorldRepository(
         parseEpisodes(getText(baseUrl + path), series, season)
     }
 
-    suspend fun listHosters(episode: Episode): List<Hoster> = withContext(Dispatchers.IO) {
-        parseHosters(getText(episode.url))
+    suspend fun episodePage(episode: Episode): EpisodePage = withContext(Dispatchers.IO) {
+        val markup = getText(episode.url)
+        EpisodePage(parseEpisodeDetails(markup, episode), parseHosters(markup))
     }
+
+    suspend fun listHosters(episode: Episode): List<Hoster> = episodePage(episode).hosters
 
     suspend fun resolveEpisode(
         episode: Episode,
         languagePriority: List<Language>,
         hosterPriority: List<String>,
         verifyStreams: Boolean = true,
-        languageOverride: Language? = null
+        languageOverride: Language? = null,
+        hosterOverride: Hoster? = null
     ): ResolveResult = withContext(Dispatchers.IO) {
         val markup = getText(episode.url)
         val hosters = parseHosters(markup)
-        val ordered = orderHosters(hosters, languagePriority, hosterPriority, languageOverride)
+        val ordered = if (hosterOverride == null) {
+            orderHosters(hosters, languagePriority, hosterPriority, languageOverride)
+        } else {
+            hosters.filter { it.redirectUrl == hosterOverride.redirectUrl }
+        }
         val log = mutableListOf<String>()
         val langs = availableLanguages(hosters, languagePriority)
         if (langs.isNotEmpty()) log += "Sprachen: ${langs.joinToString { it.localizedLabel(context) }}"
@@ -193,46 +301,76 @@ class AniWorldRepository(
         ResolveResult(null, null, hosters, log)
     }
 
-    private fun parseCatalog(markup: String): CatalogData {
-        val doc = Jsoup.parse(markup, "$baseUrl/animes")
-        val bySlug = linkedMapOf<String, Series>()
-        val genres = linkedSetOf<String>()
-        doc.select("h3").forEach { heading ->
-            val genre = clean(heading.text())
-            if (genre.isBlank() || genre.length > 40) return@forEach
-            val sectionGenres = mutableListOf<Element>()
-            var sibling = heading.nextElementSibling()
-            while (sibling != null && sibling.tagName() != "h3") {
-                sectionGenres.add(sibling)
-                sibling = sibling.nextElementSibling()
-            }
-            val anchors = sectionGenres.flatMap { it.select("a[href]") }
-            var accepted = 0
-            anchors.forEach { anchor ->
-                val series = seriesFromAnchor(anchor) ?: return@forEach
-                val existing = bySlug[series.slug]
-                bySlug[series.slug] = if (existing == null) {
-                    series.copy(genres = (series.genres + genre).filter(String::isNotBlank).distinct())
-                } else {
-                    existing.copy(
-                        coverUrl = existing.coverUrl.ifBlank { series.coverUrl },
-                        description = existing.description.ifBlank { series.description },
-                        genres = (existing.genres + series.genres + genre).filter(String::isNotBlank).distinct()
-                    )
-                }
-                accepted++
-            }
-            if (accepted > 0) genres += genre
+    private data class CatalogPage(
+        val catalogKey: String,
+        val page: Int,
+        val url: String,
+        val markup: String
+    )
+
+    private fun parseCatalogPage(markup: String, pageUrl: String): List<Series> {
+        val doc = Jsoup.parse(markup, pageUrl)
+        val seen = linkedSetOf<String>()
+        return doc.select("a[href]").mapNotNull { anchor ->
+            seriesFromAnchor(anchor)?.takeIf { seen.add(it.slug) }
         }
-        if (bySlug.isEmpty()) {
-            doc.select("a[href*=/anime/stream/]").forEach { anchor ->
-                seriesFromAnchor(anchor)?.let { bySlug.putIfAbsent(it.slug, it) }
-            }
-        }
-        return CatalogData(
-            items = bySlug.values.sortedBy { it.title.lowercase() },
-            genres = genres.sortedBy { it.lowercase() },
-            loadedAt = System.currentTimeMillis()
+    }
+
+    private fun parseCatalogPageCount(markup: String, catalogKey: String): Int {
+        val doc = Jsoup.parse(markup, "$baseUrl/katalog/$catalogKey")
+        val pattern = Regex("^/katalog/${Regex.escape(catalogKey)}(?:/(\\d+))?/?$", RegexOption.IGNORE_CASE)
+        return doc.select("a[href]").mapNotNull { anchor ->
+            val path = pathOf(anchor) ?: return@mapNotNull null
+            val match = pattern.matchEntire(path) ?: return@mapNotNull null
+            match.groupValues.getOrNull(1)?.toIntOrNull() ?: 1
+        }.maxOrNull()?.coerceAtLeast(1) ?: 1
+    }
+
+    private fun mergeCatalogSeries(target: MutableMap<String, Series>, incoming: Series) {
+        val current = target[incoming.slug]
+        target[incoming.slug] = if (current == null) incoming else mergeSeriesMetadata(current, incoming)
+    }
+
+    private fun mergeSeriesMetadata(base: Series, metadata: Series): Series = base.copy(
+        title = metadata.title.ifBlank { base.title },
+        description = metadata.description.ifBlank { base.description },
+        coverUrl = metadata.coverUrl.ifBlank { base.coverUrl },
+        genres = (base.genres + metadata.genres).filter(String::isNotBlank).distinct(),
+        year = metadata.year.ifBlank { base.year },
+        ageRating = metadata.ageRating.ifBlank { base.ageRating }
+    )
+
+    private fun Series.hasCompleteMetadata(): Boolean =
+        title.isNotBlank() && coverUrl.isNotBlank() && description.isNotBlank() && genres.isNotEmpty()
+
+    private fun HomeFeed.withMetadata(cached: Map<String, SeriesMetadataEntity>): HomeFeed {
+        fun apply(series: Series): Series = cached[series.slug]?.toModel()?.let { mergeSeriesMetadata(series, it) } ?: series
+        return copy(
+            featured = featured?.let(::apply),
+            popularAtAniWorld = popularAtAniWorld.map(::apply),
+            latestEpisodes = latestEpisodes.map { item ->
+                val detailed = apply(item.series)
+                item.copy(series = detailed, episode = item.episode.copy(seriesTitle = detailed.title))
+            },
+            newAnimes = newAnimes.map(::apply),
+            currentlyPopular = currentlyPopular.map(::apply),
+            communityWatching = communityWatching.map(::apply)
+        )
+    }
+
+    private fun HomeFeed.replaceSeries(detailed: Series): HomeFeed {
+        fun replace(item: Series): Series = if (item.slug == detailed.slug) detailed else item
+        return copy(
+            featured = featured?.let(::replace),
+            popularAtAniWorld = popularAtAniWorld.map(::replace),
+            latestEpisodes = latestEpisodes.map { item ->
+                if (item.series.slug == detailed.slug) {
+                    item.copy(series = detailed, episode = item.episode.copy(seriesTitle = detailed.title))
+                } else item
+            },
+            newAnimes = newAnimes.map(::replace),
+            currentlyPopular = currentlyPopular.map(::replace),
+            communityWatching = communityWatching.map(::replace)
         )
     }
 
@@ -266,66 +404,89 @@ class AniWorldRepository(
     }
 
     private fun parseLatestEpisodes(doc: Document): List<HomeEpisode> {
-        val episodeRegex = Regex("^/anime/stream/([^/]+)/staffel-(\\d+)/episode-(\\d+)/?$")
-        val movieRegex = Regex("^/anime/stream/([^/]+)/filme/film-(\\d+)/?$")
-        val dateRegex = Regex("(?:Mo|Di|Mi|Do|Fr|Sa|So),?\\s*\\d{1,2}\\.\\d{1,2}\\.\\d{4}\\s+\\d{1,2}:\\d{2}\\s+Uhr", RegexOption.IGNORE_CASE)
-        return sectionAnchors(doc, "Die 50 neuesten Episoden").mapNotNull { anchor ->
-            val path = pathOf(anchor) ?: return@mapNotNull null
+        val episodeRegex = Regex("""^/anime/stream/([^/]+)/staffel-(\d+)/episode-(\d+)/?$""")
+        val movieRegex = Regex("""^/anime/stream/([^/]+)/filme/film-(\d+)/?$""")
+        val dateRegex = Regex("""(?:Mo|Di|Mi|Do|Fr|Sa|So),?\s*\d{1,2}\.\d{1,2}\.\d{4}\s+\d{1,2}:\d{2}\s+Uhr""", RegexOption.IGNORE_CASE)
+        val byPath = linkedMapOf<String, HomeEpisode>()
+        sectionAnchors(doc, "Die 50 neuesten Episoden").forEach { anchor ->
+            val path = pathOf(anchor) ?: return@forEach
             val episodeMatch = episodeRegex.matchEntire(path)
             val movieMatch = movieRegex.matchEntire(path)
-            if (episodeMatch == null && movieMatch == null) return@mapNotNull null
+            if (episodeMatch == null && movieMatch == null) return@forEach
             val slug = episodeMatch?.groupValues?.get(1) ?: movieMatch!!.groupValues[1]
             val season = episodeMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
             val number = episodeMatch?.groupValues?.get(3)?.toIntOrNull()
                 ?: movieMatch?.groupValues?.get(2)?.toIntOrNull()
-                ?: return@mapNotNull null
-            val container = closestContentContainer(anchor)
+                ?: return@forEach
+            val container = closestContentContainer(anchor) ?: anchor
             val raw = clean(anchor.text())
-            val titleFromText = raw
+            val seriesTitleFromText = raw
                 .replace(dateRegex, "")
-                .replace(Regex("\\bS\\d{1,2}\\s*E\\d{1,3}\\b", RegexOption.IGNORE_CASE), "")
+                .replace(Regex("""\bS\d{1,2}\s*E\d{1,3}\b""", RegexOption.IGNORE_CASE), "")
                 .trim(' ', '-', '–', '—', '·')
-            val title = firstCleanText(
-                anchor.selectFirst("h3, h4, [itemprop=name], .series-title, .title")?.text(),
-                container?.selectFirst("h3, h4, [itemprop=name], .series-title")?.text(),
-                anchor.selectFirst("img[alt]")?.attr("alt"),
-                titleFromText
-            ).removePrefix("Cover von ").trim()
-            val cover = imageUrl(container ?: anchor, anchor.absUrl("href"))
-            val description = firstCleanText(
-                container?.selectFirst("p, .description, [itemprop=description]")?.text()
+            val seriesTitle = firstCleanText(
+                container.selectFirst(".series-title, .seriesTitle, h3, h4, [itemprop=name]")?.text(),
+                anchor.selectFirst(".series-title, .seriesTitle, h3, h4, [itemprop=name]")?.text(),
+                seriesTitleFromText
+            ).removePrefix("Cover von ").trim().ifBlank {
+                slug.replace('-', ' ').split(' ').joinToString(" ") { it.replaceFirstChar(Char::titlecase) }
+            }
+            val imageTitle = container.select("img[alt], img[title]").asSequence()
+                .map { firstCleanText(it.attr("alt"), it.attr("title")) }
+                .mapNotNull { extractEpisodeTitleFromLabel(it, number) }
+                .firstOrNull().orEmpty()
+            val explicitEpisodeTitle = firstCleanText(
+                container.selectFirst(".episodeTitle, .episode-title, .episodeGermanTitle, .episodeEnglishTitle")?.text(),
+                anchor.selectFirst(".episodeTitle, .episode-title, .episodeGermanTitle, .episodeEnglishTitle")?.text(),
+                imageTitle
             )
-            val genres = genreTexts(container ?: anchor, title)
+            val releasedAt = dateRegex.find(container.text())?.value.orEmpty()
             val series = Series(
-                title = title.ifBlank { slug.replace('-', ' ').replaceFirstChar { it.titlecase() } },
+                title = seriesTitle,
                 slug = slug,
                 url = "$baseUrl/anime/stream/$slug",
-                description = description,
-                coverUrl = cover,
-                genres = genres
+                description = firstCleanText(container.selectFirst("p, .description, [itemprop=description]")?.text()),
+                coverUrl = imageUrl(container, anchor.absUrl("href")),
+                genres = genreTexts(container, seriesTitle)
             )
-            val episodeTitle = firstCleanText(
-                anchor.selectFirst(".episodeTitle, .episode-title, .episodeGermanTitle")?.text(),
-                container?.selectFirst(".episodeTitle, .episode-title, .episodeGermanTitle")?.text()
-            )
-            val languages = (container ?: anchor).select("img[alt], img[title]").mapNotNull { img ->
+            val languages = container.select("img[alt], img[title]").mapNotNull { img ->
                 classifyLanguage(img.attr("src"), img.attr("alt"), img.attr("title")).takeIf { it != Language.UNKNOWN }
             }.distinct()
-            HomeEpisode(
+            val incoming = HomeEpisode(
                 series = series,
                 episode = Episode(
                     season = season,
                     number = number,
-                    title = normalizeEpisodeTitle(episodeTitle, season, number),
+                    title = normalizeEpisodeTitle(explicitEpisodeTitle, season, number),
+                    releasedAt = releasedAt,
                     url = anchor.absUrl("href").ifBlank { "$baseUrl$path" },
                     seriesSlug = slug,
                     seriesTitle = series.title
                 ),
-                releasedAt = dateRegex.find((container ?: anchor).text())?.value.orEmpty(),
+                releasedAt = releasedAt,
                 languages = languages,
-                isNew = (container ?: anchor).text().contains("Neu!", ignoreCase = true)
+                isNew = container.text().contains("Neu!", ignoreCase = true)
+            )
+            val current = byPath[path]
+            byPath[path] = if (current == null) incoming else current.copy(
+                series = mergeSeriesMetadata(current.series, incoming.series),
+                episode = current.episode.copy(
+                    title = current.episode.title.ifBlank { incoming.episode.title },
+                    releasedAt = current.episode.releasedAt.ifBlank { incoming.episode.releasedAt }
+                ),
+                releasedAt = current.releasedAt.ifBlank { incoming.releasedAt },
+                languages = (current.languages + incoming.languages).distinct(),
+                isNew = current.isNew || incoming.isNew
             )
         }
+        return byPath.values.toList()
+    }
+
+    private fun extractEpisodeTitleFromLabel(label: String, number: Int): String? {
+        if (label.isBlank()) return null
+        val decoded = decodeHtmlEntities(label)
+        val match = Regex("""(?:Episode|Folge|Film)\s*$number\s*-\s*(.+?)(?:\s+(?:auf|mit)\s+|$)""", RegexOption.IGNORE_CASE).find(decoded)
+        return match?.groupValues?.getOrNull(1)?.trim()?.takeIf(String::isNotBlank)
     }
 
     private fun sectionAnchors(doc: Document, heading: String): List<Element> {
@@ -346,30 +507,46 @@ class AniWorldRepository(
 
     private fun seriesFromAnchor(anchor: Element): Series? {
         val path = pathOf(anchor) ?: return null
-        val match = Regex("^/anime/stream/([^/]+)/?$").matchEntire(path) ?: return null
+        val match = Regex("""^/anime/stream/([^/]+)/?$""").matchEntire(path) ?: return null
         val slug = match.groupValues[1]
-        val container = closestContentContainer(anchor)
+        val source = closestContentContainer(anchor) ?: anchor
+        val linkedGenres = source.select("a[href^=/genre/], a[href*=/genre/]")
+            .eachText().map(::clean).filter(::isDisplayGenre).distinct()
+        val knownGenres = (linkedGenres + genreTexts(source, ""))
+            .filter(::isDisplayGenre)
+            .distinct()
+        val imageAlt = firstCleanText(
+            source.selectFirst("img[alt]")?.attr("alt"),
+            anchor.selectFirst("img[alt]")?.attr("alt")
+        ).replace(Regex(""",?\s*Cover,?\s*HD,?\s*Anime Stream.*$""", RegexOption.IGNORE_CASE), "")
+            .removePrefix("Cover von ").trim()
+        val rawText = clean(anchor.text())
         val title = firstCleanText(
-            anchor.selectFirst("h3, h4, [itemprop=name], .series-title, .title")?.text(),
-            container?.selectFirst("h3, h4, [itemprop=name], .series-title")?.text(),
-            anchor.selectFirst("img[alt]")?.attr("alt"),
-            anchor.attr("title")
+            anchor.selectFirst("[itemprop=name], .series-title, .seriesTitle, .title, h3, h4")?.text(),
+            source.selectFirst("[itemprop=name], .series-title, .seriesTitle, .title, h3, h4")?.text(),
+            anchor.attr("title"),
+            imageAlt,
+            knownGenres.sortedByDescending(String::length)
+                .fold(rawText) { value, genre ->
+                    value.replace(Regex("""\s+${Regex.escape(genre)}\s*$""", RegexOption.IGNORE_CASE), "").trim()
+                }
         ).removePrefix("Cover von ").trim().ifBlank {
-            slug.replace('-', ' ').split(' ').joinToString(" ") { word -> word.replaceFirstChar { it.titlecase() } }
+            slug.replace('-', ' ').split(' ').joinToString(" ") { word -> word.replaceFirstChar(Char::titlecase) }
         }
-        val source = container ?: anchor
         return Series(
             title = title,
             slug = slug,
             url = anchor.absUrl("href").ifBlank { "$baseUrl$path" },
-            description = firstCleanText(source.selectFirst("p, .description, [itemprop=description]")?.text()),
+            description = firstCleanText(
+                source.selectFirst("[itemprop=description], .description, .seriesDescription, .seri_des, p")?.text()
+            ),
             coverUrl = imageUrl(source, anchor.absUrl("href").ifBlank { "$baseUrl$path" }),
-            genres = genreTexts(source, title)
+            genres = (knownGenres + genreTexts(source, title)).filter(::isDisplayGenre).distinct().take(8)
         )
     }
 
     private fun closestContentContainer(anchor: Element): Element? =
-        anchor.closest("li, article, tr, .seriesListContainer, .seriesList, .latestEpisode, .episode, .col, .card")
+        anchor.closest("li, article, tr, .seriesListContainer, .seriesList, .latestEpisode, .episode, .col, .card, .seriesListItem, .seriesListElement")
             ?: anchor.parent()
 
     private fun imageUrl(source: Element, base: String): String {
@@ -391,15 +568,26 @@ class AniWorldRepository(
     }
 
     private fun genreTexts(source: Element, title: String): List<String> {
-        val texts = source.select(".genre, .genres, [class*=genre], small, .label, .badge").eachText()
+        val linked = source.select("a[href^=/genre/], a[href*=/genre/]").eachText()
+        val fallback = source.select(".genre, .genres, [class*=genre], .label, .badge").eachText()
+        return (linked + fallback)
             .flatMap { it.split(',', '·', '|') }
             .map(::clean)
             .filter { value ->
-                value.isNotBlank() && !value.equals(title, ignoreCase = true) &&
-                    !value.equals("Neu!", ignoreCase = true) && value.length <= 32
+                isDisplayGenre(value) && !value.equals(title, ignoreCase = true) &&
+                    !value.equals("Neu!", ignoreCase = true) && value.length <= 40
             }
             .distinct()
-        return texts.take(4)
+            .take(8)
+    }
+
+
+    private fun isDisplayGenre(value: String): Boolean {
+        val normalized = clean(value).lowercase().replace("-", "").replace(" ", "")
+        return normalized.isNotBlank() && normalized !in setOf(
+            "ger", "gersub", "engsub", "deutsch", "englisch", "german", "english",
+            "mituntertiteldeutsch", "mituntertitelenglisch"
+        )
     }
 
     private fun pathOf(anchor: Element): String? {
@@ -427,70 +615,205 @@ class AniWorldRepository(
     }
 
     private fun parseEpisodes(markup: String, series: Series, season: Int): List<Episode> {
-        val doc = Jsoup.parse(markup)
+        val pageUrl = baseUrl + seasonPath(series.slug, season)
+        val doc = Jsoup.parse(markup, pageUrl)
         val out = linkedMapOf<Int, Episode>()
-        val re = if (season == 0) {
-            Regex("^/anime/stream/${Regex.escape(series.slug)}/filme/film-(\\d+)/?$")
+        val pattern = if (season == 0) {
+            Regex("""^/anime/stream/${Regex.escape(series.slug)}/filme/film-(\d+)/?$""")
         } else {
-            Regex("^/anime/stream/${Regex.escape(series.slug)}/staffel-$season/episode-(\\d+)/?$")
+            Regex("""^/anime/stream/${Regex.escape(series.slug)}/staffel-$season/episode-(\d+)/?$""")
         }
-        doc.select("div#stream a[href]").forEach { a ->
-            re.matchEntire(a.attr("href"))?.let { m ->
-                val n = m.groupValues[1].toInt()
-                val container = a.parent() ?: a
-                val german = firstCleanText(
-                    a.selectFirst(".episodeGermanTitle")?.text(),
-                    container.selectFirst(".episodeGermanTitle")?.text(),
-                    a.selectFirst(".seasonEpisodeTitle")?.text(),
-                    container.selectFirst(".seasonEpisodeTitle")?.text(),
-                    a.attr("title"),
-                    a.selectFirst("strong")?.text(),
-                    a.text()
-                )
-                val secondary = firstCleanText(
-                    a.selectFirst(".episodeEnglishTitle")?.text(),
-                    container.selectFirst(".episodeEnglishTitle")?.text(),
-                    a.selectFirst("small")?.text(),
-                    container.selectFirst("small")?.text()
-                ).takeIf { it.isNotBlank() && !it.equals(german, ignoreCase = true) }.orEmpty()
-                val fallback = if (season == 0) "Film $n" else "Folge $n"
-                out[n] = Episode(
-                    season = season,
-                    number = n,
-                    title = normalizeEpisodeTitle(german, season, n).ifBlank { fallback },
-                    secondaryTitle = normalizeEpisodeTitle(secondary, season, n),
-                    url = baseUrl + a.attr("href"),
-                    seriesSlug = series.slug,
-                    seriesTitle = series.title
-                )
+        doc.select("a[href]").forEach { anchor ->
+            val path = pathOf(anchor) ?: return@forEach
+            val match = pattern.matchEntire(path) ?: return@forEach
+            val number = match.groupValues[1].toIntOrNull() ?: return@forEach
+            val row = anchor.closest("tr, li, .episode, .seasonEpisode, .episodeListItem") ?: anchor.parent() ?: anchor
+            val cells = row.select("td")
+            val combinedTitle = firstCleanText(
+                row.selectFirst(".episodeGermanTitle, .seasonEpisodeTitle, .episodeTitle, .episode-title, [itemprop=name]")?.text(),
+                anchor.selectFirst(".episodeGermanTitle, .seasonEpisodeTitle, .episodeTitle, .episode-title, [itemprop=name]")?.text(),
+                cells.getOrNull(1)?.text(),
+                anchor.attr("title"),
+                anchor.selectFirst("strong")?.text(),
+                anchor.text()
+            )
+            val explicitSecondary = firstCleanText(
+                row.selectFirst(".episodeEnglishTitle, .episodeOriginalTitle, small")?.text(),
+                anchor.selectFirst(".episodeEnglishTitle, .episodeOriginalTitle, small")?.text(),
+                cells.getOrNull(2)?.takeIf { it.select("li[data-link-target], img[data-lang-key]").isEmpty() }?.text()
+            )
+            val normalizedCombined = normalizeEpisodeTitle(combinedTitle, season, number)
+            val splitTitles = if (explicitSecondary.isBlank()) {
+                normalizedCombined.split(Regex("""\s+-\s+"""), limit = 2)
+            } else {
+                listOf(normalizedCombined)
             }
+            val primary = splitTitles.firstOrNull().orEmpty().trim()
+            val secondary = normalizeEpisodeTitle(
+                explicitSecondary.ifBlank { splitTitles.getOrNull(1).orEmpty() },
+                season,
+                number
+            ).takeUnless { it.equals(primary, ignoreCase = true) }.orEmpty()
+            val fallback = if (season == 0) "Film $number" else "Folge $number"
+            val current = out[number]
+            val candidate = Episode(
+                season = season,
+                number = number,
+                title = primary.ifBlank { fallback },
+                secondaryTitle = secondary,
+                url = anchor.absUrl("href").ifBlank { "$baseUrl$path" },
+                seriesSlug = series.slug,
+                seriesTitle = series.title
+            )
+            if (current == null || candidate.title != fallback || current.title == fallback) out[number] = candidate
         }
         return out.values.sortedBy { it.number }
     }
 
+    private fun parseEpisodeDetails(markup: String, episode: Episode): Episode {
+        val doc = Jsoup.parse(markup, episode.url)
+        val genericHeadings = setOf(
+            "episoden der staffel ${episode.season}",
+            "wähle einen aniworld stream / hoster:",
+            "weitere erstklassige staffeln von ${episode.seriesTitle.lowercase()} als stream"
+        )
+        val heading = doc.select("#stream h2, main h2, h2, .episodeTitle, .episode-title")
+            .firstOrNull { element ->
+                val value = clean(element.text())
+                value.isNotBlank() && value.lowercase() !in genericHeadings &&
+                    !value.startsWith("Weitere ", true) &&
+                    !value.startsWith("Folgende Animes", true) &&
+                    !value.contains("Stream / Hoster", true)
+            }
+        val pageTitle = heading?.text()?.let(::clean).orEmpty()
+        val currentTitle = episode.title.takeUnless { isGenericEpisodeTitle(it, episode) }.orEmpty()
+        val currentSecondary = episode.secondaryTitle
+        val title = when {
+            currentTitle.isNotBlank() -> currentTitle
+            pageTitle.isNotBlank() -> normalizeEpisodeTitle(pageTitle, episode.season, episode.number)
+            else -> episode.title
+        }
+        val secondary = when {
+            currentSecondary.isNotBlank() -> currentSecondary
+            currentTitle.isNotBlank() && pageTitle.startsWith(currentTitle, ignoreCase = true) ->
+                pageTitle.substring(currentTitle.length).trim(' ', '-', '–', '—', ':')
+            else -> ""
+        }
+        val nearbyDescription = heading?.let { episodeHeading ->
+            generateSequence(episodeHeading.nextElementSibling()) { it.nextElementSibling() }
+                .take(6)
+                .flatMap { element -> sequenceOf(element) + element.select("p, .description").asSequence() }
+                .map { clean(it.text()) }
+                .firstOrNull(::isEpisodeDescriptionCandidate)
+        }
+        val description = firstCleanText(
+            doc.selectFirst("#stream .episodeDescription, #stream .episode-description, #stream .episodeDesc, #stream .episode-desc, .episodeContent .description, .episode-content .description")?.text(),
+            nearbyDescription,
+            doc.select("#stream p, .episodeContent p, .episode-content p").map { clean(it.text()) }.firstOrNull(::isEpisodeDescriptionCandidate)
+        )
+        val releasedAt = Regex(
+            """(?:Montag|Dienstag|Mittwoch|Donnerstag|Freitag|Samstag|Sonntag),?\s*\d{1,2}\.\d{1,2}\.\d{4}\s+\d{1,2}:\d{2}\s+Uhr""",
+            RegexOption.IGNORE_CASE
+        ).find(doc.text())?.value.orEmpty()
+        return episode.copy(
+            title = title,
+            secondaryTitle = secondary,
+            description = cleanDescription(description).ifBlank { episode.description },
+            releasedAt = releasedAt.ifBlank { episode.releasedAt }
+        )
+    }
+
+    private fun isGenericEpisodeTitle(value: String, episode: Episode): Boolean {
+        val normalized = clean(value).lowercase()
+        return normalized.isBlank() || normalized in setOf(
+            "folge ${episode.number}",
+            "episode ${episode.number}",
+            "film ${episode.number}",
+            "folge %02d".format(episode.number),
+            "episode %02d".format(episode.number),
+            "film %02d".format(episode.number)
+        )
+    }
+
+    private fun isEpisodeDescriptionCandidate(value: String): Boolean {
+        val text = clean(value)
+        return text.length >= 18 &&
+            !text.equals("Keine Beschreibung verfügbar.", ignoreCase = true) &&
+            !text.contains("Wähle einen AniWorld Stream", ignoreCase = true) &&
+            !text.contains("Klicke hier", ignoreCase = true) &&
+            !text.contains("mehr anzeigen", ignoreCase = true) &&
+            !text.startsWith("Bei uns", ignoreCase = true) &&
+            !text.startsWith("Weitere erstklassige", ignoreCase = true)
+    }
+
     private fun parseSeriesDetails(markup: String, series: Series): Series {
         val doc = Jsoup.parse(markup, series.url)
+        val title = firstCleanText(
+            doc.selectFirst("h1")?.text(),
+            doc.selectFirst("meta[property=og:title]")?.attr("content")
+                ?.substringBefore(" | AniWorld")
+                ?.substringBefore(" - AniWorld"),
+            series.title
+        )
         val coverCandidates = listOf(
             doc.selectFirst("meta[property=og:image]")?.attr("content"),
             doc.selectFirst("meta[name=twitter:image]")?.attr("content"),
-            doc.selectFirst(".seriesCoverBox img")?.let { it.attr("data-src").ifBlank { it.attr("src") } },
-            doc.selectFirst("img[itemprop=image]")?.let { it.attr("data-src").ifBlank { it.attr("src") } },
-            doc.selectFirst(".seriesCover img, .cover img")?.let { it.attr("data-src").ifBlank { it.attr("src") } }
+            doc.selectFirst(".seriesCoverBox img, .seriesCover img, .cover img, img[itemprop=image]")?.let { image ->
+                listOf(
+                    image.attr("data-src"),
+                    image.attr("data-lazy-src"),
+                    image.attr("data-original"),
+                    image.attr("src")
+                ).firstOrNull(String::isNotBlank)
+            }
         )
         val cover = coverCandidates.firstOrNull { !it.isNullOrBlank() }
             ?.let { normalizeUrl(it, series.url) }
             .orEmpty()
             .ifBlank { series.coverUrl }
         val description = listOf(
+            doc.selectFirst("[itemprop=description], .seriesDescription, .seri_des, .series-description, .description")?.text(),
             doc.selectFirst("meta[property=og:description]")?.attr("content"),
-            doc.selectFirst("[itemprop=description]")?.text(),
-            doc.selectFirst(".seriesDescription, .seri_des, .description")?.text()
-        ).firstOrNull { !it.isNullOrBlank() }?.let(::clean).orEmpty().ifBlank { series.description }
-        val genres = doc.select(".genre, .genres a, [class*=genre] a, [itemprop=genre]")
-            .eachText().map(::clean).filter { it.isNotBlank() }.distinct().take(8)
-            .ifEmpty { series.genres }
-        return series.copy(coverUrl = cover, description = description, genres = genres)
+            doc.selectFirst("meta[name=description]")?.attr("content")
+        ).firstOrNull { !it.isNullOrBlank() }
+            ?.let(::cleanDescription)
+            .orEmpty()
+            .ifBlank { series.description }
+        val genres = doc.select("a[href^=/genre/], a[href*=/genre/], [itemprop=genre]")
+            .eachText().map(::clean).filter(::isDisplayGenre).distinct().take(12)
+            .ifEmpty { series.genres.filter(::isDisplayGenre) }
+        val pageText = doc.text()
+        val yearRange = Regex("""\((\d{4})(?:\s*-\s*(\d{4}|Heute))?\)""", RegexOption.IGNORE_CASE)
+            .find(pageText)
+            ?.let { match ->
+                val start = match.groupValues.getOrNull(1).orEmpty()
+                val end = match.groupValues.getOrNull(2).orEmpty()
+                if (end.isBlank()) start else "$start – $end"
+            }
+        val year = firstCleanText(
+            yearRange,
+            doc.selectFirst("a[href^=/produktionsjahr/], a[href*=/produktionsjahr/]")?.text(),
+            series.year
+        )
+        val ageRating = firstCleanText(
+            doc.selectFirst(".fsk, [class*=fsk], [itemprop=contentRating]")?.text(),
+            Regex("""\bAb:\s*(\d{1,2})\b""", RegexOption.IGNORE_CASE).find(pageText)?.groupValues?.getOrNull(1)?.let { "FSK $it" },
+            series.ageRating
+        )
+        return series.copy(
+            title = title,
+            coverUrl = cover,
+            description = description,
+            genres = genres,
+            year = year,
+            ageRating = ageRating
+        )
     }
+
+    private fun cleanDescription(value: String): String = clean(value)
+        .replace(Regex("""(?:…|\.\.\.)?\s*mehr anzeigen\s*$""", RegexOption.IGNORE_CASE), "")
+        .replace(Regex("""\s+"""), " ")
+        .trim(' ', '…')
 
     private fun firstCleanText(vararg values: String?): String = values
         .asSequence()
@@ -718,7 +1041,8 @@ class AniWorldRepository(
                     url = url,
                     headers = mapOf("Referer" to origin(resp.finalUrl) + "/", "User-Agent" to UA),
                     hoster = hoster.name,
-                    language = hoster.lang
+                    language = hoster.lang,
+                    mimeType = DirectMediaDetector.mimeTypeFor(url)
                 )
             } catch (e: ChallengeRequiredException) {
                 throw e
@@ -746,7 +1070,8 @@ class AniWorldRepository(
                     url = url,
                     headers = mapOf("Referer" to origin(resp.finalUrl), "User-Agent" to UA),
                     hoster = hoster.name,
-                    language = hoster.lang
+                    language = hoster.lang,
+                    mimeType = DirectMediaDetector.mimeTypeFor(url)
                 )
             } catch (e: ChallengeRequiredException) {
                 throw e
@@ -809,7 +1134,8 @@ class AniWorldRepository(
                     url = url,
                     headers = mapOf("Referer" to origin(resp.finalUrl), "User-Agent" to UA),
                     hoster = HosterCatalog.displayName(hoster.name),
-                    language = hoster.lang
+                    language = hoster.lang,
+                    mimeType = DirectMediaDetector.mimeTypeFor(url)
                 )
             } catch (e: ChallengeRequiredException) {
                 throw e
@@ -856,6 +1182,9 @@ class AniWorldRepository(
     private data class FetchResult(val body: String, val finalUrl: String)
 
     companion object {
+        private val CATALOG_KEYS = listOf("0-9") + ('A'..'Z').map(Char::toString)
+        private const val METADATA_TTL_MS = 30L * 24L * 60L * 60L * 1_000L
+        private const val CATALOG_FETCH_CONCURRENCY = 4
         const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36"
 
         private fun get(context: Context, client: OkHttpClient, url: String, headers: Map<String, String> = emptyMap()): FetchResult {

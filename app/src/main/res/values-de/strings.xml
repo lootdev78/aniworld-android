@@ -187,4 +187,26 @@
     <string name="cookies_more">…</string>
     <string name="challenge_captcha_required">%1$s verlangt eine manuelle CAPTCHA-/Turnstile-Prüfung.</string>
     <string name="challenge_browser_required">%1$s verlangt eine manuelle Browser-Verifizierung.</string>
+
+    <string name="catalog_preloading_metadata">Anime-Metadaten werden für die Offline-Nutzung vorbereitet</string>
+    <string name="catalog_page_indicator">Seite %1$d von %2$d</string>
+    <string name="previous_page">Zurück</string>
+    <string name="next_page">Weiter</string>
+    <string name="player_previous_episode">Vorherige Folge</string>
+    <string name="player_next_episode">Nächste Folge</string>
+    <string name="play_best_hoster">Mit bestem verfügbaren Hoster abspielen</string>
+    <string name="choose_language">Sprache auswählen</string>
+    <string name="choose_hoster">Hoster auswählen</string>
+    <string name="preferred">Bevorzugt</string>
+
+    <string name="media_detector_title">Erkannte Medien</string>
+    <string name="media_detector_count">%1$d gefunden</string>
+    <string name="media_detector_empty">Starte das Video auf der Seite. Direkte HLS-, DASH-, SmoothStreaming- und progressive Medienanfragen erscheinen anschließend hier.</string>
+    <string name="media_detector_play">Abspielen</string>
+    <string name="media_detector_direct_only">Es werden nur direkt angeforderte Medien-URLs erkannt. Skriptentschlüsselung, Token-Rekonstruktion und Umgehungen von Zugriffsschutz finden nicht statt.</string>
+    <string name="media_detector_instruction">Öffne oder starte das Video auf dieser Seite. Die App zeigt direkte Media3-kompatible Anfragen der Seite an.</string>
+    <string name="media_detector_opening">Hoster-Seite zur direkten Medienerkennung geöffnet</string>
+    <string name="media_detector_playing">Spiele %1$s von %2$s</string>
+    <string name="media_detector_open">Direktes Medium erkennen</string>
+
 </resources>

@@ -12,6 +12,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 private const val LIST_SEPARATOR = "\u001F"
@@ -111,6 +113,45 @@ data class PageCacheEntity(
     val updatedAt: Long,
     val contentType: String = "text/html"
 )
+
+
+@Entity(tableName = "series_metadata", indices = [Index("title"), Index("updatedAt")])
+data class SeriesMetadataEntity(
+    @PrimaryKey val slug: String,
+    val title: String,
+    val url: String,
+    val description: String,
+    val coverUrl: String,
+    val genres: String,
+    val year: String,
+    val ageRating: String,
+    val updatedAt: Long
+) {
+    fun toModel(): Series = Series(
+        title = title,
+        slug = slug,
+        url = url,
+        description = description,
+        coverUrl = coverUrl,
+        genres = decodeList(genres),
+        year = year,
+        ageRating = ageRating
+    )
+
+    companion object {
+        fun from(series: Series, updatedAt: Long = System.currentTimeMillis()) = SeriesMetadataEntity(
+            slug = series.slug,
+            title = series.title,
+            url = series.url,
+            description = series.description,
+            coverUrl = series.coverUrl,
+            genres = encodeList(series.genres),
+            year = series.year,
+            ageRating = series.ageRating,
+            updatedAt = updatedAt
+        )
+    }
+}
 
 @Dao
 interface LibraryDao {
@@ -263,6 +304,25 @@ interface LibraryDao {
     }
 }
 
+
+@Dao
+interface SeriesMetadataDao {
+    @Query("SELECT * FROM series_metadata ORDER BY title COLLATE NOCASE ASC")
+    suspend fun all(): List<SeriesMetadataEntity>
+
+    @Query("SELECT * FROM series_metadata WHERE slug = :slug LIMIT 1")
+    suspend fun get(slug: String): SeriesMetadataEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: SeriesMetadataEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(entities: List<SeriesMetadataEntity>)
+
+    @Query("SELECT COUNT(*) FROM series_metadata")
+    suspend fun count(): Int
+}
+
 @Dao
 interface PageCacheDao {
     @Query("SELECT * FROM page_cache WHERE cacheKey = :key LIMIT 1")
@@ -287,24 +347,46 @@ interface PageCacheDao {
         SeasonTotalEntity::class,
         RecentSearchEntity::class,
         WatchedOrderEntity::class,
-        PageCacheEntity::class
+        PageCacheEntity::class,
+        SeriesMetadataEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun libraryDao(): LibraryDao
     abstract fun pageCacheDao(): PageCacheDao
+    abstract fun seriesMetadataDao(): SeriesMetadataDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
+
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS series_metadata (
+                        slug TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        description TEXT NOT NULL,
+                        coverUrl TEXT NOT NULL,
+                        genres TEXT NOT NULL,
+                        year TEXT NOT NULL,
+                        ageRating TEXT NOT NULL,
+                        updatedAt INTEGER NOT NULL
+                    )""".trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_series_metadata_title ON series_metadata(title)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_series_metadata_updatedAt ON series_metadata(updatedAt)")
+            }
+        }
 
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "aniworld.db"
-            ).build().also { instance = it }
+            ).addMigrations(MIGRATION_1_2).build().also { instance = it }
         }
     }
 }
