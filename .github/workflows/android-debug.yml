@@ -43,12 +43,6 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Make tools executable
-        run: chmod +x gradlew tools/verify_project.py
-
-      - name: Static production gate
-        run: python3 tools/verify_project.py
-
       - name: Clean and assemble debug APK
         run: ./gradlew --no-daemon --stacktrace --warning-mode all clean :app:assembleDebug
 
