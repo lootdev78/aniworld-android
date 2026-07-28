@@ -534,7 +534,7 @@ class AniWorldRepository(
             val context = listOf(image.attr("alt"), image.attr("title"), image.className(), image.id()).joinToString(" ").lowercase()
             val width = image.attr("width").filter(Char::isDigit).toIntOrNull()
             val height = image.attr("height").filter(Char::isDigit).toIntOrNull()
-            if (rejected.any(context::contains) || (width != null && height != null && (width < 80 || height < 60))) return@flatMap emptyList()
+            if (rejected.any(context::contains) || (width != null && height != null && (width < 80 || height < 60))) return@flatMap emptyList<String>()
             sequenceOf(image.attr("data-src"), image.attr("data-lazy-src"), image.attr("data-original"), image.attr("srcset").substringBefore(' '), image.attr("src"))
                 .mapNotNull { normalizeAnimeImageUrl(it, base) }
                 .toList()
@@ -655,7 +655,7 @@ class AniWorldRepository(
         val path = pathOf(anchor) ?: return null
         val match = Regex("""^/anime/stream/([^/]+)/?$""").matchEntire(path) ?: return null
         val slug = match.groupValues[1]
-        val source = closestContentContainer(anchor) ?: anchor
+        val source = closestSeriesContainer(anchor, slug) ?: closestContentContainer(anchor) ?: anchor
         val linkedGenres = source.select("a[href^=/genre/], a[href*=/genre/]")
             .eachText().map(::clean).filter(::isDisplayGenre).distinct()
         val knownGenres = (linkedGenres + genreTexts(source, ""))
@@ -686,7 +686,13 @@ class AniWorldRepository(
             description = firstCleanText(
                 source.selectFirst("[itemprop=description], .description, .seriesDescription, .seri_des, p")?.text()
             ),
-            coverUrl = imageUrl(source, anchor.absUrl("href").ifBlank { "$baseUrl$path" }),
+            coverUrl = seriesImageUrl(
+                source = source,
+                anchor = anchor,
+                slug = slug,
+                title = title,
+                base = anchor.absUrl("href").ifBlank { "$baseUrl$path" }
+            ),
             genres = (knownGenres + genreTexts(source, title)).filter(::isDisplayGenre).distinct().take(8)
         )
     }
@@ -694,6 +700,127 @@ class AniWorldRepository(
     private fun closestContentContainer(anchor: Element): Element? =
         anchor.closest("li, article, tr, .seriesListContainer, .seriesList, .latestEpisode, .episode, .col, .card, .seriesListItem, .seriesListElement")
             ?: anchor.parent()
+
+    /**
+     * Finds the smallest DOM node that belongs to exactly one anime. Catalog pages often wrap many
+     * entries in one generic `.seriesList`/`.row` container; using that parent can pair a title with
+     * a neighbouring poster. Restricting the scope to one slug makes the mapping deterministic.
+     */
+    private fun closestSeriesContainer(anchor: Element, slug: String): Element? {
+        var node: Element? = anchor
+        while (node != null && node.tagName() !in setOf("body", "html")) {
+            val linkedSlugs = node.select("a[href*=/anime/stream/]")
+                .mapNotNull { linked ->
+                    pathOf(linked)?.let { path ->
+                        Regex("""^/anime/stream/([^/]+)(?:/.*)?$""").matchEntire(path)?.groupValues?.getOrNull(1)
+                    }
+                }
+                .distinct()
+            if (linkedSlugs.size == 1 && linkedSlugs.first().equals(slug, ignoreCase = true) &&
+                (node.select("img, picture source, [style*=background-image]").isNotEmpty() || node == anchor)
+            ) return node
+            node = node.parent()
+        }
+        return null
+    }
+
+    private fun seriesImageUrl(source: Element, anchor: Element, slug: String, title: String, base: String): String {
+        data class Candidate(val url: String, val score: Int)
+        val normalizedTitle = clean(title).lowercase()
+        val titleTokens = normalizedTitle.split(Regex("""[^a-z0-9äöüß]+"""))
+            .filter { it.length >= 3 }
+            .toSet()
+
+        fun associatedWithSeries(image: Element): Boolean {
+            val linked = image.closest("a[href*=/anime/stream/]")
+            if (linked != null) {
+                val linkedSlug = pathOf(linked)?.let { path ->
+                    Regex("""^/anime/stream/([^/]+)(?:/.*)?$""").matchEntire(path)?.groupValues?.getOrNull(1)
+                }
+                if (linkedSlug != null && !linkedSlug.equals(slug, ignoreCase = true)) return false
+            }
+            return true
+        }
+
+        val imageNodes = linkedSetOf<Element>().apply {
+            if (anchor.tagName() == "img") add(anchor)
+            if (source.tagName() == "img") add(source)
+            addAll(anchor.select("img"))
+            source.select("a[href*=/anime/stream/] img").filter { associatedWithSeries(it) }.forEach { add(it) }
+            source.select("img").filter { associatedWithSeries(it) }.forEach { add(it) }
+        }
+        val imageCandidates = imageNodes.flatMap { image ->
+            val context = listOf(
+                image.attr("alt"), image.attr("title"), image.className(), image.id(),
+                image.parent()?.className().orEmpty(), image.parent()?.id().orEmpty()
+            ).joinToString(" ").lowercase()
+            val rejected = listOf(
+                "logo", "brand", "header", "navigation", "navbar", "avatar", "icon",
+                "placeholder", "banner", "social", "tracking", "pixel", "spinner"
+            ).any { token -> context.contains(token) }
+            if (rejected) return@flatMap emptyList<Candidate>()
+
+            val width = image.attr("width").filter(Char::isDigit).toIntOrNull()
+            val height = image.attr("height").filter(Char::isDigit).toIntOrNull()
+            if (width != null && height != null &&
+                (width < 80 || height < 100 || width.toFloat() / height.coerceAtLeast(1) > 1.55f)
+            ) return@flatMap emptyList<Candidate>()
+
+            val exactAnchor = image.closest("a[href]")?.let { pathOf(it) }
+                ?.contains("/anime/stream/$slug", ignoreCase = true) == true
+            val titleScore = when {
+                normalizedTitle.isNotBlank() && context.contains(normalizedTitle) -> 90
+                titleTokens.isNotEmpty() -> titleTokens.count { token -> context.contains(token) } * 12
+                else -> 0
+            }
+            val structuralScore = when {
+                exactAnchor -> 110
+                image.closest(".seriesCoverBox, .seriesCover, .cover, [class*=cover], [class*=poster]") != null -> 85
+                image.hasAttr("itemprop") && image.attr("itemprop").equals("image", true) -> 75
+                context.contains("cover") || context.contains("poster") -> 60
+                else -> 0
+            }
+            sequenceOf(
+                image.attr("data-src") to 18,
+                image.attr("data-lazy-src") to 17,
+                image.attr("data-original") to 16,
+                image.attr("data-url") to 14,
+                image.attr("data-srcset").substringBefore(',').trim().substringBefore(' ') to 12,
+                image.attr("srcset").substringBefore(',').trim().substringBefore(' ') to 10,
+                image.attr("src") to 8
+            ).mapNotNull { (raw, sourceScore) ->
+                normalizeAnimeImageUrl(raw, base)?.let { url ->
+                    val lower = url.lowercase()
+                    val pathScore = when {
+                        lower.contains("/cover/") || lower.contains("poster") -> 45
+                        lower.contains(slug.lowercase()) -> 35
+                        lower.contains("anime") || lower.contains("series") -> 15
+                        else -> 0
+                    }
+                    Candidate(url, structuralScore + titleScore + sourceScore + pathScore)
+                }
+            }.toList()
+        }
+        val pictureCandidates = source.select("picture source").flatMap { pictureSource ->
+            sequenceOf(
+                pictureSource.attr("data-srcset").substringBefore(',').trim().substringBefore(' ') to 24,
+                pictureSource.attr("srcset").substringBefore(',').trim().substringBefore(' ') to 20,
+                pictureSource.attr("data-src") to 18,
+                pictureSource.attr("src") to 12
+            ).mapNotNull { (raw, score) ->
+                normalizeAnimeImageUrl(raw, base)?.let { Candidate(it, score + 70) }
+            }.toList()
+        }
+        return (imageCandidates + pictureCandidates)
+            .groupBy { candidate -> candidate.url }
+            .map { (url, matches) -> Candidate(url, matches.maxOf { candidate -> candidate.score }) }
+            .maxByOrNull { candidate -> candidate.score }
+            ?.takeIf { it.score >= 45 }
+            ?.url
+            .orEmpty()
+            .ifBlank { backgroundImageUrl(anchor, base) }
+            .ifBlank { backgroundImageUrl(source, base) }
+    }
 
     private fun imageUrl(source: Element, base: String): String {
         data class Candidate(val url: String, val score: Int)
@@ -705,12 +832,12 @@ class AniWorldRepository(
             val rejectedContext = listOf(
                 "logo", "brand", "header", "navigation", "navbar", "avatar", "icon",
                 "placeholder", "banner", "social", "tracking", "pixel", "spinner"
-            ).any(context::contains)
+            ).any { token -> context.contains(token) }
             val width = image.attr("width").filter(Char::isDigit).toIntOrNull()
             val height = image.attr("height").filter(Char::isDigit).toIntOrNull()
             val implausibleSize = width != null && height != null &&
                 (width < 100 || height < 120 || width.toFloat() / height.coerceAtLeast(1) > 1.65f)
-            if (rejectedContext || implausibleSize) return@flatMap emptyList()
+            if (rejectedContext || implausibleSize) return@flatMap emptyList<Candidate>()
             val baseScore = when {
                 image.closest(".seriesCoverBox, .seriesCover, .cover, [class*=cover], [class*=poster]") != null -> 80
                 image.hasAttr("itemprop") && image.attr("itemprop").equals("image", true) -> 70
@@ -737,9 +864,9 @@ class AniWorldRepository(
             }.toList()
         }
         return candidates
-            .groupBy(Candidate::url)
-            .map { (url, matches) -> Candidate(url, matches.maxOf(Candidate::score)) }
-            .maxByOrNull(Candidate::score)
+            .groupBy { candidate -> candidate.url }
+            .map { (url, matches) -> Candidate(url, matches.maxOf { candidate -> candidate.score }) }
+            .maxByOrNull { candidate -> candidate.score }
             ?.url
             .orEmpty()
             .ifBlank { backgroundImageUrl(source, base) }
@@ -1054,6 +1181,26 @@ class AniWorldRepository(
             !text.startsWith("Weitere erstklassige", ignoreCase = true)
     }
 
+    private fun extractSeriesPageCover(doc: Document, series: Series): String {
+        val pageBase = series.url
+        val metaCandidates = sequenceOf(
+            doc.selectFirst("meta[property=og:image]")?.attr("content"),
+            doc.selectFirst("meta[name=twitter:image]")?.attr("content"),
+            doc.selectFirst("link[rel=image_src]")?.attr("href")
+        ).mapNotNull { raw -> raw?.let { normalizeAnimeImageUrl(it, pageBase) } }.toList()
+
+        val exactAnchor = doc.select("a[href]").firstOrNull { anchor ->
+            pathOf(anchor)?.let { path ->
+                path == "/anime/stream/${series.slug}" || path.startsWith("/anime/stream/${series.slug}/")
+            } == true && anchor.select("img").isNotEmpty()
+        }
+        val scoped = doc.selectFirst(
+            ".seriesCoverBox, .seriesCover, [class*=seriesCover], .cover, [class*=poster], [itemprop=image]"
+        ) ?: exactAnchor ?: doc.body()
+        val structured = seriesImageUrl(scoped, exactAnchor ?: scoped, series.slug, series.title, pageBase)
+        return structured.ifBlank { metaCandidates.firstOrNull().orEmpty() }
+    }
+
     private fun parseSeriesDetails(markup: String, series: Series): Series {
         val doc = Jsoup.parse(markup, series.url)
         val title = firstCleanText(
@@ -1063,20 +1210,7 @@ class AniWorldRepository(
                 ?.substringBefore(" - AniWorld"),
             series.title
         )
-        val coverContainer = doc.selectFirst(
-            ".seriesCoverBox, .seriesCover, .cover, [class*=seriesCover], [class*=poster]"
-        ) ?: doc.selectFirst(
-            "img[itemprop=image], img[alt*=Cover], img[src*='/cover/'], img[data-src*='/cover/']"
-        )?.parent()
-        val cover = coverContainer?.let { imageUrl(it, series.url) }.orEmpty()
-            .ifBlank {
-                sequenceOf(
-                    doc.selectFirst("meta[property=og:image]")?.attr("content"),
-                    doc.selectFirst("meta[name=twitter:image]")?.attr("content")
-                ).mapNotNull { value -> value?.let { normalizeAnimeImageUrl(it, series.url) } }
-                    .firstOrNull()
-                    .orEmpty()
-            }
+        val cover = extractSeriesPageCover(doc, series)
             .ifBlank { normalizeAnimeImageUrl(series.coverUrl, series.url).orEmpty() }
         val description = listOf(
             doc.selectFirst("[itemprop=description], .seriesDescription, .seri_des, .series-description, .description")?.text(),

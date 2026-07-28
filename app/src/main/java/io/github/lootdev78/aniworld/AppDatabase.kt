@@ -334,6 +334,9 @@ interface SeriesMetadataDao {
     @Query("SELECT COUNT(*) FROM series_metadata")
     suspend fun count(): Int
 
+    @Query("UPDATE series_metadata SET coverUrl = ''")
+    suspend fun clearCoverUrls()
+
     @Query("DELETE FROM series_metadata")
     suspend fun clear()
 }

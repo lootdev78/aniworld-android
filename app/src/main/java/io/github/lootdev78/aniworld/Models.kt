@@ -286,7 +286,7 @@ data class AppPreferences(
     val useDynamicColors: Boolean = false,
     val lastHomeTab: String = "START",
     val initialPreloadCompleted: Boolean = false,
-    val webAdBlockEnabled: Boolean = true,
+    val webAdBlockEnabled: Boolean = false,
     val webFilterLists: Set<String> = setOf("advertising", "tracking", "popups", "redirects"),
     val webSessionPanelExpanded: Boolean = true,
     val webMediaPanelExpanded: Boolean = true,

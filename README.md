@@ -3,19 +3,18 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
-## 1.6.5 UI, Bibliothek und News
+## 1.6.6 Cover, Gesehen-Status und Adblocker
 
-- Kontrastfeste Material-3-Oberflächen für Detail-, Hoster-, Info-, Sammlungs- und Einstellungsansichten
-- Player mit verschiebbarer Zeitleiste, ±10-Sekunden-Sprüngen und „Von Anfang abspielen“
-- Favoriten und Verlauf mit Alphabet-/Zeit-/Positions-Schnellnavigation sowie Mehrfachauswahl und Löschbestätigung
-- Offline-Metadaten-Backfill für bereits vorhandene Favoriten und Verlaufseinträge
-- Anime-News mit Bildern aus dem Live-Startseitenfeed
-- Einstellungen für automatischen Start des bevorzugten Hosters und den Startbereich der App
+- Katalogcover werden pro Anime-DOM-Container und exakter Serien-URL zugeordnet, statt aus einem gemeinsamen Listencontainer übernommen
+- Alte falsche Cover-Zuordnungen und der Coil-Bildcache werden einmalig zurückgesetzt; anschließend startet automatisch eine neue Metadatenaktualisierung
+- Begonnene Episoden und Filme können in der Wiedergabeauswahl und in „Weiterschauen“ manuell als gesehen markiert oder wieder auf ungesehen gesetzt werden
+- Beim Entfernen der Gesehen-Markierung bleibt eine vorhandene Wiedergabeposition erhalten
+- Der WebView-Werbeblocker ist wieder in den Einstellungen sichtbar, einschließlich einzeln schaltbarer Filterlisten
+- Der Werbeblocker ist bei einer Neuinstallation standardmäßig deaktiviert
 
 ## Version
 
-`1.6.5-ui-library-news`
-
+`1.6.6-cover-watch-adblock`
 
 
 ## Paket und Projekt

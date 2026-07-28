@@ -308,4 +308,6 @@
     <string name="startup_start">Home</string>
     <string name="startup_favorites">Favorites</string>
     <string name="startup_history">History</string>
+    <string name="mark_watched">Mark as watched</string>
+    <string name="mark_unwatched">Remove watched mark</string>
 </resources>

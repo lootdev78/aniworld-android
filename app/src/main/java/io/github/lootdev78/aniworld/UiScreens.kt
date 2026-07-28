@@ -185,7 +185,8 @@ fun HomeScreen(st: UiState, vm: AppViewModel) {
                                                 coverUrl = progress.coverUrl
                                             )
                                         )
-                                    }
+                                    },
+                                    { vm.toggleProgressWatched(progress) }
                                 )
                             }
                         }
@@ -1576,10 +1577,16 @@ private fun formatPlaybackTimeRange(positionMs: Long, durationMs: Long): String 
     "${formatPlaybackClock(positionMs)} – ${formatPlaybackClock(durationMs)}"
 
 @Composable
-private fun ContinueCard(progress: ProgressEntry, prefs: AppPreferences, onOpen: () -> Unit, onInfo: () -> Unit) {
+private fun ContinueCard(
+    progress: ProgressEntry,
+    prefs: AppPreferences,
+    onOpen: () -> Unit,
+    onInfo: () -> Unit,
+    onToggleWatched: () -> Unit
+) {
     val state = prefs.episodeWatchStates[episodeKey(progress.seriesSlug, progress.season, progress.episode)]
-    Card(modifier = Modifier.width(250.dp).combinedClickable(onClick = onOpen, onLongClick = onInfo)) {
-        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    Card(modifier = Modifier.width(270.dp).combinedClickable(onClick = onOpen, onLongClick = onInfo)) {
+        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Cover(progress.coverUrl, progress.seriesTitle, progress.seriesSlug, Modifier.width(80.dp).aspectRatio(.70f))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(progress.seriesTitle, fontWeight = FontWeight.Bold, maxLines = 2)
@@ -1588,6 +1595,13 @@ private fun ContinueCard(progress: ProgressEntry, prefs: AppPreferences, onOpen:
                     LinearProgressIndicator(progress = { it.progressFraction }, modifier = Modifier.fillMaxWidth())
                     Text(formatPlaybackTimeRange(it.positionMs, it.durationMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+            IconButton(onClick = onToggleWatched) {
+                Icon(
+                    if (state?.completed == true) Icons.Default.CheckCircle else Icons.Default.DoneAll,
+                    stringResource(if (state?.completed == true) R.string.mark_unwatched else R.string.mark_watched),
+                    tint = if (state?.completed == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -1899,7 +1913,9 @@ fun EpisodeOptionsScreen(
     prefs: AppPreferences,
     resolving: Boolean,
     allowExternalPlayer: Boolean,
+    watched: Boolean,
     onDismiss: () -> Unit,
+    onToggleWatched: () -> Unit,
     onAuto: () -> Unit,
     onExternal: () -> Unit,
     onLanguage: (Language) -> Unit,
@@ -1939,6 +1955,13 @@ fun EpisodeOptionsScreen(
                         Text(stringResource(R.string.description), fontWeight = FontWeight.Bold)
                         Text(episode.description.ifBlank { stringResource(R.string.no_description) }, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+            }
+            item {
+                OutlinedButton(onClick = onToggleWatched, modifier = Modifier.fillMaxWidth()) {
+                    Icon(if (watched) Icons.Default.CheckCircle else Icons.Default.DoneAll, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(if (watched) R.string.mark_unwatched else R.string.mark_watched))
                 }
             }
             if (resolving) item { LinearProgressIndicator(Modifier.fillMaxWidth()) }
@@ -2158,6 +2181,45 @@ fun SettingsScreen(
             item { SettingSwitch(stringResource(R.string.auto_next), stringResource(R.string.auto_next_desc), prefs.autoNextEnabled, vm::setAutoNextEnabled) }
             item { SettingSwitch(stringResource(R.string.external_player), stringResource(R.string.external_player_desc), prefs.allowExternalPlayer, vm::setAllowExternalPlayer) }
             item { SettingSwitch(stringResource(R.string.auto_play_preferred_hoster), stringResource(R.string.auto_play_preferred_hoster_desc), prefs.autoPlayPreferredHoster, vm::setAutoPlayPreferredHoster) }
+            item {
+                HorizontalDivider()
+                Text(
+                    stringResource(R.string.web_adblock),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+            }
+            item { SettingSwitch(stringResource(R.string.web_adblock), stringResource(R.string.web_adblock_desc), prefs.webAdBlockEnabled, vm::setWebAdBlockEnabled) }
+            if (prefs.webAdBlockEnabled) {
+                item {
+                    Text(stringResource(R.string.web_filter_lists), fontWeight = FontWeight.Bold)
+                    FlowRow(
+                        modifier = Modifier.padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        listOf(
+                            WebFilterList.ADVERTISING to R.string.web_filter_advertising,
+                            WebFilterList.TRACKING to R.string.web_filter_tracking,
+                            WebFilterList.POPUPS to R.string.web_filter_popups,
+                            WebFilterList.REDIRECTS to R.string.web_filter_redirects
+                        ).forEach { (id, label) ->
+                            FilterChip(
+                                selected = id in prefs.webFilterLists,
+                                onClick = {
+                                    val updated = prefs.webFilterLists.toMutableSet().apply {
+                                        if (!add(id)) remove(id)
+                                    }
+                                    vm.setWebFilterLists(updated)
+                                },
+                                label = { Text(stringResource(label)) }
+                            )
+                        }
+                    }
+                }
+            }
             item {
                 Text(stringResource(R.string.startup_area), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Text(stringResource(R.string.startup_area_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

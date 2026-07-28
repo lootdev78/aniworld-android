@@ -308,4 +308,6 @@
     <string name="startup_start">Startseite</string>
     <string name="startup_favorites">Favoriten</string>
     <string name="startup_history">Verlauf</string>
+    <string name="mark_watched">Als angesehen markieren</string>
+    <string name="mark_unwatched">Gesehen-Markierung entfernen</string>
 </resources>

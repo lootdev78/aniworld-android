@@ -681,6 +681,25 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         viewModelScope.launch { store.setEpisodeWatched(series, episode, !watched) }
     }
 
+    fun toggleProgressWatched(progress: ProgressEntry) {
+        val series = Series(
+            title = progress.seriesTitle,
+            slug = progress.seriesSlug,
+            url = progress.seriesUrl,
+            coverUrl = progress.coverUrl
+        )
+        val episode = Episode(
+            season = progress.season,
+            number = progress.episode,
+            title = progress.episodeTitle,
+            url = progress.episodeUrl,
+            seriesSlug = progress.seriesSlug,
+            seriesTitle = progress.seriesTitle
+        )
+        val watched = _state.value.preferences.episodeWatchStates[episode.key]?.completed == true
+        viewModelScope.launch { store.setEpisodeWatched(series, episode, !watched) }
+    }
+
     fun toggleSeasonWatched() {
         val series = _state.value.selected ?: return
         val episodes = _state.value.episodes

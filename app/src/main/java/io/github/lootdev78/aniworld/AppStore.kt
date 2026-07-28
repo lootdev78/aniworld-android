@@ -84,7 +84,7 @@ class AppStore(
                 useDynamicColors = prefs[DYNAMIC_COLORS] ?: false,
                 lastHomeTab = prefs[LAST_HOME_TAB] ?: "START",
                 initialPreloadCompleted = prefs[INITIAL_PRELOAD_COMPLETED] ?: false,
-                webAdBlockEnabled = prefs[WEB_ADBLOCK_ENABLED] ?: true,
+                webAdBlockEnabled = prefs[WEB_ADBLOCK_ENABLED] ?: false,
                 webFilterLists = parseFilterLists(prefs[WEB_FILTER_LISTS]),
                 webSessionPanelExpanded = prefs[WEB_SESSION_PANEL_EXPANDED] ?: true,
                 webMediaPanelExpanded = prefs[WEB_MEDIA_PANEL_EXPANDED] ?: true,
@@ -412,8 +412,8 @@ class AppStore(
 
     suspend fun setEpisodeWatched(series: Series, episode: Episode, watched: Boolean) {
         database.withTransaction {
+            val current = dao.episodeState(episode.key)
             if (watched) {
-                val current = dao.episodeState(episode.key)
                 dao.upsertEpisodeState(
                     EpisodeStateEntity(
                         key = episode.key,
@@ -425,13 +425,26 @@ class AppStore(
                         episode = episode.number,
                         episodeTitle = episode.title.ifBlank { episode.secondaryTitle },
                         episodeUrl = episode.url,
-                        positionMs = current?.durationMs ?: current?.positionMs ?: 0L,
+                        // Keep the real last playback position. `completed` alone controls the UI state.
+                        positionMs = current?.positionMs ?: 0L,
                         durationMs = current?.durationMs ?: 0L,
                         completed = true,
                         updatedAt = System.currentTimeMillis()
                     )
                 )
                 ensureOfflineMetadataLocked(series)
+                touchWatchedOrder(series.slug)
+            } else if (current != null && (current.positionMs > 0L || current.durationMs > 0L)) {
+                val restoredPosition = if (current.durationMs > 0L && current.positionMs >= current.durationMs) {
+                    (current.durationMs * 0.89).toLong()
+                } else current.positionMs
+                dao.upsertEpisodeState(
+                    current.copy(
+                        positionMs = restoredPosition.coerceAtLeast(0L),
+                        completed = false,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
                 touchWatchedOrder(series.slug)
             } else {
                 dao.deleteEpisodeState(episode.key)

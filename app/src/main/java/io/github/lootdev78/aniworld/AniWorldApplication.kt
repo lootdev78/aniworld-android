@@ -80,6 +80,18 @@ class AniWorldApplication : Application(), SingletonImageLoader.Factory {
                 .onFailure { AppLogger.error("Speicher", "Migration in Room fehlgeschlagen", it) }
             // Full HTML pages are no longer kept offline; only catalog metadata remains persistent.
             runCatching { database.pageCacheDao().clear() }
+            runCatching {
+                val migrations = getSharedPreferences("aniworld_internal_migrations", MODE_PRIVATE)
+                val currentCoverParser = migrations.getInt("cover_parser_version", 0)
+                if (currentCoverParser < 2) {
+                    database.seriesMetadataDao().clearCoverUrls()
+                    store.clearStoredCovers()
+                    clearImageCaches()
+                    migrations.edit().putInt("cover_parser_version", 2).apply()
+                    CatalogMetadataWorker.enqueue(this@AniWorldApplication, force = true)
+                    AppLogger.info("Cover", "Veraltete Cover-Zuordnungen wurden zurückgesetzt; Metadaten werden neu geladen")
+                }
+            }.onFailure { AppLogger.warn("Cover", "Cover-Zuordnungen konnten nicht migriert werden", it.message.orEmpty()) }
         }
     }
 }
