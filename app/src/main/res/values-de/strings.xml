@@ -90,6 +90,7 @@
     <string name="no_history">Kein passender Verlauf</string>
     <string name="no_history_hint">Starte eine Folge oder ändere den Filter.</string>
     <string name="history_item_subtitle">%1$d gesehen · zuletzt S%2$d E%3$d</string>
+    <string name="history_item_started_subtitle">Begonnen · zuletzt S%1$d F%2$d</string>
     <string name="search_in_list">In Liste suchen</string>
     <string name="sort_custom">Eigene Reihenfolge</string>
     <string name="sort_updated">Zuletzt geändert</string>
@@ -129,7 +130,7 @@
 
     <string name="player_close">Player schließen</string>
     <string name="player_title">%1$s · %2$s</string>
-    <string name="player_gesture_hint">Antippen: Pause/Weiter · doppeltippen: 10 s zurück/vor · Zeitleiste ziehen zum Spulen</string>
+    <string name="player_gesture_hint">Antippen: Pause/Weiter · links wischen: Helligkeit · rechts wischen: Lautstärke</string>
     <string name="invalid_stream_url">Ungültige Stream-URL</string>
     <string name="player_init_error">Player konnte nicht initialisiert werden.</string>
     <string name="playback_error">Wiedergabefehler</string>

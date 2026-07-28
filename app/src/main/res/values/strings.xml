@@ -90,6 +90,7 @@
     <string name="no_history">No matching history</string>
     <string name="no_history_hint">Start an episode or change the filter.</string>
     <string name="history_item_subtitle">%1$d watched · last S%2$d E%3$d</string>
+    <string name="history_item_started_subtitle">Started · last S%1$d E%2$d</string>
     <string name="search_in_list">Search list</string>
     <string name="sort_custom">Custom order</string>
     <string name="sort_updated">Recently updated</string>
@@ -129,7 +130,7 @@
 
     <string name="player_close">Close player</string>
     <string name="player_title">%1$s · %2$s</string>
-    <string name="player_gesture_hint">Tap: pause/resume · double tap: seek 10 s back/forward · drag the timeline to seek</string>
+    <string name="player_gesture_hint">Tap: pause/resume · swipe left: brightness · swipe right: volume</string>
     <string name="invalid_stream_url">Invalid stream URL</string>
     <string name="player_init_error">The player could not be initialized.</string>
     <string name="playback_error">Playback error</string>

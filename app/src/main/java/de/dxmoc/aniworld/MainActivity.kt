@@ -39,9 +39,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -157,23 +154,9 @@ fun AniWorldTheme(useDynamicColors: Boolean, content: @Composable () -> Unit) {
         error = Color(0xFFFF6B6B)
     )
     val scheme = if (useDynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        dynamicDarkColorScheme(context).copy(
-            background = fallback.background,
-            surface = fallback.surface,
-            surfaceVariant = fallback.surfaceVariant,
-            onBackground = fallback.onBackground,
-            onSurface = fallback.onSurface,
-            onSurfaceVariant = fallback.onSurfaceVariant
-        )
+        dynamicDarkColorScheme(context)
     } else fallback
-    MaterialTheme(colorScheme = scheme) {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = scheme.background,
-            contentColor = scheme.onBackground,
-            content = content
-        )
-    }
+    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 enum class HomeTab(val route: String, @StringRes val labelRes: Int) {
@@ -199,9 +182,7 @@ fun AniWorldApp(vm: AppViewModel) {
     val currentTab = HomeTab.fromRoute(currentRoute)
     var settingsOpen by remember { mutableStateOf(false) }
     var diagnosticsOpen by remember { mutableStateOf(false) }
-    var permissionOpen by remember { mutableStateOf(false) }
     var restoredTab by rememberSaveable { mutableStateOf(false) }
-    val snackbarHostState = remember { SnackbarHostState() }
 
     fun navigateToTab(tab: HomeTab) {
         navController.navigate(tab.route) {
@@ -218,13 +199,6 @@ fun AniWorldApp(vm: AppViewModel) {
             restoredTab = true
             val stored = HomeTab.fromStored(st.preferences.lastHomeTab)
             if (st.selected == null && stored != HomeTab.START) navigateToTab(stored)
-        }
-    }
-
-    LaunchedEffect(st.status) {
-        st.status?.let { message ->
-            snackbarHostState.showSnackbar(message)
-            vm.dismissStatus()
         }
     }
 
@@ -312,14 +286,9 @@ fun AniWorldApp(vm: AppViewModel) {
             prefs = st.preferences,
             vm = vm,
             onDismiss = { settingsOpen = false },
-            onPermissions = { permissionOpen = true },
             onDiagnostics = { settingsOpen = false; diagnosticsOpen = true }
         )
         if (diagnosticsOpen) DiagnosticDialog(st.diagnostics, vm::clearDiagnostics, { diagnosticsOpen = false }, context)
-        if (permissionOpen) PermissionDialog(
-            onDone = { vm.markPermissionIntroSeen(); permissionOpen = false },
-            onDismiss = { vm.markPermissionIntroSeen(); permissionOpen = false }
-        )
         return
     }
 
@@ -351,9 +320,6 @@ fun AniWorldApp(vm: AppViewModel) {
             if (expanded && !inDetail) AppNavigationRail(currentTab, ::navigateToTab)
             Scaffold(
                 modifier = Modifier.weight(1f),
-                containerColor = MaterialTheme.colorScheme.background,
-                contentColor = MaterialTheme.colorScheme.onBackground,
-                snackbarHost = { SnackbarHost(snackbarHostState) },
                 bottomBar = { if (!expanded && !inDetail) AppBottomBar(currentTab, ::navigateToTab) }
             ) { padding ->
                 Box(Modifier.padding(padding).fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -381,10 +347,6 @@ fun AniWorldApp(vm: AppViewModel) {
     }
 
     if (diagnosticsOpen) DiagnosticDialog(st.diagnostics, vm::clearDiagnostics, { diagnosticsOpen = false }, context)
-    if (permissionOpen) PermissionDialog(
-        onDone = { vm.markPermissionIntroSeen(); permissionOpen = false },
-        onDismiss = { vm.markPermissionIntroSeen(); permissionOpen = false }
-    )
 }
 
 @Composable
@@ -459,28 +421,6 @@ private fun tabIcon(tab: HomeTab) = when (tab) {
     HomeTab.CATALOG -> Icons.Default.Explore
     HomeTab.FAVORITES -> Icons.Default.Favorite
     HomeTab.HISTORY -> Icons.Default.History
-}
-
-@Composable
-private fun PermissionDialog(onDone: () -> Unit, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.permissions_privacy_title)) },
-        text = {
-            Text(stringResource(R.string.permissions_privacy_body))
-        },
-        confirmButton = { TextButton(onClick = onDone) { Text(stringResource(R.string.understood)) } },
-        dismissButton = {
-            TextButton(onClick = {
-                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = android.net.Uri.parse("package:${context.packageName}")
-                }
-                runCatching { context.startActivity(intent) }
-                    .onFailure { AppLogger.error(context.getString(R.string.permissions_privacy_title), context.getString(R.string.app_settings_open_error), it) }
-            }) { Text(stringResource(R.string.app_settings)) }
-        }
-    )
 }
 
 @Composable

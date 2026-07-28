@@ -27,15 +27,14 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -77,15 +76,7 @@ fun PlayerScreen(
     var controlsVisible by remember(playback.id) { mutableStateOf(true) }
     var controlsGeneration by remember(playback.id) { mutableIntStateOf(0) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
-    var scrubPosition by remember(playback.id) { mutableFloatStateOf(playback.startPositionMs.toFloat()) }
-    var isScrubbing by remember(playback.id) { mutableStateOf(false) }
-    var seekPositionMs by remember(playback.id) { mutableLongStateOf(playback.startPositionMs) }
-    var seekRequestId by remember(playback.id) { mutableIntStateOf(0) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
-    LaunchedEffect(position, isScrubbing) {
-        if (!isScrubbing) scrubPosition = position.toFloat()
-    }
 
     LaunchedEffect(playback.id) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -165,13 +156,6 @@ fun PlayerScreen(
                 controlsVisible = true
                 onError(message)
             },
-            seekPositionMs = seekPositionMs,
-            seekRequestId = seekRequestId,
-            onSeeked = { target ->
-                position = target
-                scrubPosition = target.toFloat()
-                onProgress(target, duration, false)
-            },
             onInteraction = {
                 controlsVisible = true
                 controlsGeneration++
@@ -245,27 +229,11 @@ fun PlayerScreen(
                 Text(stringResource(R.string.player_title, playback.seriesTitle, playback.episode.localizedLabel()), color = Color.White, fontWeight = FontWeight.Bold)
                 Text(playback.episode.localizedDisplayTitle(), color = Color.White.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
                 if (duration > 0L) {
-                    val displayedPosition = if (isScrubbing) scrubPosition.toLong() else position
-                    Slider(
-                        value = displayedPosition.toFloat().coerceIn(0f, duration.toFloat()),
-                        onValueChange = { value ->
-                            isScrubbing = true
-                            scrubPosition = value
-                            controlsVisible = true
-                            controlsGeneration++
-                        },
-                        onValueChangeFinished = {
-                            val target = scrubPosition.toLong().coerceIn(0L, duration)
-                            isScrubbing = false
-                            position = target
-                            seekPositionMs = target
-                            seekRequestId++
-                            onProgress(target, duration, false)
-                        },
-                        valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
-                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp)
+                    LinearProgressIndicator(
+                        progress = { (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
-                    Text("${formatTime(displayedPosition)} / ${formatTime(duration)}", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                    Text("${formatTime(position)} / ${formatTime(duration)}", color = Color.White, style = MaterialTheme.typography.labelSmall)
                 }
                 Text(stringResource(R.string.player_gesture_hint), color = Color.White.copy(alpha = .72f), style = MaterialTheme.typography.labelSmall)
                 playerError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }

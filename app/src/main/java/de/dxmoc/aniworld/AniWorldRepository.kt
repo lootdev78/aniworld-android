@@ -746,42 +746,99 @@ class AniWorldRepository(
 
     private fun parseSeasonDescription(markup: String, series: Series, season: Int): String {
         val doc = Jsoup.parse(markup, baseUrl + seasonPath(series.slug, season))
-        val direct = firstCleanText(
-            doc.selectFirst("#stream .seasonDescription, #stream .season-description, #stream .seasonDesc, #stream .season-desc")?.text(),
-            doc.selectFirst(".seasonContent .description, .season-content .description, [data-season-description]")?.text()
-        )
+
+        val directCandidates = doc.select(
+            "#stream .seasonDescription, #stream .season-description, #stream .seasonDesc, " +
+                "#stream .season-desc, #stream [data-season-description], " +
+                ".seasonContent .description, .season-content .description"
+        ).asSequence().map { it.text() }
+
         val headingPattern = if (season == 0) {
-            Regex("film|filme", RegexOption.IGNORE_CASE)
+            Regex("^(?:film|filme)$", RegexOption.IGNORE_CASE)
         } else {
-            Regex("""staffel\s*$season""", RegexOption.IGNORE_CASE)
+            Regex("""^staffel\s+$season$""", RegexOption.IGNORE_CASE)
         }
-        val nearby = doc.select("h1, h2, h3").firstOrNull { headingPattern.containsMatchIn(clean(it.text())) }?.let { heading ->
-            generateSequence(heading.nextElementSibling()) { it.nextElementSibling() }
-                .take(8)
-                .flatMap { element -> sequenceOf(element) + element.select("p, .description").asSequence() }
-                .map { cleanDescription(it.text()) }
-                .firstOrNull { candidate ->
-                    candidate.length >= 30 &&
-                        !candidate.contains("Wähle einen AniWorld Stream", true) &&
-                        !candidate.contains("Episoden der Staffel", true) &&
-                        !candidate.contains("Weitere erstklassige", true) &&
-                        !candidate.contains("Hoster", true)
+        val nearbyCandidates = doc.select("#stream h1, #stream h2, #stream h3, #stream h4")
+            .asSequence()
+            .filter { headingPattern.matches(clean(it.text())) }
+            .flatMap { heading ->
+                generateSequence(heading.nextElementSibling()) { it.nextElementSibling() }
+                    .take(6)
+                    .flatMap { element ->
+                        sequenceOf(element) + element.select("p, .description, [class*=description], [class*=collapse]").asSequence()
+                    }
+            }
+            .map { it.text() }
+
+        val toggleCandidates = doc.select("#stream button, #stream a, #stream span")
+            .asSequence()
+            .filter { element ->
+                val ownText = clean(element.ownText())
+                ownText.equals("Beschreibung anzeigen", ignoreCase = true) ||
+                    ownText.equals("Beschreibung", ignoreCase = true) ||
+                    ownText.equals("Show description", ignoreCase = true)
+            }
+            .flatMap { toggle ->
+                val targetId = firstCleanText(
+                    toggle.attr("aria-controls"),
+                    toggle.attr("data-target").removePrefix("#"),
+                    toggle.attr("href").takeIf { it.startsWith('#') }?.removePrefix("#")
+                )
+                sequence {
+                    if (targetId.isNotBlank()) {
+                        val target = doc.getElementById(targetId)
+                        if (target != null) yield(target.text())
+                    }
+                    val attributes = listOf(
+                        toggle.attr("data-description"),
+                        toggle.attr("data-content"),
+                        toggle.attr("title")
+                    )
+                    for (attribute in attributes) {
+                        if (attribute.isNotBlank()) yield(attribute)
+                    }
+                    var sibling = toggle.nextElementSibling()
+                    var siblingCount = 0
+                    while (sibling != null && siblingCount < 5) {
+                        yield(sibling.text())
+                        sibling = sibling.nextElementSibling()
+                        siblingCount++
+                    }
                 }
-        }.orEmpty()
-        val expandable = doc.select(
-            "#stream [id*=description], #stream [class*=description], #stream [class*=collapse], " +
-                ".seasonContent [class*=description], .season-content [class*=description]"
-        ).asSequence()
-            .map { element -> cleanDescription(element.text()) }
-            .firstOrNull { candidate ->
-                candidate.length >= 30 &&
-                    !candidate.contains("Wähle einen AniWorld Stream", true) &&
-                    !candidate.contains("Episoden der Staffel", true) &&
-                    !candidate.contains("Weitere erstklassige", true) &&
-                    !candidate.contains("Hoster", true)
-            }.orEmpty()
-        val pageDescription = doc.selectFirst("meta[property=og:description]")?.attr("content").orEmpty()
-        return cleanDescription(firstCleanText(direct, nearby, expandable, pageDescription)).ifBlank { series.description }
+            }
+
+        val dedicated = (directCandidates + toggleCandidates + nearbyCandidates)
+            .map(::cleanDescription)
+            .firstOrNull { isSeasonDescriptionCandidate(it, series, season) }
+            .orEmpty()
+
+        val seriesDescription = firstCleanText(
+            doc.selectFirst("[itemprop=description], .seriesDescription, .seri_des, .series-description")?.text(),
+            series.description,
+            doc.selectFirst("meta[property=og:description]")?.attr("content"),
+            doc.selectFirst("meta[name=description]")?.attr("content")
+        ).let(::cleanDescription)
+
+        return dedicated.ifBlank { seriesDescription }
+    }
+
+    private fun isSeasonDescriptionCandidate(value: String, series: Series, season: Int): Boolean {
+        val text = cleanDescription(value)
+        if (text.length < 30 || text.equals(series.title, ignoreCase = true)) return false
+        val rejected = listOf(
+            "Wähle einen AniWorld Stream",
+            "Episoden der Staffel",
+            "Folge Titel / Name Hoster Sprache",
+            "Weitere erstklassige",
+            "Folgende Animes",
+            "Jetzt anschauen",
+            "Staffeln:",
+            "Episoden:",
+            "Hoster gefunden"
+        )
+        if (rejected.any { text.contains(it, ignoreCase = true) }) return false
+        if (season == 0 && text.matches(Regex("""^Filme?\s*\d*$""", RegexOption.IGNORE_CASE))) return false
+        return text.split(' ').count { it.isNotBlank() } >= 6
     }
 
     private fun parseEpisodes(markup: String, series: Series, season: Int): List<Episode> {

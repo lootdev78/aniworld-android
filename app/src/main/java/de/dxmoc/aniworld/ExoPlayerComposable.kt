@@ -59,9 +59,6 @@ fun EmbeddedExoPlayer(
     onProgress: (positionMs: Long, durationMs: Long) -> Unit,
     onEnded: (positionMs: Long, durationMs: Long) -> Unit,
     onError: (String) -> Unit,
-    seekPositionMs: Long = 0L,
-    seekRequestId: Int = 0,
-    onSeeked: (Long) -> Unit = {},
     onInteraction: () -> Unit = {},
     onPlayingChanged: (Boolean) -> Unit = {}
 ) {
@@ -78,7 +75,6 @@ fun EmbeddedExoPlayer(
     var gestureVisible by remember { mutableStateOf(false) }
     var playStateVisible by remember { mutableStateOf(false) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
-    var seekFeedback by remember(playback.id) { mutableStateOf<Int?>(null) }
 
     val controllerFuture = remember {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
@@ -155,10 +151,6 @@ fun EmbeddedExoPlayer(
             player?.let { onProgress(it.currentPosition.coerceAtLeast(0L), it.duration.coerceAtLeast(0L)) }
         }
     }
-    LaunchedEffect(player, seekRequestId) {
-        val activePlayer = player ?: return@LaunchedEffect
-        if (seekRequestId > 0) activePlayer.seekTo(seekPositionMs.coerceAtLeast(0L))
-    }
     LaunchedEffect(gestureVisible, gestureValue) {
         if (gestureVisible) {
             delay(900L)
@@ -171,38 +163,19 @@ fun EmbeddedExoPlayer(
             playStateVisible = false
         }
     }
-    LaunchedEffect(seekFeedback) {
-        if (seekFeedback != null) {
-            delay(750L)
-            seekFeedback = null
-        }
-    }
 
     Box(
         modifier = modifier
             .background(Color.Black)
             .pointerInput(playback.id, player) {
-                detectTapGestures(
-                    onDoubleTap = { offset ->
-                        onInteraction()
-                        player?.let { activePlayer ->
-                            val delta = if (offset.x < size.width / 2f) -10_000L else 10_000L
-                            val maxPosition = activePlayer.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
-                            val target = (activePlayer.currentPosition + delta).coerceIn(0L, maxPosition)
-                            activePlayer.seekTo(target)
-                            onSeeked(target)
-                            seekFeedback = if (delta < 0L) -10 else 10
-                        }
-                    },
-                    onTap = {
-                        onInteraction()
-                        player?.let {
-                            if (it.isPlaying) it.pause() else it.play()
-                            isPlaying = it.isPlaying
-                            playStateVisible = true
-                        }
+                detectTapGestures(onTap = {
+                    onInteraction()
+                    player?.let {
+                        if (it.isPlaying) it.pause() else it.play()
+                        isPlaying = it.isPlaying
+                        playStateVisible = true
                     }
-                )
+                })
             }
             .pointerInput(playback.id) {
                 var startBrightness = 0.5f
@@ -281,15 +254,6 @@ fun EmbeddedExoPlayer(
                     if (isPlaying) stringResource(R.string.playback_running) else stringResource(R.string.playback_paused),
                     tint = Color.White,
                     modifier = Modifier.padding(22.dp)
-                )
-            }
-        }
-        seekFeedback?.let { seconds ->
-            Surface(color = Color.Black.copy(alpha = 0.72f), shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)) {
-                Text(
-                    text = if (seconds < 0) "−10 s" else "+10 s",
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 16.dp)
                 )
             }
         }

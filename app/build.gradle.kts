@@ -13,8 +13,8 @@ android {
         applicationId = "de.dxmoc.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 51
-        versionName = "1.6.1-ui-fix"
+        versionCode = 52
+        versionName = "1.6.2-ui-polish"
         vectorDrawables.useSupportLibrary = true
     }
 

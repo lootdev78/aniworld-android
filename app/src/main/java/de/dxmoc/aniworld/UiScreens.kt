@@ -36,7 +36,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -77,8 +76,6 @@ import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ViewAgenda
@@ -105,6 +102,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -114,23 +112,21 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 @Composable
@@ -297,7 +293,21 @@ private fun LatestEpisodesRow(
                             Text("${item.episode.localizedLabel()} · ${item.episode.localizedDisplayTitle()}", style = MaterialTheme.typography.bodySmall, maxLines = 2)
                             if (item.releasedAt.isNotBlank()) Text(item.releasedAt, style = MaterialTheme.typography.labelSmall)
                             val state = st.preferences.episodeWatchStates[item.episode.key]
-                            if (state?.completed == true) AssistChip(onClick = {}, label = { Text(stringResource(R.string.watched)) }, leadingIcon = { Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp)) })
+                            if (state?.completed == true) {
+                                Surface(
+                                    shape = RoundedCornerShape(50),
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        Icon(Icons.Default.CheckCircle, null, Modifier.size(16.dp))
+                                        Text(stringResource(R.string.watched), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -328,35 +338,30 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var controlsVisible by rememberSaveable { mutableStateOf(true) }
-    val scrollAccumulator = remember { floatArrayOf(0f) }
     val items = st.filteredCatalog
     val isGrid = st.preferences.catalogViewMode == LibraryViewMode.GRID
-    val catalogScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                val delta = available.y
-                if (delta == 0f) return Offset.Zero
-                if (scrollAccumulator[0] != 0f && scrollAccumulator[0] * delta < 0f) scrollAccumulator[0] = 0f
-                scrollAccumulator[0] += delta
-                when {
-                    scrollAccumulator[0] <= -28f && controlsVisible -> {
-                        controlsVisible = false
-                        scrollAccumulator[0] = 0f
-                    }
-                    scrollAccumulator[0] >= 20f && !controlsVisible -> {
-                        controlsVisible = true
-                        scrollAccumulator[0] = 0f
-                    }
-                }
-                return Offset.Zero
-            }
-        }
-    }
 
     LaunchedEffect(st.catalogQuery, st.catalogGenre, st.preferences.catalogViewMode) {
         controlsVisible = true
-        scrollAccumulator[0] = 0f
         if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
+    }
+    LaunchedEffect(listState, isGrid) {
+        if (isGrid) return@LaunchedEffect
+        var previous = 0
+        snapshotFlow { listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }
+            .collect { current ->
+                controlsVisible = current <= previous || current < 32
+                previous = current
+            }
+    }
+    LaunchedEffect(gridState, isGrid) {
+        if (!isGrid) return@LaunchedEffect
+        var previous = 0
+        snapshotFlow { gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset }
+            .collect { current ->
+                controlsVisible = current <= previous || current < 32
+                previous = current
+            }
     }
     if (st.catalog.items.isEmpty() && !st.catalogLoading) LaunchedEffect(Unit) { vm.loadCatalog() }
 
@@ -365,7 +370,7 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         onRefresh = { vm.loadCatalog(true) },
         modifier = Modifier.fillMaxSize()
     ) {
-        Column(Modifier.fillMaxSize().nestedScroll(catalogScrollConnection)) {
+        Column(Modifier.fillMaxSize()) {
             AnimatedVisibility(
                 visible = controlsVisible,
                 enter = slideInVertically(initialOffsetY = { -it / 2 }) + fadeIn(),
@@ -523,8 +528,7 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         filter.isBlank() || entry.title.contains(filter, true) || entry.genres.any { genre -> genre.contains(filter, true) }
     }
     Column(Modifier.fillMaxSize()) {
-        LibraryScreenHeader(
-            title = stringResource(R.string.favorites),
+        LibraryScreenControls(
             filter = filter,
             onFilter = { filter = it },
             sort = st.preferences.favoriteSort,
@@ -604,8 +608,7 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         statusMatches && (filter.isBlank() || entry.title.contains(filter, true))
     }
     Column(Modifier.fillMaxSize()) {
-        LibraryScreenHeader(
-            title = stringResource(R.string.history_title),
+        LibraryScreenControls(
             filter = filter,
             onFilter = { filter = it },
             sort = st.preferences.watchedSort,
@@ -651,7 +654,11 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                         LaunchedEffect(entry.slug) { vm.enrichCatalogItem(entry.asSeries()) }
                         LibraryCard(
                             series = entry.asSeries(),
-                            subtitle = stringResource(R.string.history_item_subtitle, entry.watchedEpisodes, entry.latestSeason, entry.latestEpisode),
+                            subtitle = if (entry.watchedEpisodes > 0) {
+                                stringResource(R.string.history_item_subtitle, entry.watchedEpisodes, entry.latestSeason, entry.latestEpisode)
+                            } else {
+                                stringResource(R.string.history_item_started_subtitle, entry.latestSeason, entry.latestEpisode)
+                            },
                             favorite = st.preferences.isFavorite(entry.slug),
                             compact = st.preferences.historyViewMode == LibraryViewMode.COMPACT,
                             onOpen = { vm.selectWatched(entry) },
@@ -669,8 +676,7 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
 }
 
 @Composable
-private fun LibraryScreenHeader(
-    title: String,
+private fun LibraryScreenControls(
     filter: String,
     onFilter: (String) -> Unit,
     sort: LibrarySort,
@@ -678,14 +684,36 @@ private fun LibraryScreenHeader(
     viewMode: LibraryViewMode? = null,
     onViewMode: (LibraryViewMode) -> Unit = {}
 ) {
-    Column {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-            if (viewMode != null) ViewModeSelector(viewMode, onViewMode) else Icon(Icons.Default.Sort, null)
-        }
-        OutlinedTextField(value = filter, onValueChange = onFilter, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), label = { Text(stringResource(R.string.search_in_list)) }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
-        LazyRow(contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(LibrarySort.entries) { item -> FilterChip(selected = sort == item, onClick = { onSort(item) }, label = { Text(stringResource(item.labelRes)) }) }
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        OutlinedTextField(
+            value = filter,
+            onValueChange = onFilter,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            label = { Text(stringResource(R.string.search_in_list)) },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            singleLine = true
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LazyRow(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(LibrarySort.entries) { item ->
+                    FilterChip(
+                        selected = sort == item,
+                        onClick = { onSort(item) },
+                        label = { Text(stringResource(item.labelRes)) }
+                    )
+                }
+            }
+            if (viewMode != null) ViewModeSelector(viewMode, onViewMode)
         }
     }
 }
@@ -1039,20 +1067,87 @@ private fun LibraryCard(
     moveDown: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null
 ) {
-    Card(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = onInfo)) {
-        Row(Modifier.padding(10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Cover(series.coverUrl, series.title, series.slug, Modifier.width(if (compact) 58.dp else 82.dp).aspectRatio(.70f))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(series.title, fontWeight = FontWeight.Bold, maxLines = 2)
-                if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall)
-                if (!compact && series.genres.isNotEmpty()) Text(series.genres.take(3).joinToString(" · "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-                Row {
-                    IconButton(onClick = onFavorite) { Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, stringResource(R.string.favorite)) }
-                    moveUp?.let { IconButton(onClick = it) { Icon(Icons.Default.ArrowUpward, stringResource(R.string.move_up)) } }
-                    moveDown?.let { IconButton(onClick = it) { Icon(Icons.Default.ArrowDownward, stringResource(R.string.move_down)) } }
-                    onDelete?.let { IconButton(onClick = it) { Icon(Icons.Default.Delete, stringResource(R.string.delete)) } }
+    Card(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .78f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 11.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Cover(
+                series.coverUrl,
+                series.title,
+                series.slug,
+                Modifier.width(if (compact) 62.dp else 78.dp).aspectRatio(.70f)
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    series.title,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (subtitle.isNotBlank()) {
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                if (!compact && series.genres.isNotEmpty()) {
+                    Text(
+                        series.genres.take(3).joinToString(" · "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onFavorite, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            stringResource(R.string.favorite)
+                        )
+                    }
+                    IconButton(onClick = onInfo, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Default.Info, stringResource(R.string.details))
+                    }
+                    moveUp?.let { action ->
+                        IconButton(onClick = action, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Default.ArrowUpward, stringResource(R.string.move_up))
+                        }
+                    }
+                    moveDown?.let { action ->
+                        IconButton(onClick = action, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Default.ArrowDownward, stringResource(R.string.move_down))
+                        }
+                    }
+                    onDelete?.let { action ->
+                        IconButton(onClick = action, modifier = Modifier.size(40.dp)) {
+                            Icon(Icons.Default.Delete, stringResource(R.string.delete))
+                        }
+                    }
                 }
             }
+            Icon(
+                Icons.Default.ChevronRight,
+                stringResource(R.string.open_anime),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -1167,10 +1262,31 @@ private fun LoadingBlock(text: String) = Box(Modifier.fillMaxWidth().height(180.
 private fun ErrorCard(message: String, retry: () -> Unit) = Card(Modifier.padding(16.dp).fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error); Text(message); Button(onClick = retry) { Text(stringResource(R.string.retry)) } } }
 
 @Composable
-private fun EmptyState(title: String, subtitle: String, modifier: Modifier = Modifier.fillMaxSize()) = Box(modifier, contentAlignment = Alignment.Center) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun EmptyState(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier.fillMaxSize()
+) = Box(
+    modifier = modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+    contentAlignment = Alignment.Center
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(
+            title,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            subtitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -1212,16 +1328,13 @@ fun SeriesCollectionScreen(
         page.items.filter { query.isBlank() || it.title.contains(query, true) || it.genres.any { genre -> genre.contains(query, true) } }
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
             Column(Modifier.weight(1f)) {
                 Text(page.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                 Text(stringResource(R.string.titles_count, items.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ViewModeSelector(viewMode) { viewMode = it }
-            IconButton(onClick = onBack) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
         OutlinedTextField(
             value = query,
@@ -1289,15 +1402,12 @@ fun EpisodeCollectionScreen(
         }
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
             Column(Modifier.weight(1f)) {
                 Text(page.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                 Text(stringResource(R.string.episodes_count, items.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onBack) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
         OutlinedTextField(
             value = query,
@@ -1353,12 +1463,9 @@ fun EpisodeOptionsScreen(
             .let { index -> if (index < 0) Int.MAX_VALUE else index }
     })
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(episode.localizedLabel(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
+            Text(episode.localizedLabel(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
         }
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -1458,12 +1565,9 @@ fun AnimeInfoScreen(
     onOpenImdb: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(series.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), maxLines = 2)
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
+            Text(series.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), maxLines = 2)
         }
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -1492,7 +1596,13 @@ fun AnimeInfoScreen(
             }
             item {
                 val headline = listOf(series.year, series.ageRating).filter(String::isNotBlank)
-                if (headline.isNotEmpty()) Text(headline.joinToString("  •  "), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
+                if (headline.isNotEmpty()) {
+                    Text(
+                        headline.joinToString("  •  "),
+                        color = MaterialTheme.colorScheme.secondary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 if (episode == null) {
                     Text(series.description.ifBlank { stringResource(R.string.no_description) })
                 }
@@ -1525,7 +1635,6 @@ fun SettingsScreen(
     prefs: AppPreferences,
     vm: AppViewModel,
     onDismiss: () -> Unit,
-    onPermissions: () -> Unit,
     onDiagnostics: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1536,12 +1645,9 @@ fun SettingsScreen(
         ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else vm.refreshCatalogMetadata()
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
+            Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
         }
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -1589,9 +1695,7 @@ fun SettingsScreen(
                 HorizontalDivider()
                 Text(stringResource(R.string.tools), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 12.dp))
             }
-            item { OutlinedButton(onClick = vm::openDefaultChallenge, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Security, null); Text(stringResource(R.string.web_verification)) } }
             item { OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.BugReport, null); Text(stringResource(R.string.diagnostics)) } }
-            item { OutlinedButton(onClick = onPermissions, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.manage_permissions)) } }
             item { Spacer(Modifier.height(18.dp)) }
         }
     }

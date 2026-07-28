@@ -3,6 +3,16 @@ package de.dxmoc.aniworld
 import androidx.annotation.StringRes
 import java.util.UUID
 
+private fun canonicalSeriesUrl(url: String, slug: String): String {
+    val marker = "/anime/stream/$slug"
+    val markerIndex = url.indexOf(marker, ignoreCase = true)
+    return when {
+        markerIndex >= 0 -> url.substring(0, markerIndex) + marker
+        url.isNotBlank() -> url
+        else -> "https://aniworld.to$marker"
+    }
+}
+
 data class Series(
     val title: String,
     val slug: String,
@@ -179,7 +189,7 @@ data class FavoriteEntry(
     val genres: List<String> = emptyList(),
     val updatedAt: Long
 ) {
-    fun asSeries(): Series = Series(title, slug, url, description, coverUrl, genres)
+    fun asSeries(): Series = Series(title, slug, canonicalSeriesUrl(url, slug), description, coverUrl, genres)
 }
 
 data class SearchEntry(val query: String, val updatedAt: Long)
@@ -216,7 +226,7 @@ data class WatchedSeriesEntry(
     val latestEpisode: Int,
     val updatedAt: Long
 ) {
-    fun asSeries(): Series = Series(title, slug, url, coverUrl = coverUrl)
+    fun asSeries(): Series = Series(title, slug, canonicalSeriesUrl(url, slug), coverUrl = coverUrl)
 }
 
 object HosterCatalog {
