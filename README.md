@@ -4,7 +4,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.5.0-complete-integration`
+`1.5.1-build-fix`
 
 
 ## App-Icon und Sprachen

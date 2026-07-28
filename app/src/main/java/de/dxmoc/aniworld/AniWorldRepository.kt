@@ -412,7 +412,7 @@ class AniWorldRepository(
         val currentlyPopular = parseSeriesSection(doc, "Derzeit beliebt").take(24)
         val community = parseSeriesSection(doc, "Das sehen andere AniWorld Nutzer").take(24)
         val mostWatched = sequenceOf("Top 50", "Meistgesehen", "Top 50 Animes")
-            .map(::parseSeriesSection)
+            .map { heading -> parseSeriesSection(doc, heading) }
             .firstOrNull { it.isNotEmpty() }
             .orEmpty()
             .distinctBy(Series::slug)
@@ -603,7 +603,7 @@ class AniWorldRepository(
                 (width < 100 || height < 120 || width.toFloat() / height.coerceAtLeast(1) > 1.65f)
             if (rejectedContext || implausibleSize) return@flatMap emptyList()
             val baseScore = when {
-                image.matches(".seriesCoverBox img, .seriesCover img, .cover img, [class*=cover] img, [class*=poster] img") -> 80
+                image.closest(".seriesCoverBox, .seriesCover, .cover, [class*=cover], [class*=poster]") != null -> 80
                 image.hasAttr("itemprop") && image.attr("itemprop").equals("image", true) -> 70
                 context.contains("cover") || context.contains("poster") -> 60
                 else -> 0
