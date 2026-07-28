@@ -58,7 +58,9 @@ fun EmbeddedExoPlayer(
     modifier: Modifier = Modifier,
     onProgress: (positionMs: Long, durationMs: Long) -> Unit,
     onEnded: (positionMs: Long, durationMs: Long) -> Unit,
-    onError: (String) -> Unit
+    onError: (String) -> Unit,
+    onInteraction: () -> Unit = {},
+    onPlayingChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -121,6 +123,7 @@ fun EmbeddedExoPlayer(
 
             override fun onIsPlayingChanged(value: Boolean) {
                 isPlaying = value
+                onPlayingChanged(value)
             }
 
             override fun onPlayerError(error: PlaybackException) {
@@ -135,6 +138,7 @@ fun EmbeddedExoPlayer(
         activePlayer.addListener(listener)
         buffering = activePlayer.playbackState == Player.STATE_BUFFERING || activePlayer.playbackState == Player.STATE_IDLE
         isPlaying = activePlayer.isPlaying
+        onPlayingChanged(activePlayer.isPlaying)
         onDispose {
             runCatching { onProgress(activePlayer.currentPosition.coerceAtLeast(0L), activePlayer.duration.coerceAtLeast(0L)) }
             activePlayer.removeListener(listener)
@@ -165,6 +169,7 @@ fun EmbeddedExoPlayer(
             .background(Color.Black)
             .pointerInput(playback.id, player) {
                 detectTapGestures(onTap = {
+                    onInteraction()
                     player?.let {
                         if (it.isPlaying) it.pause() else it.play()
                         isPlaying = it.isPlaying
@@ -178,6 +183,7 @@ fun EmbeddedExoPlayer(
                 var totalDrag = 0f
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
+                        onInteraction()
                         totalDrag = 0f
                         val edgeFraction = offset.x / size.width.coerceAtLeast(1).toFloat()
                         gestureMode = when {

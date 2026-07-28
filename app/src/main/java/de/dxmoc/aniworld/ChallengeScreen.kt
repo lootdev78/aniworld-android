@@ -327,14 +327,19 @@ fun ChallengeScreen(
                     style = MaterialTheme.typography.labelMedium
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (isAniWorldChallenge) {
+                    if (isAniWorldChallenge || request.retryAfterSuccess) {
                         Button(
                             modifier = Modifier.weight(1f),
                             enabled = !checking && currentUrl.isNotBlank(),
                             onClick = { CookieManager.getInstance().flush(); onVerify(currentUrl) }
                         ) {
                             Icon(Icons.Default.Security, null, Modifier.size(18.dp))
-                            Text(" " + stringResource(R.string.challenge_check_session))
+                            Text(
+                                " " + stringResource(
+                                    if (isAniWorldChallenge) R.string.challenge_check_session
+                                    else R.string.challenge_retry_hoster
+                                )
+                            )
                         }
                     } else if (adBlockEnabled) {
                         OutlinedButton(

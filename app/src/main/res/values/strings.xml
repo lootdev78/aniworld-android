@@ -260,4 +260,16 @@
     <string name="web_filter_tracking">Tracking</string>
     <string name="web_filter_popups">Popups</string>
     <string name="web_filter_redirects">Redirects</string>
+
+    <string name="show_catalog_controls">Show search and filters</string>
+    <string name="season_description">Season description</string>
+    <string name="movie_description">Movie description</string>
+    <string name="description">Description</string>
+    <string name="episodes_count">%1$d episodes</string>
+    <string name="playback_settings">Playback</string>
+    <string name="display_settings">Appearance</string>
+    <string name="catalog_and_cache">Catalog and cache</string>
+    <string name="tools">Tools</string>
+    <string name="status_hoster_fallback">%1$s requires a browser check. Trying another hoster first…</string>
+    <string name="challenge_retry_hoster">CAPTCHA completed – retry hoster</string>
 </resources>

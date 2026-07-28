@@ -99,12 +99,32 @@ data class ResolveResult(
     val stream: StreamSource?,
     val selectedHoster: Hoster?,
     val availableHosters: List<Hoster>,
-    val log: List<String>
+    val log: List<String>,
+    val challengeHoster: Hoster? = null,
+    val challengeUrl: String = "",
+    val challengeReason: String = ""
 )
 
 data class EpisodePage(
     val episode: Episode,
     val hosters: List<Hoster>
+)
+
+data class SeasonPage(
+    val season: Int,
+    val title: String,
+    val description: String,
+    val episodes: List<Episode>
+)
+
+data class SeriesCollectionPage(
+    val title: String,
+    val items: List<Series>
+)
+
+data class EpisodeCollectionPage(
+    val title: String,
+    val items: List<HomeEpisode>
 )
 
 enum class Language(val token: String, @StringRes val labelRes: Int) {
@@ -246,7 +266,8 @@ data class AppPreferences(
     val settingsButtonX: Float = 0.92f,
     val settingsButtonY: Float = 0.72f,
     val catalogViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
-    val favoritesViewMode: LibraryViewMode = LibraryViewMode.DETAILED
+    val favoritesViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
+    val historyViewMode: LibraryViewMode = LibraryViewMode.DETAILED
 ) {
     fun isFavorite(slug: String): Boolean = favorites.any { it.slug == slug }
     fun episodeState(episode: Episode): EpisodeWatchState? = episodeWatchStates[episode.key]

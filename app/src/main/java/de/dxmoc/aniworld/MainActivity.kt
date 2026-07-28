@@ -58,6 +58,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntOffset
@@ -253,6 +254,72 @@ fun AniWorldApp(vm: AppViewModel) {
         return
     }
 
+    st.infoSeries?.let { series ->
+        BackHandler { vm.dismissInfoDialog() }
+        AnimeInfoScreen(
+            series = series,
+            episode = st.infoEpisode,
+            loading = st.infoLoading,
+            error = st.infoError,
+            onDismiss = vm::dismissInfoDialog,
+            onOpenAnime = {
+                vm.dismissInfoDialog()
+                vm.closeCollection()
+                vm.select(series)
+            },
+            onOpenImdb = {
+                vm.dismissInfoDialog()
+                vm.openManualPage(series.imdbUrl, "IMDb · ${series.title}")
+            }
+        )
+        return
+    }
+
+    st.pendingEpisode?.let { episode ->
+        BackHandler { vm.dismissEpisodeOptions() }
+        EpisodeOptionsScreen(
+            episode = episode,
+            hosters = st.pendingHosters,
+            prefs = st.preferences,
+            resolving = st.resolving,
+            onDismiss = vm::dismissEpisodeOptions,
+            onAuto = { vm.playEpisode(episode) },
+            onLanguage = { vm.playEpisode(episode, it) },
+            onHoster = { hoster -> vm.playEpisode(episode, hoster.lang.takeIf { it != Language.UNKNOWN }, hoster) },
+            onHosterWeb = { hoster -> vm.openHosterPage(episode, hoster) }
+        )
+        return
+    }
+
+    if (settingsOpen) {
+        BackHandler { settingsOpen = false }
+        SettingsScreen(
+            prefs = st.preferences,
+            vm = vm,
+            onDismiss = { settingsOpen = false },
+            onPermissions = { permissionOpen = true },
+            onDiagnostics = { settingsOpen = false; diagnosticsOpen = true }
+        )
+        if (diagnosticsOpen) DiagnosticDialog(st.diagnostics, vm::clearDiagnostics, { diagnosticsOpen = false }, context)
+        if (permissionOpen) PermissionDialog(
+            onDone = { vm.markPermissionIntroSeen(); permissionOpen = false },
+            onDismiss = { vm.markPermissionIntroSeen(); permissionOpen = false }
+        )
+        return
+    }
+
+    val collectionExpanded = LocalConfiguration.current.screenWidthDp >= 720
+    st.seriesCollection?.let { page ->
+        BackHandler { vm.closeCollection() }
+        SeriesCollectionScreen(page, st, vm, collectionExpanded, vm::closeCollection)
+        return
+    }
+    st.episodeCollection?.let { page ->
+        BackHandler { vm.closeCollection() }
+        EpisodeCollectionScreen(page, st, vm, vm::closeCollection)
+        return
+    }
+
     val inDetail = currentRoute == DETAIL_ROUTE
     BackHandler(enabled = inDetail) {
         if (st.season != null) {
@@ -296,43 +363,6 @@ fun AniWorldApp(vm: AppViewModel) {
         }
     }
 
-    st.pendingEpisode?.let { episode ->
-        EpisodeOptionsDialog(
-            episode,
-            st.pendingHosters,
-            st.preferences,
-            st.resolving,
-            vm::dismissEpisodeOptions,
-            { vm.playEpisode(episode) },
-            { vm.playEpisode(episode, it) },
-            { hoster -> vm.playEpisode(episode, hoster.lang.takeIf { it != Language.UNKNOWN }, hoster) },
-            { hoster -> vm.openHosterPage(episode, hoster) }
-        )
-    }
-    st.infoSeries?.let { series ->
-        AnimeInfoDialog(
-            series = series,
-            episode = st.infoEpisode,
-            loading = st.infoLoading,
-            error = st.infoError,
-            onDismiss = vm::dismissInfoDialog,
-            onOpenAnime = {
-                vm.dismissInfoDialog()
-                vm.select(series)
-            },
-            onOpenImdb = {
-                vm.dismissInfoDialog()
-                vm.openManualPage(series.imdbUrl, "IMDb · ${series.title}")
-            }
-        )
-    }
-    if (settingsOpen) SettingsDialog(
-        prefs = st.preferences,
-        vm = vm,
-        onDismiss = { settingsOpen = false },
-        onPermissions = { permissionOpen = true },
-        onDiagnostics = { settingsOpen = false; diagnosticsOpen = true }
-    )
     if (diagnosticsOpen) DiagnosticDialog(st.diagnostics, vm::clearDiagnostics, { diagnosticsOpen = false }, context)
     if (permissionOpen) PermissionDialog(
         onDone = { vm.markPermissionIntroSeen(); permissionOpen = false },

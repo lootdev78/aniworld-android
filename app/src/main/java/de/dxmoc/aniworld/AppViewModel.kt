@@ -30,12 +30,11 @@ data class UiState(
     val catalogQuery: String = "",
     val catalogLetter: String? = null,
     val catalogGenre: String? = null,
-    val catalogPage: Int = 0,
-    val catalogPageSize: Int = 15,
     val results: List<Series> = emptyList(),
     val selected: Series? = null,
     val seasons: List<Int> = emptyList(),
     val season: Int? = null,
+    val seasonDescription: String = "",
     val episodes: List<Episode> = emptyList(),
     val hosters: List<Hoster> = emptyList(),
     val pendingEpisode: Episode? = null,
@@ -44,6 +43,8 @@ data class UiState(
     val infoEpisode: Episode? = null,
     val infoLoading: Boolean = false,
     val infoError: String? = null,
+    val seriesCollection: SeriesCollectionPage? = null,
+    val episodeCollection: EpisodeCollectionPage? = null,
     val playback: ResolvedPlayback? = null,
     val preferences: AppPreferences = AppPreferences(),
     val preferencesReady: Boolean = false,
@@ -61,19 +62,10 @@ data class UiState(
 ) {
     val filteredCatalog: List<Series>
         get() = catalog.items.asSequence()
-            .filter { item -> catalogLetter == null || item.title.firstOrNull()?.uppercase() == catalogLetter || (catalogLetter == "#" && item.title.firstOrNull()?.isLetter() == false) }
             .filter { item -> catalogGenre == null || item.genres.any { it.equals(catalogGenre, true) } }
             .filter { item -> catalogQuery.isBlank() || item.title.contains(catalogQuery, true) || item.genres.any { it.contains(catalogQuery, true) } || item.description.contains(catalogQuery, true) }
+            .sortedBy { it.title.lowercase() }
             .toList()
-
-    val catalogPageCount: Int
-        get() = ((filteredCatalog.size + catalogPageSize - 1) / catalogPageSize).coerceAtLeast(1)
-
-    val pagedCatalog: List<Series>
-        get() {
-            val safePage = catalogPage.coerceIn(0, catalogPageCount - 1)
-            return filteredCatalog.drop(safePage * catalogPageSize).take(catalogPageSize)
-        }
 }
 
 private data class ManualMediaContext(
@@ -109,7 +101,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 if (!startupTriggered) {
                     startupTriggered = true
                     loadHome()
-                    loadCatalog()
                     restoreSavedSelection()
                 }
             }
@@ -158,7 +149,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 _state.update {
                     it.copy(
                         catalog = catalog,
-                        catalogPage = 0,
                         status = text(R.string.status_catalog_loaded, catalog.items.size, catalog.genres.size)
                     )
                 }
@@ -170,7 +160,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     }
 
     fun setCatalogQuery(value: String) {
-        _state.update { it.copy(catalogQuery = value, catalogPage = 0) }
+        _state.update { it.copy(catalogQuery = value) }
         catalogSearchRememberJob?.cancel()
         if (value.trim().length >= 2) {
             catalogSearchRememberJob = viewModelScope.launch {
@@ -179,13 +169,8 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             }
         }
     }
-    fun setCatalogLetter(value: String?) = _state.update { it.copy(catalogLetter = value, catalogPage = 0) }
-    fun setCatalogGenre(value: String?) = _state.update { it.copy(catalogGenre = value, catalogPage = 0) }
-    fun setCatalogPage(value: Int) = _state.update { state ->
-        state.copy(catalogPage = value.coerceIn(0, state.catalogPageCount - 1))
-    }
-    fun catalogNextPage() = _state.update { state -> state.copy(catalogPage = (state.catalogPage + 1).coerceAtMost(state.catalogPageCount - 1)) }
-    fun catalogPreviousPage() = _state.update { state -> state.copy(catalogPage = (state.catalogPage - 1).coerceAtLeast(0)) }
+    fun setCatalogLetter(value: String?) = _state.update { it.copy(catalogLetter = value) }
+    fun setCatalogGenre(value: String?) = _state.update { it.copy(catalogGenre = value) }
 
     fun refreshCatalogMetadata() {
         CatalogMetadataWorker.enqueue(app, force = true)
@@ -200,6 +185,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 metadataSemaphore.withPermit {
                     val catalogItem = _state.value.catalog.items.any { it.slug == series.slug }
                     val detailed = repo.enrichSeries(series, cacheCatalogMetadata = catalogItem)
+                    store.mergeSeriesMetadata(detailed)
                     mergeSeriesIntoState(detailed)
                     app.prefetchCover(detailed.coverUrl, detailed.slug)
                 }
@@ -241,6 +227,17 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                     currentlyPopular = state.homeFeed.currentlyPopular.map(update),
                     communityWatching = state.homeFeed.communityWatching.map(update),
                     mostWatched = state.homeFeed.mostWatched.map(update)
+                ),
+                seriesCollection = state.seriesCollection?.copy(items = state.seriesCollection.items.map(update)),
+                episodeCollection = state.episodeCollection?.copy(
+                    items = state.episodeCollection.items.map { homeEpisode ->
+                        if (homeEpisode.series.slug == detailed.slug) {
+                            homeEpisode.copy(
+                                series = detailed,
+                                episode = homeEpisode.episode.copy(seriesTitle = detailed.title)
+                            )
+                        } else homeEpisode
+                    }
                 )
             )
         }
@@ -255,6 +252,16 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             "loading", "spinner", "avatar", "profile", "tracking", "pixel.gif", "blank.gif"
         ).none(lower::contains)
     }
+
+    fun openSeriesCollection(title: String, items: List<Series>) = _state.update {
+        it.copy(seriesCollection = SeriesCollectionPage(title, items.distinctBy(Series::slug)), episodeCollection = null)
+    }
+
+    fun openEpisodeCollection(title: String, items: List<HomeEpisode>) = _state.update {
+        it.copy(episodeCollection = EpisodeCollectionPage(title, items.distinctBy { item -> item.episode.url }), seriesCollection = null)
+    }
+
+    fun closeCollection() = _state.update { it.copy(seriesCollection = null, episodeCollection = null) }
 
     fun query(value: String) = _state.update { it.copy(query = value) }
 
@@ -297,7 +304,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun select(series: Series) {
         saveSelection(series, null)
         viewModelScope.launch {
-            _state.update { it.copy(selected = series, season = null, episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), resolveLog = emptyList(), error = null) }
+            _state.update { it.copy(selected = series, season = null, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), resolveLog = emptyList(), error = null) }
             runLoad(text(R.string.status_anime_loading), { select(series) }) {
                 val detailed = repo.enrichSeries(series)
                 app.prefetchCover(detailed.coverUrl, detailed.slug)
@@ -316,11 +323,11 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             runLoad(text(R.string.status_episode_opening), { openHomeEpisode(item) }) {
                 val detailed = runCatching { repo.enrichSeries(item.series) }.getOrDefault(item.series)
                 val seasons = repo.seasons(detailed)
-                val episodes = repo.episodes(detailed, item.episode.season)
+                val seasonPage = repo.seasonPage(detailed, item.episode.season)
                 store.rememberSeries(detailed)
-                store.rememberSeasonTotal(detailed.slug, item.episode.season, episodes.size)
-                _state.update { it.copy(selected = detailed, seasons = seasons, episodes = episodes) }
-                episodes.firstOrNull { it.number == item.episode.number }?.let(::inspectEpisode)
+                store.rememberSeasonTotal(detailed.slug, item.episode.season, seasonPage.episodes.size)
+                _state.update { it.copy(selected = detailed, seasons = seasons, seasonDescription = seasonPage.description, episodes = seasonPage.episodes) }
+                seasonPage.episodes.firstOrNull { it.number == item.episode.number }?.let(::inspectEpisode)
             }
         }
     }
@@ -337,9 +344,9 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             runLoad(text(R.string.status_episodes_loading), { openProgress(progress) }) {
                 val detailed = runCatching { repo.enrichSeries(series) }.getOrDefault(series)
                 val seasons = repo.seasons(detailed)
-                val episodes = repo.episodes(detailed, progress.season)
-                store.rememberSeasonTotal(detailed.slug, progress.season, episodes.size)
-                _state.update { it.copy(selected = detailed, seasons = seasons, episodes = episodes) }
+                val seasonPage = repo.seasonPage(detailed, progress.season)
+                store.rememberSeasonTotal(detailed.slug, progress.season, seasonPage.episodes.size)
+                _state.update { it.copy(selected = detailed, seasons = seasons, seasonDescription = seasonPage.description, episodes = seasonPage.episodes) }
             }
         }
     }
@@ -348,23 +355,27 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         val series = _state.value.selected ?: return
         saveSelection(series, number)
         viewModelScope.launch {
-            _state.update { it.copy(season = number, episodes = emptyList(), hosters = emptyList(), error = null) }
+            _state.update { it.copy(season = number, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), error = null) }
             runLoad(text(R.string.status_episodes_loading), { season(number) }) {
-                val episodes = repo.episodes(series, number)
-                store.rememberSeasonTotal(series.slug, number, episodes.size)
-                _state.update { it.copy(episodes = episodes, status = if (number == 0) text(R.string.status_movie_count, episodes.size) else text(R.string.status_episode_count, episodes.size)) }
+                val seasonPage = repo.seasonPage(series, number)
+                store.rememberSeasonTotal(series.slug, number, seasonPage.episodes.size)
+                _state.update { it.copy(
+                    seasonDescription = seasonPage.description,
+                    episodes = seasonPage.episodes,
+                    status = if (number == 0) text(R.string.status_movie_count, seasonPage.episodes.size) else text(R.string.status_episode_count, seasonPage.episodes.size)
+                ) }
             }
         }
     }
 
     fun backToSearch() {
         clearSavedSelection()
-        _state.update { it.copy(selected = null, seasons = emptyList(), season = null, episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
+        _state.update { it.copy(selected = null, seasons = emptyList(), season = null, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
     }
 
     fun backToSeasons() {
         _state.value.selected?.let { saveSelection(it, null) }
-        _state.update { it.copy(season = null, episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
+        _state.update { it.copy(season = null, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
     }
 
     fun inspectEpisode(episode: Episode) {
@@ -460,11 +471,34 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             try {
                 val prefs = _state.value.preferences
                 val languages: List<Language> = if (languageOverride != null) listOf(languageOverride) + prefs.languagePriority.filterNot { old -> old == languageOverride } else prefs.languagePriority
-                val result = repo.resolveEpisode(episode, languages, prefs.hosterPriority, prefs.verifyStreams, languageOverride, hosterOverride)
+                val result = try {
+                    repo.resolveEpisode(episode, languages, prefs.hosterPriority, prefs.verifyStreams, languageOverride, hosterOverride)
+                } catch (challenge: ChallengeRequiredException) {
+                    if (hosterOverride == null || isAniWorldUrl(challenge.challengeUrl)) throw challenge
+                    val displayName = HosterCatalog.displayName(hosterOverride.name)
+                    AppLogger.warn("Hoster", "$displayName benötigt eine Web-Prüfung; Alternativen werden versucht", challenge.challengeUrl)
+                    _state.update { it.copy(status = text(R.string.status_hoster_fallback, displayName)) }
+                    repo.resolveEpisode(episode, languages, prefs.hosterPriority, prefs.verifyStreams, languageOverride, null)
+                }
                 result.log.forEach { AppLogger.info("Resolver", it) }
                 _state.update { it.copy(hosters = result.availableHosters, status = result.log.lastOrNull(), resolveLog = result.log) }
                 val stream = result.stream
                 if (stream == null) {
+                    result.challengeHoster?.let { challengedHoster ->
+                        AppLogger.warn(
+                            "Resolver",
+                            "Kein direkter Alternativstream verfügbar; Web-Prüfung wird geöffnet",
+                            result.challengeUrl
+                        )
+                        showHosterDetector(
+                            series = series,
+                            episode = episode,
+                            hoster = challengedHoster,
+                            initialUrl = result.challengeUrl.ifBlank { challengedHoster.redirectUrl },
+                            reason = result.challengeReason.ifBlank { text(R.string.media_detector_instruction) }
+                        )
+                        return@launch
+                    }
                     if (hosterOverride != null) {
                         showHosterDetector(series, episode, hosterOverride)
                         return@launch
@@ -492,8 +526,9 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                         status = text(R.string.status_playing_via, stream.hoster, languageName(stream.language))
                     )
                 }
-            } catch (error: Exception) { handleFailure(error) { playEpisode(episode, languageOverride, hosterOverride) } }
-            finally { _state.update { it.copy(resolving = false) } }
+            } catch (error: Exception) {
+                handleFailure(error) { playEpisode(episode, languageOverride, hosterOverride) }
+            } finally { _state.update { it.copy(resolving = false) } }
         }
     }
 
@@ -577,6 +612,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun setWatchedSort(sort: LibrarySort) = viewModelScope.launch { store.setWatchedSort(sort) }.let { Unit }
     fun setCatalogViewMode(mode: LibraryViewMode) = viewModelScope.launch { store.setCatalogViewMode(mode) }.let { Unit }
     fun setFavoritesViewMode(mode: LibraryViewMode) = viewModelScope.launch { store.setFavoritesViewMode(mode) }.let { Unit }
+    fun setHistoryViewMode(mode: LibraryViewMode) = viewModelScope.launch { store.setHistoryViewMode(mode) }.let { Unit }
     fun clearRecentSearches() = viewModelScope.launch { store.clearRecentSearches() }.let { Unit }
     fun markPermissionIntroSeen() = viewModelScope.launch { store.setPermissionIntroSeen() }.let { Unit }
     fun clearDiagnostics() = AppLogger.clear()
@@ -616,21 +652,34 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         showHosterDetector(series, episode, hoster)
     }
 
-    private fun showHosterDetector(series: Series, episode: Episode, hoster: Hoster) {
-        pendingChallengeRetry = null
+    private fun showHosterDetector(
+        series: Series,
+        episode: Episode,
+        hoster: Hoster,
+        initialUrl: String = hoster.redirectUrl,
+        reason: String = text(R.string.media_detector_instruction)
+    ) {
         manualMediaContext = ManualMediaContext(series, episode, hoster)
+        pendingChallengeRetry = {
+            playEpisode(
+                episode = episode,
+                languageOverride = hoster.lang.takeIf { it != Language.UNKNOWN },
+                hosterOverride = hoster
+            )
+        }
+        val targetUrl = initialUrl.ifBlank { hoster.redirectUrl }
         _state.update {
             it.copy(
                 pendingEpisode = null,
                 pendingHosters = emptyList(),
                 challenge = ChallengeRequest(
-                    url = hoster.redirectUrl,
-                    reason = text(R.string.media_detector_instruction),
+                    url = targetUrl,
+                    reason = reason,
                     title = localizedHosterName(getApplication<Application>(), hoster.name),
-                    retryAfterSuccess = false,
+                    retryAfterSuccess = true,
                     mediaDetectionEnabled = true
                 ),
-                challengeStatus = repo.challengeCookieSummary(hoster.redirectUrl),
+                challengeStatus = repo.challengeCookieSummary(targetUrl),
                 status = text(R.string.media_detector_opening),
                 error = null
             )
@@ -756,12 +805,12 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val detailed = repo.enrichSeries(series)
                 val seasons = repo.seasons(detailed)
                 val targetSeason = progress?.season ?: seasons.firstOrNull { it == 1 } ?: seasons.firstOrNull() ?: return@runLoad
-                val episodes = repo.episodes(detailed, targetSeason)
-                store.rememberSeasonTotal(detailed.slug, targetSeason, episodes.size)
-                _state.update { it.copy(selected = detailed, seasons = seasons, season = targetSeason, episodes = episodes) }
-                val target = progress?.let { saved -> episodes.firstOrNull { it.number == saved.episode } }
-                    ?: episodes.firstOrNull { _state.value.preferences.episodeWatchStates[it.key]?.completed != true }
-                    ?: episodes.firstOrNull()
+                val seasonPage = repo.seasonPage(detailed, targetSeason)
+                store.rememberSeasonTotal(detailed.slug, targetSeason, seasonPage.episodes.size)
+                _state.update { it.copy(selected = detailed, seasons = seasons, season = targetSeason, seasonDescription = seasonPage.description, episodes = seasonPage.episodes) }
+                val target = progress?.let { saved -> seasonPage.episodes.firstOrNull { it.number == saved.episode } }
+                    ?: seasonPage.episodes.firstOrNull { _state.value.preferences.episodeWatchStates[it.key]?.completed != true }
+                    ?: seasonPage.episodes.firstOrNull()
                 target?.let(::playEpisode)
             }
         }
@@ -797,9 +846,15 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             try {
                 val detailed = runCatching { repo.enrichSeries(series) }.getOrDefault(series)
                 val seasons = repo.seasons(detailed)
-                val episodes = restoredSeason?.let { repo.episodes(detailed, it) }.orEmpty()
-                if (restoredSeason != null && episodes.isNotEmpty()) store.rememberSeasonTotal(detailed.slug, restoredSeason, episodes.size)
-                _state.update { it.copy(selected = detailed, seasons = seasons, episodes = episodes, loading = false) }
+                val seasonPage = restoredSeason?.let { repo.seasonPage(detailed, it) }
+                if (restoredSeason != null && seasonPage?.episodes?.isNotEmpty() == true) store.rememberSeasonTotal(detailed.slug, restoredSeason, seasonPage.episodes.size)
+                _state.update { it.copy(
+                    selected = detailed,
+                    seasons = seasons,
+                    seasonDescription = seasonPage?.description.orEmpty(),
+                    episodes = seasonPage?.episodes.orEmpty(),
+                    loading = false
+                ) }
             } catch (error: Exception) {
                 _state.update { it.copy(loading = false) }
                 handleFailure(error) { restoreSavedSelection() }

@@ -32,6 +32,12 @@ class AniWorldRepository(
         .callTimeout(Duration.ofSeconds(25))
         .build()
 ) {
+    @Volatile
+    private var networkUnavailableUntilMs: Long = 0L
+
+    @Volatile
+    private var lastNetworkFailure: Exception? = null
+
     fun defaultChallengeUrl(): String = "$baseUrl/"
 
     fun challengeCookieSummary(url: String = defaultChallengeUrl()): String =
@@ -253,10 +259,19 @@ class AniWorldRepository(
         parseSeasons(getText(series.url), series.slug)
     }
 
-    suspend fun episodes(series: Series, season: Int): List<Episode> = withContext(Dispatchers.IO) {
+    suspend fun seasonPage(series: Series, season: Int): SeasonPage = withContext(Dispatchers.IO) {
         val path = seasonPath(series.slug, season)
-        parseEpisodes(getText(baseUrl + path), series, season)
+        val pageUrl = baseUrl + path
+        val markup = getText(pageUrl)
+        SeasonPage(
+            season = season,
+            title = if (season == 0) context.getString(R.string.movies) else context.getString(R.string.season_number, season),
+            description = parseSeasonDescription(markup, series, season),
+            episodes = parseEpisodes(markup, series, season)
+        )
     }
+
+    suspend fun episodes(series: Series, season: Int): List<Episode> = seasonPage(series, season).episodes
 
     suspend fun episodePage(episode: Episode): EpisodePage = withContext(Dispatchers.IO) {
         val markup = getText(episode.url)
@@ -285,17 +300,33 @@ class AniWorldRepository(
             hosters.filter { it.redirectUrl == hosterOverride.redirectUrl }
         }
         val log = mutableListOf<String>()
+        var firstChallengeHoster: Hoster? = null
+        var firstChallengeUrl = ""
+        var firstChallengeReason = ""
         val langs = availableLanguages(hosters, languagePriority)
         if (langs.isNotEmpty()) log += "Sprachen: ${langs.joinToString { it.localizedLabel(context) }}"
         if (languageOverride != null) log += "Sprachfilter: ${languageOverride.localizedLabel(context)}"
         for (hoster in ordered) {
             log += "Prüfe ${hoster.name} (${hoster.lang.localizedLabel(context)})"
-            val stream = when (HosterCatalog.normalize(hoster.name)) {
-                "voe" -> VoeExtractor.extract(context, hoster.redirectUrl, hoster, client)
-                "vidmoly" -> VidmolyExtractor.extract(context, hoster.redirectUrl, hoster, client)
-                "doodstream" -> PublicMediaExtractor.extract(context, hoster.redirectUrl, hoster, client)
-                "filemoon" -> PublicMediaExtractor.extract(context, hoster.redirectUrl, hoster, client)
-                else -> GenericMarkupExtractor.extract(context, hoster.redirectUrl, hoster, client)
+            val stream = try {
+                when (HosterCatalog.normalize(hoster.name)) {
+                    "voe" -> VoeExtractor.extract(context, hoster.redirectUrl, hoster, client)
+                    "vidmoly" -> VidmolyExtractor.extract(context, hoster.redirectUrl, hoster, client)
+                    "doodstream" -> PublicMediaExtractor.extract(context, hoster.redirectUrl, hoster, client)
+                    "filemoon" -> PublicMediaExtractor.extract(context, hoster.redirectUrl, hoster, client)
+                    else -> GenericMarkupExtractor.extract(context, hoster.redirectUrl, hoster, client)
+                }
+            } catch (challenge: ChallengeRequiredException) {
+                if (hosterOverride != null) throw challenge
+                if (firstChallengeHoster == null) {
+                    firstChallengeHoster = hoster
+                    firstChallengeUrl = challenge.challengeUrl
+                    firstChallengeReason = challenge.challengeReason
+                }
+                val displayName = HosterCatalog.displayName(hoster.name)
+                log += "$displayName: Browserprüfung nötig, nächster Hoster wird versucht"
+                AppLogger.warn("Resolver", "$displayName benötigt eine Web-Prüfung; automatischer Fallback läuft", challenge.challengeUrl)
+                continue
             }
             if (stream == null) {
                 val normalized = HosterCatalog.normalize(hoster.name)
@@ -306,14 +337,36 @@ class AniWorldRepository(
                 }
                 continue
             }
-            if (verifyStreams && !streamIsLive(stream)) {
+            val streamLive = try {
+                !verifyStreams || streamIsLive(stream)
+            } catch (challenge: ChallengeRequiredException) {
+                if (hosterOverride != null) throw challenge
+                if (firstChallengeHoster == null) {
+                    firstChallengeHoster = hoster
+                    firstChallengeUrl = challenge.challengeUrl
+                    firstChallengeReason = challenge.challengeReason
+                }
+                val displayName = HosterCatalog.displayName(hoster.name)
+                log += "$displayName: Streamprüfung benötigt eine Browserprüfung, nächster Hoster wird versucht"
+                AppLogger.warn("Resolver", "$displayName benötigt bei der Streamprüfung eine Web-Prüfung; automatischer Fallback läuft", challenge.challengeUrl)
+                false
+            }
+            if (!streamLive) {
                 log += "${hoster.name}: Stream lieferte keine Daten"
                 continue
             }
             log += "${hoster.name}: abspielbarer Stream gefunden"
             return@withContext ResolveResult(stream, hoster, hosters, log)
         }
-        ResolveResult(null, null, hosters, log)
+        ResolveResult(
+            stream = null,
+            selectedHoster = null,
+            availableHosters = hosters,
+            log = log,
+            challengeHoster = firstChallengeHoster,
+            challengeUrl = firstChallengeUrl,
+            challengeReason = firstChallengeReason
+        )
     }
 
     private data class CatalogPage(
@@ -369,7 +422,8 @@ class AniWorldRepository(
             description.isNotBlank() && genres.isNotEmpty()
 
     private fun Series.hasCatalogMetadata(): Boolean =
-        title.isNotBlank() && description.isNotBlank() && genres.isNotEmpty()
+        title.isNotBlank() && normalizeAnimeImageUrl(coverUrl, url) != null &&
+            description.isNotBlank() && genres.isNotEmpty()
 
     private fun HomeFeed.withMetadata(cached: Map<String, SeriesMetadataEntity>): HomeFeed {
         fun apply(series: Series): Series = cached[series.slug]?.toModel()?.let { mergeSeriesMetadata(series, it) } ?: series
@@ -689,6 +743,47 @@ class AniWorldRepository(
         return found.toList()
     }
 
+
+    private fun parseSeasonDescription(markup: String, series: Series, season: Int): String {
+        val doc = Jsoup.parse(markup, baseUrl + seasonPath(series.slug, season))
+        val direct = firstCleanText(
+            doc.selectFirst("#stream .seasonDescription, #stream .season-description, #stream .seasonDesc, #stream .season-desc")?.text(),
+            doc.selectFirst(".seasonContent .description, .season-content .description, [data-season-description]")?.text()
+        )
+        val headingPattern = if (season == 0) {
+            Regex("film|filme", RegexOption.IGNORE_CASE)
+        } else {
+            Regex("""staffel\s*$season""", RegexOption.IGNORE_CASE)
+        }
+        val nearby = doc.select("h1, h2, h3").firstOrNull { headingPattern.containsMatchIn(clean(it.text())) }?.let { heading ->
+            generateSequence(heading.nextElementSibling()) { it.nextElementSibling() }
+                .take(8)
+                .flatMap { element -> sequenceOf(element) + element.select("p, .description").asSequence() }
+                .map { cleanDescription(it.text()) }
+                .firstOrNull { candidate ->
+                    candidate.length >= 30 &&
+                        !candidate.contains("Wähle einen AniWorld Stream", true) &&
+                        !candidate.contains("Episoden der Staffel", true) &&
+                        !candidate.contains("Weitere erstklassige", true) &&
+                        !candidate.contains("Hoster", true)
+                }
+        }.orEmpty()
+        val expandable = doc.select(
+            "#stream [id*=description], #stream [class*=description], #stream [class*=collapse], " +
+                ".seasonContent [class*=description], .season-content [class*=description]"
+        ).asSequence()
+            .map { element -> cleanDescription(element.text()) }
+            .firstOrNull { candidate ->
+                candidate.length >= 30 &&
+                    !candidate.contains("Wähle einen AniWorld Stream", true) &&
+                    !candidate.contains("Episoden der Staffel", true) &&
+                    !candidate.contains("Weitere erstklassige", true) &&
+                    !candidate.contains("Hoster", true)
+            }.orEmpty()
+        val pageDescription = doc.selectFirst("meta[property=og:description]")?.attr("content").orEmpty()
+        return cleanDescription(firstCleanText(direct, nearby, expandable, pageDescription)).ifBlank { series.description }
+    }
+
     private fun parseEpisodes(markup: String, series: Series, season: Int): List<Episode> {
         val pageUrl = baseUrl + seasonPath(series.slug, season)
         val doc = Jsoup.parse(markup, pageUrl)
@@ -776,13 +871,48 @@ class AniWorldRepository(
         }
         val nearbyDescription = heading?.let { episodeHeading ->
             generateSequence(episodeHeading.nextElementSibling()) { it.nextElementSibling() }
-                .take(6)
-                .flatMap { element -> sequenceOf(element) + element.select("p, .description").asSequence() }
+                .take(8)
+                .flatMap { element -> sequenceOf(element) + element.select("p, .description, [class*=description]").asSequence() }
                 .map { clean(it.text()) }
                 .firstOrNull(::isEpisodeDescriptionCandidate)
         }
+        val descriptionAfterToggle = doc.select("button, a, span, div")
+            .firstOrNull { element ->
+                clean(element.ownText()).equals("Beschreibung anzeigen", ignoreCase = true) ||
+                    clean(element.attr("aria-label")).equals("Beschreibung anzeigen", ignoreCase = true)
+            }
+            ?.let { toggle ->
+                val targetId = firstCleanText(
+                    toggle.attr("aria-controls"),
+                    toggle.attr("data-target").removePrefix("#"),
+                    toggle.attr("href").takeIf { it.startsWith('#') }?.removePrefix("#")
+                )
+                val controlledCandidate = targetId.takeIf(String::isNotBlank)
+                    ?.let(doc::getElementById)
+                    ?.text()
+                    ?.let(::clean)
+                    ?.takeIf(::isEpisodeDescriptionCandidate)
+                val attributeCandidate = sequenceOf(
+                    toggle.attr("data-description"),
+                    toggle.attr("data-content"),
+                    toggle.attr("title")
+                ).map(::clean).firstOrNull(::isEpisodeDescriptionCandidate)
+                val siblingCandidate = generateSequence(toggle.nextElementSibling()) { it.nextElementSibling() }
+                    .take(7)
+                    .flatMap { element -> sequenceOf(element) + element.select("p, .description, [class*=description], [class*=collapse]").asSequence() }
+                    .map { clean(it.text()) }
+                    .firstOrNull(::isEpisodeDescriptionCandidate)
+                controlledCandidate ?: attributeCandidate ?: siblingCandidate ?: toggle.parent()?.children()?.asSequence()
+                    ?.dropWhile { child -> child != toggle && !child.select("button, a, span").contains(toggle) }
+                    ?.drop(1)
+                    ?.take(7)
+                    ?.flatMap { element -> sequenceOf(element) + element.select("p, .description, [class*=description], [class*=collapse]").asSequence() }
+                    ?.map { clean(it.text()) }
+                    ?.firstOrNull(::isEpisodeDescriptionCandidate)
+            }
         val description = firstCleanText(
-            doc.selectFirst("#stream .episodeDescription, #stream .episode-description, #stream .episodeDesc, #stream .episode-desc, .episodeContent .description, .episode-content .description")?.text(),
+            doc.selectFirst("#stream .episodeDescription, #stream .episode-description, #stream .episodeDesc, #stream .episode-desc, .episodeContent .description, .episode-content .description, [data-episode-description], [class*=episode][class*=description]")?.text(),
+            descriptionAfterToggle,
             nearbyDescription,
             doc.select("#stream p, .episodeContent p, .episode-content p").map { clean(it.text()) }.firstOrNull(::isEpisodeDescriptionCandidate)
         )
@@ -830,29 +960,21 @@ class AniWorldRepository(
                 ?.substringBefore(" - AniWorld"),
             series.title
         )
-        val coverImages = doc.select(
-            ".seriesCoverBox img, .seriesCover img, .cover img, [class*=cover] img, " +
-                "[class*=poster] img, img[itemprop=image], img[alt*=Cover], " +
-                "img[src*='/cover/'], img[data-src*='/cover/']"
-        )
-        val coverCandidates = buildList {
-            coverImages.forEach { image ->
-                add(image.attr("data-src"))
-                add(image.attr("data-lazy-src"))
-                add(image.attr("data-original"))
-                add(image.attr("data-url"))
-                add(image.attr("srcset").substringBefore(' '))
-                add(image.attr("src"))
+        val coverContainer = doc.selectFirst(
+            ".seriesCoverBox, .seriesCover, .cover, [class*=seriesCover], [class*=poster]"
+        ) ?: doc.selectFirst(
+            "img[itemprop=image], img[alt*=Cover], img[src*='/cover/'], img[data-src*='/cover/']"
+        )?.parent()
+        val cover = coverContainer?.let { imageUrl(it, series.url) }.orEmpty()
+            .ifBlank {
+                sequenceOf(
+                    doc.selectFirst("meta[property=og:image]")?.attr("content"),
+                    doc.selectFirst("meta[name=twitter:image]")?.attr("content")
+                ).mapNotNull { value -> value?.let { normalizeAnimeImageUrl(it, series.url) } }
+                    .firstOrNull()
+                    .orEmpty()
             }
-            add(doc.selectFirst("meta[property=og:image]")?.attr("content").orEmpty())
-            add(doc.selectFirst("meta[name=twitter:image]")?.attr("content").orEmpty())
-        }
-        val cover = coverCandidates.asSequence()
-            .filterNotNull()
-            .mapNotNull { normalizeAnimeImageUrl(it, series.url) }
-            .firstOrNull()
-            .orEmpty()
-            .ifBlank { series.coverUrl }
+            .ifBlank { normalizeAnimeImageUrl(series.coverUrl, series.url).orEmpty() }
         val description = listOf(
             doc.selectFirst("[itemprop=description], .seriesDescription, .seri_des, .series-description, .description")?.text(),
             doc.selectFirst("meta[property=og:description]")?.attr("content"),
@@ -1036,8 +1158,16 @@ class AniWorldRepository(
             return cached.body
         }
 
+        if (System.currentTimeMillis() < networkUnavailableUntilMs) {
+            if (cached != null) {
+                AppLogger.warn("Cache", "Offline-Kopie für $requestLabel wird während der Netzwerksperre verwendet")
+                return cached.body
+            }
+            throw lastNetworkFailure ?: java.net.UnknownHostException("Host vorübergehend nicht erreichbar")
+        }
+
         var lastError: Exception? = null
-        repeat(3) { attempt ->
+        for (attempt in 0 until 3) {
             AppLogger.info("Netzwerk", "GET $requestLabel", "Versuch ${attempt + 1}/3")
             val req = baseRequest(url, headers).get().build()
             try {
@@ -1054,6 +1184,8 @@ class AniWorldRepository(
                     if (cacheable && body.isNotBlank()) {
                         cache?.put(url, body, response.header("Content-Type").orEmpty())
                     }
+                    networkUnavailableUntilMs = 0L
+                    lastNetworkFailure = null
                     return body
                 }
             } catch (error: ChallengeRequiredException) {
@@ -1061,6 +1193,13 @@ class AniWorldRepository(
             } catch (error: Exception) {
                 lastError = error
                 AppLogger.warn("Netzwerk", "GET $requestLabel fehlgeschlagen", error.message.orEmpty())
+                // DNS-Ausfälle ändern sich innerhalb weniger Millisekunden normalerweise nicht.
+                // Ein sofortiger Abbruch verhindert die große Retry-Kaskade beim parallelen Katalogladen.
+                if (error is java.net.UnknownHostException) {
+                    lastNetworkFailure = error
+                    networkUnavailableUntilMs = System.currentTimeMillis() + 15_000L
+                    break
+                }
                 if (attempt < 2) Thread.sleep(250L * (1L shl attempt))
             }
         }

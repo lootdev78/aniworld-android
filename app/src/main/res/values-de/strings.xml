@@ -260,4 +260,16 @@
     <string name="web_filter_tracking">Tracking</string>
     <string name="web_filter_popups">Popups</string>
     <string name="web_filter_redirects">Weiterleitungen</string>
+
+    <string name="show_catalog_controls">Katalogsuche und Filter anzeigen</string>
+    <string name="season_description">Staffelbeschreibung</string>
+    <string name="movie_description">Filmbeschreibung</string>
+    <string name="description">Beschreibung</string>
+    <string name="episodes_count">%1$d Folgen</string>
+    <string name="playback_settings">Wiedergabe</string>
+    <string name="display_settings">Darstellung</string>
+    <string name="catalog_and_cache">Katalog und Cache</string>
+    <string name="tools">Werkzeuge</string>
+    <string name="status_hoster_fallback">%1$s benötigt eine Browserprüfung. Zuerst wird ein anderer Hoster versucht …</string>
+    <string name="challenge_retry_hoster">Prüfung abgeschlossen – Hoster erneut versuchen</string>
 </resources>

@@ -4,7 +4,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.5.1-build-fix`
+`1.6.0-ui-overhaul`
 
 
 ## App-Icon und Sprachen
@@ -36,21 +36,21 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 - Pull-to-refresh, Skeleton-Ladezustände, leere Zustände und verständliche Fehlermeldungen
 - Cover, Anime-/Film-/Folgentitel, Genres, Veröffentlichungsjahr, Altersangabe, Beschreibungen und Fortschrittsanzeigen
 - Katalogsuche mit gespeicherten Suchbegriffen, A–Z- und Genre-Filter
-- lokale Katalogseiten mit genau 15 Einträgen pro Seite
+- durchgehend scrollbarer Katalog ohne sichtbare Seitennavigation, mit A–Z-Schnellleiste am rechten Rand
 
 ## Bibliothek und Verlauf
 
 - Favoriten per Herz
 - Favoritenliste mit alphabetischer, zeitlicher oder eigener Sortierung
-- lokaler Wiedergabe- und Animeverlauf
+- eigene Verlaufseite mit denselben Raster-, Kompakt- und Detailansichten wie Favoriten
 - angefangen/gesehen-Markierungen für Folgen und Filme
 - Staffelstatus und Fortschrittsanzeige
-- Filter für alle, begonnene, ungesehene und gesehene Inhalte
+- Verlaufsfilter für alle, begonnene, vollständig gesehene und favorisierte Inhalte
 - zuletzt verwendete Suchbegriffe
 - gespeicherte Katalogsuchbegriffe mit verzögerter Speicherung
 - Wiederherstellung der zuletzt geöffneten Serie und Staffel nach einem Prozess-Neustart
 
-Die Nutzerdaten werden ausschließlich lokal in einer Room-Datenbank gespeichert. Android-Backup, Geräteübertragung, Cloud-Backup sowie Export/Import sind nicht enthalten; `android:allowBackup` ist deaktiviert.
+Die Nutzerdaten werden ausschließlich lokal in Room und DataStore gespeichert. Android-Backup, Geräteübertragung, Cloud-Backup sowie Export/Import sind nicht enthalten; `android:allowBackup` ist deaktiviert.
 
 ## Offline und Performance
 
@@ -62,7 +62,8 @@ Die Nutzerdaten werden ausschließlich lokal in einer Room-Datenbank gespeichert
 - Coil-Disk- und Memory-Cache mit anime- und URL-spezifischen Cover-Schlüsseln
 - zentrale Filterung von Logo-, Branding-, Header-, Placeholder-, Tracking- und unplausibel dimensionierten Bildern
 - Rücksetzfunktion für gespeicherte Coverdaten, Katalogseiten, Metadaten sowie Coil-Bildcache
-- begrenzte parallele Katalog- und Metadatenanfragen sowie automatische Wiederholungsversuche mit Backoff
+- begrenzte parallele Katalog- und Metadatenanfragen, automatische Wiederholungsversuche mit Backoff und eine kurze DNS-Sperre gegen Retry-Kaskaden
+- der vollständige Katalog wird erst beim Öffnen des Katalog-Tabs geladen, damit der App-Start keine tausenden Kataloganfragen auslöst
 
 ## AniWorld-Workflow
 
@@ -71,11 +72,12 @@ Die Nutzerdaten werden ausschließlich lokal in einer Room-Datenbank gespeichert
 - Startseiten- und Katalogparser
 - Sprach- und Hosterprioritäten
 - gruppierte Hoster-Auswahl nach Sprache, direkter bevorzugter Hoster und interner Medien-Detector
-- Hoster-Fallback und optionale Stream-Erreichbarkeitsprüfung
+- automatischer Hoster-Fallback und optionale Stream-Erreichbarkeitsprüfung; Hoster mit Browserprüfung werden zunächst übersprungen
 - Resolver-Diagnose
-- manuell bedienbare WebView für eine eventuell erforderliche CAPTCHA-/Cloudflare-Verifizierung
+- gezielte Hoster-WebView für eine eventuell erforderliche CAPTCHA-/Turnstile-Prüfung, nur wenn kein direkter Alternativhoster funktioniert
 - gemeinsamer Cookie-Speicher für WebView und OkHttp
 - Fortsetzen der unterbrochenen Aktion nach erfolgreicher manueller Verifizierung
+- sichtbare Aktion „Prüfung abgeschlossen – Hoster erneut versuchen“ übernimmt die WebView-Session und startet denselben Hoster erneut
 - Erkennung direkt angeforderter HLS-, DASH-, SmoothStreaming- und progressiver Medien-URLs erst nach vollständig geladener Hoster-Seite
 - getrennte AniWorld-Verifizierung und Hoster-WebView, einklappbare und gespeicherte Session-/Medienbereiche
 - nativer, konfigurierbarer WebView-Filter für typische Werbung, Tracking, Popups und Weiterleitungen sowie temporäre Domain-Ausnahme
@@ -98,6 +100,7 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - vorherige/nächste Folge innerhalb der geöffneten Staffel
 - optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
 - stabilisierte Helligkeits-/Lautstärkegesten mit seitlichen Zonen und Bewegungsschwelle
+- automatisch ausblendende Player-Oberfläche während laufender Wiedergabe; Interaktion oder Pause blendet sie wieder ein
 - Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
 
 Es gibt weiterhin keine Qualitäts-, Spur-, Geschwindigkeits-, Chromecast- oder Picture-in-Picture-Menüs.
@@ -113,11 +116,11 @@ aniworldapp://anime/<slug>
 ## Cover-, Info- und Listenansichten
 
 - AniWorld-Cover werden bevorzugt aus den eigentlichen Cover-/Poster-Elementen gelesen; Logo-, Icon-, Tracking- und Placeholder-Bilder werden verworfen.
-- Katalogeinträge bleiben bewusst ohne Cover und können als kompakte Liste, Detail-Liste oder Raster angezeigt werden.
+- Katalogeinträge zeigen die echten AniWorld-Cover beziehungsweise Poster und können als kompakte Liste, Detail-Liste oder Raster angezeigt werden.
 - Favoriten unterstützen dieselben drei Ansichtsarten; die Auswahl wird dauerhaft gespeichert.
 - Optionale Zähler werden erst ab einem Wert von 1 angezeigt.
 - Langes Drücken auf einen Anime lädt nur aktuelle Anime-Informationen. Langes Drücken auf eine Episode zeigt Anime- und Episodeninformationen.
-- Startseitenbereiche zeigen zunächst zehn Einträge; Überschrift und „Mehr anzeigen“ öffnen eine nahezu vollflächige, deduplizierte Sammlung.
+- Startseitenbereiche zeigen zunächst zehn Einträge; Überschrift und „Mehr anzeigen“ öffnen eine eigene vollflächige, deduplizierte Sammlungsseite ohne Bottom-Sheet-Überlauf.
 - Die Detailseite besitzt einen kompakten Netflix-artigen Bildheader, Verlauf für lesbaren Text, direkte Wiedergabe/Fortsetzen-Aktion, Staffelchips und kompakte Episodenzeilen.
 - Detailinformationen können Jahr, Altersfreigabe, Genres, Regie, Produzenten, Darsteller, Land, IMDb und Nutzerbewertung enthalten, sofern AniWorld diese Angaben bereitstellt.
 

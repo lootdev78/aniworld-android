@@ -37,7 +37,8 @@ private data class SettingsSnapshot(
     val settingsButtonX: Float,
     val settingsButtonY: Float,
     val catalogViewMode: LibraryViewMode,
-    val favoritesViewMode: LibraryViewMode
+    val favoritesViewMode: LibraryViewMode,
+    val historyViewMode: LibraryViewMode
 )
 
 private data class LibrarySnapshot(
@@ -86,7 +87,8 @@ class AppStore(
                 settingsButtonX = (prefs[SETTINGS_BUTTON_X] ?: 0.92f).coerceIn(0f, 1f),
                 settingsButtonY = (prefs[SETTINGS_BUTTON_Y] ?: 0.72f).coerceIn(0f, 1f),
                 catalogViewMode = parseViewMode(prefs[CATALOG_VIEW_MODE], LibraryViewMode.DETAILED),
-                favoritesViewMode = parseViewMode(prefs[FAVORITES_VIEW_MODE], LibraryViewMode.DETAILED)
+                favoritesViewMode = parseViewMode(prefs[FAVORITES_VIEW_MODE], LibraryViewMode.DETAILED),
+                historyViewMode = parseViewMode(prefs[HISTORY_VIEW_MODE], LibraryViewMode.DETAILED)
             )
         }
 
@@ -146,7 +148,8 @@ class AppStore(
             settingsButtonX = settings.settingsButtonX,
             settingsButtonY = settings.settingsButtonY,
             catalogViewMode = settings.catalogViewMode,
-            favoritesViewMode = settings.favoritesViewMode
+            favoritesViewMode = settings.favoritesViewMode,
+            historyViewMode = settings.historyViewMode
         )
     }
 
@@ -240,6 +243,9 @@ class AppStore(
     }
     suspend fun setFavoritesViewMode(mode: LibraryViewMode) = editSafely("Favoritenansicht speichern") {
         it[FAVORITES_VIEW_MODE] = mode.name
+    }
+    suspend fun setHistoryViewMode(mode: LibraryViewMode) = editSafely("Verlaufsansicht speichern") {
+        it[HISTORY_VIEW_MODE] = mode.name
     }
 
     suspend fun rememberSearch(query: String) {
@@ -530,6 +536,7 @@ class AppStore(
         private val SETTINGS_BUTTON_Y = floatPreferencesKey("settings_button_y")
         private val CATALOG_VIEW_MODE = stringPreferencesKey("catalog_view_mode")
         private val FAVORITES_VIEW_MODE = stringPreferencesKey("favorites_view_mode")
+        private val HISTORY_VIEW_MODE = stringPreferencesKey("history_view_mode")
         private val ROOM_MIGRATION_DONE = booleanPreferencesKey("room_migration_done")
 
         private val LEGACY_WATCHLIST_JSON = stringPreferencesKey("watchlist_json")

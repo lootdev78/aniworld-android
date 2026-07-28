@@ -9,6 +9,9 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +73,9 @@ fun PlayerScreen(
     var playerError by remember(playback.id) { mutableStateOf<String?>(null) }
     var autoNextVisible by remember(playback.id) { mutableStateOf(false) }
     var autoNextSeconds by remember(playback.id) { mutableIntStateOf(8) }
+    var controlsVisible by remember(playback.id) { mutableStateOf(true) }
+    var controlsGeneration by remember(playback.id) { mutableIntStateOf(0) }
+    var isPlaying by remember(playback.id) { mutableStateOf(true) }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     LaunchedEffect(playback.id) {
@@ -77,6 +83,13 @@ fun PlayerScreen(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(controlsVisible, controlsGeneration, isPlaying, autoNextVisible, playerError) {
+        if (controlsVisible && isPlaying && !autoNextVisible && playerError == null) {
+            delay(3_000L)
+            controlsVisible = false
         }
     }
 
@@ -140,11 +153,26 @@ fun PlayerScreen(
             },
             onError = { message ->
                 playerError = message
+                controlsVisible = true
                 onError(message)
+            },
+            onInteraction = {
+                controlsVisible = true
+                controlsGeneration++
+            },
+            onPlayingChanged = { playing ->
+                isPlaying = playing
+                if (!playing) controlsVisible = true
             }
         )
 
-        Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = ::closePlayer) {
                 Icon(Icons.Default.Close, stringResource(R.string.player_close), tint = Color.White)
             }
@@ -169,6 +197,7 @@ fun PlayerScreen(
             ) {
                 Icon(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), tint = if (hasNext) Color.White else Color.White.copy(alpha = .32f))
             }
+            }
         }
 
         if (autoNextVisible) {
@@ -186,10 +215,16 @@ fun PlayerScreen(
             }
         }
 
-        Surface(
-            modifier = Modifier.fillMaxWidth().padding(12.dp).align(Alignment.BottomCenter),
-            color = Color.Black.copy(alpha = .62f)
+        AnimatedVisibility(
+            visible = controlsVisible || playerError != null,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
         ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                color = Color.Black.copy(alpha = .62f)
+            ) {
             Column(Modifier.padding(12.dp)) {
                 Text(stringResource(R.string.player_title, playback.seriesTitle, playback.episode.localizedLabel()), color = Color.White, fontWeight = FontWeight.Bold)
                 Text(playback.episode.localizedDisplayTitle(), color = Color.White.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
@@ -202,6 +237,7 @@ fun PlayerScreen(
                 }
                 Text(stringResource(R.string.player_gesture_hint), color = Color.White.copy(alpha = .72f), style = MaterialTheme.typography.labelSmall)
                 playerError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
             }
         }
     }
