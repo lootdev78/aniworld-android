@@ -38,16 +38,19 @@ import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
@@ -105,6 +108,8 @@ fun PlayerScreen(
     var languageMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var hosterMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var castMenuOpen by remember(playback.id) { mutableStateOf(false) }
+    var manualCastDialogOpen by remember(playback.id) { mutableStateOf(false) }
+    var manualCastAddress by remember(playback.id) { mutableStateOf("") }
     var internalPausedForCast by remember(playback.id) { mutableStateOf(false) }
     val castController = remember(context.applicationContext) { XboxCastController(context.applicationContext) }
     val castState by castController.state.collectAsState()
@@ -489,7 +494,15 @@ fun PlayerScreen(
                         onClick = { castController.discover() }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.xbox_cast_hint), style = MaterialTheme.typography.labelSmall) },
+                        text = { Text(stringResource(R.string.xbox_cast_manual)) },
+                        leadingIcon = { Icon(Icons.Default.Tune, null) },
+                        onClick = {
+                            castMenuOpen = false
+                            manualCastDialogOpen = true
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.xbox_cast_hotspot_hint), style = MaterialTheme.typography.labelSmall) },
                         enabled = false,
                         onClick = { castMenuOpen = false }
                     )
@@ -543,6 +556,37 @@ fun PlayerScreen(
                 Icon(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), tint = if (hasNext) Color.White else Color.White.copy(alpha = .32f))
             }
             }
+        }
+
+        if (manualCastDialogOpen) {
+            AlertDialog(
+                onDismissRequest = { manualCastDialogOpen = false },
+                title = { Text(stringResource(R.string.xbox_cast_manual_title)) },
+                text = {
+                    OutlinedTextField(
+                        value = manualCastAddress,
+                        onValueChange = { manualCastAddress = it.filter { character -> character.isDigit() || character == '.' } },
+                        label = { Text(stringResource(R.string.xbox_cast_manual_hint)) },
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = manualCastAddress.isNotBlank(),
+                        onClick = {
+                            manualCastDialogOpen = false
+                            castMenuOpen = true
+                            playerError = null
+                            castController.discoverAt(manualCastAddress)
+                        }
+                    ) { Text(stringResource(R.string.xbox_cast_manual_connect)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { manualCastDialogOpen = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            )
         }
 
         if (autoNextVisible) {

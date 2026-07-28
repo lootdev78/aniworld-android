@@ -19,12 +19,16 @@ import org.jsoup.parser.Parser
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.MulticastSocket
+import java.net.NetworkInterface
 import java.net.Socket
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.util.Collections
 import java.util.Locale
 import java.util.UUID
 import javax.net.ssl.SSLSocketFactory
@@ -97,6 +101,37 @@ class XboxCastController(context: Context) {
                         ),
                         discovering = false,
                         error = null
+                    )
+                },
+                onFailure = { error ->
+                    mutableState.value.copy(
+                        discovering = false,
+                        error = error.message ?: appContext.getString(R.string.xbox_cast_discovery_failed)
+                    )
+                }
+            )
+        }
+    }
+
+    fun discoverAt(address: String) {
+        val normalized = address.trim()
+            .removePrefix("http://")
+            .removePrefix("https://")
+            .substringBefore('/')
+            .substringBefore(':')
+        if (normalized.isBlank()) return
+        scope.launch {
+            mutableState.value = mutableState.value.copy(discovering = true, error = null)
+            val result = runCatching { discoverRendererAt(normalized) }
+            mutableState.value = result.fold(
+                onSuccess = { devices ->
+                    val merged = (mutableState.value.devices + devices)
+                        .distinctBy(XboxCastDevice::id)
+                        .sortedWith(compareByDescending<XboxCastDevice> { it.isXbox }.thenBy { it.displayName.lowercase(Locale.ROOT) })
+                    mutableState.value.copy(
+                        devices = merged,
+                        discovering = false,
+                        error = if (devices.isEmpty()) appContext.getString(R.string.xbox_cast_manual_not_found, normalized) else null
                     )
                 },
                 onFailure = { error ->
@@ -239,36 +274,169 @@ class XboxCastController(context: Context) {
         }
         try {
             val locations = linkedSetOf<String>()
-            val address = InetAddress.getByName(SSDP_ADDRESS)
-            MulticastSocket().use { socket ->
-                socket.reuseAddress = true
-                socket.soTimeout = 650
-                socket.timeToLive = 2
-                repeat(2) {
-                    SEARCH_TARGETS.forEach { target ->
-                        val request = buildSearchRequest(target).toByteArray(StandardCharsets.UTF_8)
-                        socket.send(DatagramPacket(request, request.size, address, SSDP_PORT))
-                    }
-                    val deadline = System.currentTimeMillis() + 2_600L
-                    while (System.currentTimeMillis() < deadline) {
-                        val buffer = ByteArray(16 * 1024)
-                        val packet = DatagramPacket(buffer, buffer.size)
-                        try {
-                            socket.receive(packet)
-                            parseSsdpLocation(String(packet.data, packet.offset, packet.length, StandardCharsets.UTF_8))
-                                ?.let(locations::add)
-                        } catch (_: java.net.SocketTimeoutException) {
-                            // Keep receiving until the discovery deadline expires.
-                        }
-                    }
-                }
-            }
+            val endpoints = activeIpv4Endpoints()
+
+            // Standard SSDP discovery still covers normal Wi-Fi networks.
+            collectStandardSsdp(locations)
+
+            // Android hotspot interfaces often do not forward multicast reliably. Send the same
+            // M-SEARCH from every active IPv4 interface, to multicast, subnet broadcast and each
+            // client address in the local /24. Responses remain unicast to our bound socket.
+            endpoints.forEach { endpoint -> collectInterfaceSsdp(endpoint, locations) }
+
+            // Some Android versions expose hotspot clients only through the ARP/neighbor table.
+            // Probe those addresses directly as a final local-network fallback.
+            readNeighborHosts().forEach { host -> collectUnicastSsdp(host, locations) }
+
             locations.mapNotNull { location -> runCatching { loadDevice(location) }.getOrNull() }
                 .distinctBy(XboxCastDevice::id)
         } finally {
             if (multicastLock?.isHeld == true) multicastLock.release()
         }
     }
+
+    private fun discoverRendererAt(host: String): List<XboxCastDevice> {
+        val locations = linkedSetOf<String>()
+        collectUnicastSsdp(InetAddress.getByName(host), locations, receiveWindowMs = 3_800L)
+        return locations.mapNotNull { location -> runCatching { loadDevice(location) }.getOrNull() }
+            .distinctBy(XboxCastDevice::id)
+    }
+
+    private data class DiscoveryEndpoint(
+        val networkInterface: NetworkInterface,
+        val localAddress: Inet4Address,
+        val broadcastAddress: InetAddress?,
+        val scanSubnet: Boolean,
+        val likelyHotspot: Boolean
+    )
+
+    private fun activeIpv4Endpoints(): List<DiscoveryEndpoint> = runCatching {
+        Collections.list(NetworkInterface.getNetworkInterfaces())
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { networkInterface ->
+                networkInterface.interfaceAddresses.mapNotNull { interfaceAddress ->
+                    val address = interfaceAddress.address as? Inet4Address ?: return@mapNotNull null
+                    if (address.isLoopbackAddress || address.isLinkLocalAddress || !address.isSiteLocalAddress) return@mapNotNull null
+                    val name = networkInterface.name.lowercase(Locale.ROOT)
+                    val host = address.hostAddress.orEmpty()
+                    val hotspotName = listOf("ap", "softap", "swlan", "wlan1", "wlan2", "rndis", "bt-pan").any(name::contains)
+                    val hotspotRange = host.startsWith("192.168.43.") || host.startsWith("192.168.232.") ||
+                        host.startsWith("192.168.137.") || host.endsWith(".1")
+                    DiscoveryEndpoint(
+                        networkInterface = networkInterface,
+                        localAddress = address,
+                        broadcastAddress = interfaceAddress.broadcast ?: calculateBroadcast(address, interfaceAddress.networkPrefixLength.toInt()),
+                        scanSubnet = interfaceAddress.broadcast != null || hotspotName || name.startsWith("wlan"),
+                        likelyHotspot = hotspotName || hotspotRange
+                    )
+                }
+            }
+            .distinctBy { "${it.networkInterface.name}:${it.localAddress.hostAddress}" }
+    }.getOrDefault(emptyList())
+
+    private fun collectStandardSsdp(locations: MutableSet<String>) {
+        val group = InetAddress.getByName(SSDP_ADDRESS)
+        MulticastSocket().use { socket ->
+            socket.reuseAddress = true
+            socket.soTimeout = 220
+            socket.timeToLive = 4
+            repeat(3) {
+                SEARCH_TARGETS.forEach { target -> sendSearch(socket, group, target) }
+                receiveLocations(socket, locations, 1_100L)
+            }
+        }
+    }
+
+    private fun collectInterfaceSsdp(endpoint: DiscoveryEndpoint, locations: MutableSet<String>) {
+        DatagramSocket(null).use { socket ->
+            socket.reuseAddress = true
+            socket.broadcast = true
+            socket.bind(InetSocketAddress(endpoint.localAddress, 0))
+            socket.soTimeout = 120
+            val multicast = InetAddress.getByName(SSDP_ADDRESS)
+            SEARCH_TARGETS.forEach { target ->
+                sendSearch(socket, multicast, target)
+                endpoint.broadcastAddress?.let { sendSearch(socket, it, target) }
+            }
+
+            // A unicast sweep is intentionally limited to the phone's /24. It is especially useful
+            // when the phone itself is the hotspot gateway and multicast delivery is suppressed.
+            if (endpoint.scanSubnet) {
+                subnetHosts(endpoint.localAddress).forEach { host ->
+                    SEARCH_TARGETS.forEach { target -> sendSearch(socket, host, target) }
+                }
+            }
+            receiveLocations(socket, locations, if (endpoint.likelyHotspot) 3_400L else 2_000L)
+        }
+    }
+
+    private fun collectUnicastSsdp(
+        host: InetAddress,
+        locations: MutableSet<String>,
+        receiveWindowMs: Long = 1_500L
+    ) {
+        DatagramSocket().use { socket ->
+            socket.reuseAddress = true
+            socket.broadcast = true
+            socket.soTimeout = 140
+            SEARCH_TARGETS.forEach { target -> sendSearch(socket, host, target) }
+            receiveLocations(socket, locations, receiveWindowMs)
+        }
+    }
+
+    private fun sendSearch(socket: DatagramSocket, address: InetAddress, target: String) {
+        runCatching {
+            val request = buildSearchRequest(target).toByteArray(StandardCharsets.UTF_8)
+            socket.send(DatagramPacket(request, request.size, address, SSDP_PORT))
+        }
+    }
+
+    private fun receiveLocations(socket: DatagramSocket, locations: MutableSet<String>, windowMs: Long) {
+        val deadline = System.currentTimeMillis() + windowMs
+        while (System.currentTimeMillis() < deadline) {
+            val buffer = ByteArray(16 * 1024)
+            val packet = DatagramPacket(buffer, buffer.size)
+            try {
+                socket.receive(packet)
+                parseSsdpLocation(String(packet.data, packet.offset, packet.length, StandardCharsets.UTF_8))
+                    ?.let(locations::add)
+            } catch (_: java.net.SocketTimeoutException) {
+                // Continue until the complete discovery window has elapsed.
+            } catch (_: java.io.IOException) {
+                break
+            }
+        }
+    }
+
+    private fun subnetHosts(localAddress: Inet4Address): Sequence<InetAddress> {
+        val bytes = localAddress.address
+        return (1..254).asSequence().mapNotNull { last ->
+            if ((bytes[3].toInt() and 0xFF) == last) return@mapNotNull null
+            runCatching { InetAddress.getByAddress(byteArrayOf(bytes[0], bytes[1], bytes[2], last.toByte())) }.getOrNull()
+        }
+    }
+
+    private fun calculateBroadcast(address: Inet4Address, prefixLength: Int): InetAddress? = runCatching {
+        val prefix = prefixLength.coerceIn(0, 32)
+        val raw = address.address.fold(0) { accumulator, byte -> (accumulator shl 8) or (byte.toInt() and 0xFF) }
+        val mask = if (prefix == 0) 0 else (-1 shl (32 - prefix))
+        val broadcast = raw or mask.inv()
+        InetAddress.getByAddress(byteArrayOf(
+            (broadcast ushr 24).toByte(),
+            (broadcast ushr 16).toByte(),
+            (broadcast ushr 8).toByte(),
+            broadcast.toByte()
+        ))
+    }.getOrNull()
+
+    private fun readNeighborHosts(): List<InetAddress> = runCatching {
+        java.io.File("/proc/net/arp").takeIf { it.canRead() }?.readLines().orEmpty()
+            .drop(1)
+            .mapNotNull { line -> line.trim().split(Regex("\\s+")).firstOrNull() }
+            .mapNotNull { value -> runCatching { InetAddress.getByName(value) }.getOrNull() }
+            .filter { it.isSiteLocalAddress }
+            .distinctBy(InetAddress::getHostAddress)
+    }.getOrDefault(emptyList())
 
     private fun loadDevice(location: String): XboxCastDevice? {
         val response = LocalHttp.execute(location, "GET", mapOf("Accept" to "text/xml, application/xml"))
@@ -385,7 +553,9 @@ class XboxCastController(context: Context) {
         const val SSDP_PORT = 1900
         val SEARCH_TARGETS = listOf(
             "urn:schemas-upnp-org:device:MediaRenderer:1",
-            "urn:schemas-upnp-org:service:AVTransport:1"
+            "urn:schemas-upnp-org:service:AVTransport:1",
+            "upnp:rootdevice",
+            "ssdp:all"
         )
 
         fun buildSearchRequest(target: String): String = buildString {

@@ -329,4 +329,11 @@
     <string name="xbox_cast_local_network_failed">Die lokale Verbindung zur Xbox konnte nicht hergestellt werden.</string>
     <string name="xbox_cast_failed">Der Stream konnte nicht an die Xbox gesendet werden.</string>
     <string name="xbox_cast_header_warning">Geschützte Streams mit App-Headern können auf der Xbox scheitern. Wechsle dann zu einem anderen Hoster.</string>
+    <string name="show_library_controls">Suche und Sortierung anzeigen</string>
+    <string name="xbox_cast_manual">Xbox-IP manuell eingeben</string>
+    <string name="xbox_cast_manual_title">Xbox per IP verbinden</string>
+    <string name="xbox_cast_manual_hint">Xbox-IP im Handy-Hotspot, zum Beispiel 192.168.43.123</string>
+    <string name="xbox_cast_manual_connect">Diese Adresse suchen</string>
+    <string name="xbox_cast_manual_not_found">Unter %1$s antwortet kein DLNA-Renderer. Öffne die Renderer-/Medien-App auf der Xbox und prüfe die Hotspot-IP.</string>
+    <string name="xbox_cast_hotspot_hint">Hotspot-Modus: Lass die DLNA-Renderer-/Medien-App auf der Xbox geöffnet. Die App durchsucht Multicast, Broadcast und alle Geräte im Hotspot-Subnetz.</string>
 </resources>

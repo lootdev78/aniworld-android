@@ -3,6 +3,14 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
+## 1.7.5 Hotspot-Cast und Bibliotheksleisten
+
+- erweitert Xbox-/DLNA-Erkennung für Android-Hotspots um schnittstellengebundene SSDP-Suche, Subnetz-Broadcast, lokalen /24-Unicast-Fallback und bekannte Hotspot-Nachbarn
+- ergänzt im Player eine manuelle Xbox-IP-Suche als Fallback, wenn ein Hotspot Multicast unterdrückt
+- lässt Such-, Filter- und Sortierbereiche in Katalog, Favoriten und Verlauf mit der Scrollrichtung weich ein- und ausfahren
+- zeigt bei alphabetischer Sortierung in Favoriten und Verlauf dauerhaft die vollständige `#`-/A–Z-Schnellleiste wie im Katalog
+- behält zeitliche und benutzerdefinierte Schnellnavigation für die anderen Sortierungen bei
+
 ## 1.7.4 Xbox-Casting
 
 - ergänzt im Player eine Cast-Schaltfläche für Xbox One sowie Xbox Series S/X über DLNA/UPnP AVTransport
@@ -25,7 +33,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.7.3-pip-news-metadata`
+`1.7.5-hotspot-library-ui`
 
 ## Paket und Projekt
 

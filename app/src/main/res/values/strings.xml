@@ -329,4 +329,11 @@
     <string name="xbox_cast_local_network_failed">The local Xbox connection could not be established.</string>
     <string name="xbox_cast_failed">The stream could not be sent to the Xbox.</string>
     <string name="xbox_cast_header_warning">Protected streams that require app headers may not play on the Xbox. Try another hoster if playback fails.</string>
+    <string name="show_library_controls">Show search and sorting</string>
+    <string name="xbox_cast_manual">Enter Xbox IP manually</string>
+    <string name="xbox_cast_manual_title">Connect Xbox by IP</string>
+    <string name="xbox_cast_manual_hint">Xbox IP in the phone hotspot, for example 192.168.43.123</string>
+    <string name="xbox_cast_manual_connect">Search this address</string>
+    <string name="xbox_cast_manual_not_found">No DLNA renderer answered at %1$s. Keep the Xbox renderer app open and verify the hotspot IP.</string>
+    <string name="xbox_cast_hotspot_hint">Hotspot mode: keep the Xbox DLNA receiver/Media Player app open. The app searches multicast, broadcast and all clients in the phone hotspot subnet.</string>
 </resources>

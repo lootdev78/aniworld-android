@@ -1,4 +1,4 @@
-# Feature-Matrix – 1.7.4 Xbox-Cast Production-Debug
+# Feature-Matrix – 1.7.5 Hotspot-Cast Production-Debug
 
 Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen zu. Sie dient als Schutz gegen versehentlich verlorene Funktionen bei späteren Änderungen.
 
@@ -8,14 +8,14 @@ Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen
 | Katalog | Offline-Metadaten, WorkManager-Aktualisierung, Skeleton-/Sperrzustand vor Erstimport, Suche, drei Vorschläge, Löschen-X, Genre/A–Z, Endlosliste, Alphabetleiste, drei Ansichten | `CatalogMetadataWorker.kt`, `AppDatabase.kt`, `AppStore.kt`, `UiScreens.kt` |
 | Cover | DOM-nahe Zuordnung pro Serienlink, Logo-/Placeholderfilter, anime- und URL-spezifische Coil-Schlüssel, Reset/Migration | `AniWorldRepository.kt`, `RepositoryCache.kt`, `AniWorldApplication.kt` |
 | Anime/Staffeln/Filme | Live-Detaildaten, Staffelbeschreibung, Film-/Folgenbeschreibung einmalig, Staffel-/Filmnavigation, kompakte Episodenlisten | `AniWorldRepository.kt`, `UiScreens.kt`, `AppViewModel.kt` |
-| Favoriten | Raster/Kompakt/Detail, Suche/Vorschläge, alphabetisch/aktualisiert/eigene Reihenfolge, Schnellnavigation, Mehrfachauswahl und bestätigtes Löschen | `UiScreens.kt`, `AppStore.kt`, `AppDatabase.kt` |
-| Verlauf | Begonnen/gesehen/favorisiert, Zeitfortschritt, dieselben Ansichten/Sortierungen wie Favoriten, Mehrfachauswahl, Gesehen-Markierung setzen/entfernen | `UiScreens.kt`, `Models.kt`, `AppStore.kt`, `AppDatabase.kt` |
+| Favoriten | Raster/Kompakt/Detail, weich scrollende Such-/Sortierleiste, Suche/Vorschläge, alphabetisch/aktualisiert/eigene Reihenfolge, vollständige #/A–Z-Leiste bei alphabetischer Sortierung, Mehrfachauswahl und bestätigtes Löschen | `UiScreens.kt`, `AppStore.kt`, `AppDatabase.kt` |
+| Verlauf | Begonnen/gesehen/favorisiert, Zeitfortschritt, weich scrollende Such-/Filterleiste, dieselben Ansichten/Sortierungen und #/A–Z-Leiste wie Favoriten, Mehrfachauswahl, Gesehen-Markierung setzen/entfernen | `UiScreens.kt`, `Models.kt`, `AppStore.kt`, `AppDatabase.kt` |
 | Resolver | Sprach-/Hosterpriorität, Verfügbarkeitsprüfung, Hoster-Fallback, Referer/User-Agent/Cookies, Diagnose | `AniWorldRepository.kt`, `AppViewModel.kt`, `Models.kt` |
 | Stream-Crawler | Erkennung sichtbarer HLS-, DASH-, SmoothStreaming- und progressiver HTTP(S)-Anfragen nach Seitenabschluss | `MediaDetection.kt`, `ChallengeScreen.kt` |
 | WebView-Challenge | Manuelle CAPTCHA-/Turnstile-Prüfung ohne Bypass, Session-/Cookie-Übernahme, erneuter Resolverversuch | `ChallengeSession.kt`, `ChallengeScreen.kt`, `AppViewModel.kt` |
 | Adblocker | Werbung/Tracking/Popups/Weiterleitungen, Domain-Ausnahme, einklappbare Panels, standardmäßig deaktiviert | `WebAdBlocker.kt`, `ChallengeScreen.kt`, `AppStore.kt`, `UiScreens.kt` |
 | Interner Player | MediaSessionService, Systembenachrichtigung, Timeline-Scrubbing, ±10 s, Doppeltipp, von Anfang, Auto-Hide, Gesten, Auto-Next, vorherige/nächste Folge | `PlaybackService.kt`, `PlayerScreen.kt`, `ExoPlayerComposable.kt` |
-| Xbox-Casting | SSDP-Gerätesuche, Xbox-Priorisierung, DLNA/UPnP AVTransport, Start an aktueller Position, Play/Pause/Stop/Seek, Trennen und lokal fortsetzen | `XboxCast.kt`, `PlayerScreen.kt`, `PlaybackService.kt` |
+| Xbox-Casting | SSDP über Multicast, aktive IPv4-/Hotspot-Schnittstellen, Broadcast, lokalen /24-Unicast-Scan, Nachbartabelle und manuelle IP; Xbox-Priorisierung, DLNA/UPnP AVTransport, Start an aktueller Position, Play/Pause/Stop/Seek, Trennen und lokal fortsetzen | `XboxCast.kt`, `PlayerScreen.kt`, `PlaybackService.kt` |
 | Player-Auswahl | Sprache und Hoster im Player wechseln, optional externer Player, bevorzugter Hoster automatisch starten | `PlayerScreen.kt`, `ExternalPlayback.kt`, `AppViewModel.kt`, `AppStore.kt` |
 | Einstellungen | Material-3-Akzentpalette, dynamische Farben, Start-Tab, Host-/Sprachpriorität, Adblocker, Cache/Metadaten, Playeroptionen, Credits | `UiScreens.kt`, `AppStore.kt`, `MainActivity.kt` |
 | Persistenz | Room für strukturierte Metadaten/Favoriten/Verlauf/Fortschritt; DataStore für Einstellungen und Reihenfolgen | `AppDatabase.kt`, `AppStore.kt` |

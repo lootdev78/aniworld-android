@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.lootdev78.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 61
-        versionName = "1.7.4-xbox-cast"
+        versionCode = 62
+        versionName = "1.7.5-hotspot-library-ui"
         vectorDrawables.useSupportLibrary = true
     }
 

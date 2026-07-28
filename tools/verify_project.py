@@ -17,8 +17,8 @@ SRC = APP / "src" / "main"
 KOTLIN = SRC / "java" / "io" / "github" / "lootdev78" / "aniworld"
 RES = SRC / "res"
 EXPECTED_PACKAGE = "io.github.lootdev78.aniworld"
-EXPECTED_VERSION_CODE = 61
-EXPECTED_VERSION_NAME = "1.7.4-xbox-cast"
+EXPECTED_VERSION_CODE = 62
+EXPECTED_VERSION_NAME = "1.7.5-hotspot-library-ui"
 
 errors: list[str] = []
 notes: list[str] = []
@@ -170,7 +170,8 @@ feature_markers: dict[str, tuple[Path, tuple[str, ...]]] = {
     "Challenge-Fallback": (KOTLIN / "ChallengeSession.kt", ("ChallengeRequiredException", "throwIfRequired")),
     "MediaSession-Player": (KOTLIN / "PlaybackService.kt", ("MediaSessionService", "ACTION_PREVIOUS", "ACTION_NEXT", "ACTION_SEEK")),
     "Player-Zeitleiste, ±10 s und PiP": (KOTLIN / "PlayerScreen.kt", ("Slider(", "SliderDefaults.colors", "Replay10", "Forward10", "knownDurationMs", "play_from_beginning", "enterPictureInPictureMode")),
-    "Xbox-/DLNA-Casting": (KOTLIN / "XboxCast.kt", ("SSDP_ADDRESS", "AVTransport", "SetAVTransportURI", "GetPositionInfo", "XboxCastController")),
+    "Xbox-/DLNA-Casting": (KOTLIN / "XboxCast.kt", ("SSDP_ADDRESS", "AVTransport", "SetAVTransportURI", "GetPositionInfo", "XboxCastController", "discoverAt", "subnetHosts")),
+    "Bibliotheks-Scrollleisten": (KOTLIN / "UiScreens.kt", ("rememberScrollAwareHeaderState", "SmoothCollapsibleHeader", "FullAlphabetIndex", "show_library_controls")),
     "Externer Player": (KOTLIN / "ExternalPlayback.kt", ("ACTION_VIEW", "FLAG_GRANT_READ_URI_PERMISSION")),
     "Katalog-Worker": (KOTLIN / "CatalogMetadataWorker.kt", ("CoroutineWorker", "setForeground", "showFinishedNotification", "UNIQUE_WORK")),
     "Offline-Metadaten": (KOTLIN / "AppDatabase.kt", ("SeriesMetadataEntity", "coverUrl", "description", "genres")),

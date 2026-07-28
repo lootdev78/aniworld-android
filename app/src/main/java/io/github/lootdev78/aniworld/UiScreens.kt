@@ -14,6 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.annotation.StringRes
@@ -109,6 +111,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -444,38 +447,87 @@ private fun <T> SearchFieldWithSuggestions(
 }
 
 @Composable
+private fun rememberScrollAwareHeaderState(
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    isGrid: Boolean,
+    resetKey: Any?
+): MutableState<Boolean> {
+    val visible = rememberSaveable(isGrid, resetKey) { mutableStateOf(true) }
+    LaunchedEffect(isGrid, resetKey) {
+        visible.value = true
+        var previous = if (isGrid) {
+            gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset
+        } else {
+            listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset
+        }
+        var accumulated = 0
+        snapshotFlow {
+            if (isGrid) gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset
+            else listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset
+        }.collect { current ->
+            val delta = current - previous
+            previous = current
+            if (current <= 8) {
+                accumulated = 0
+                visible.value = true
+            } else if (delta > 0) {
+                if (accumulated < 0) accumulated = 0
+                accumulated += delta.coerceAtMost(80)
+                if (accumulated >= 36) {
+                    visible.value = false
+                    accumulated = 0
+                }
+            } else if (delta < 0) {
+                if (accumulated > 0) accumulated = 0
+                accumulated += delta.coerceAtLeast(-80)
+                if (accumulated <= -24) {
+                    visible.value = true
+                    accumulated = 0
+                }
+            }
+        }
+    }
+    return visible
+}
+
+private val FullAlphabetIndex: List<String> = listOf("#") + ('A'..'Z').map(Char::toString)
+
+private fun titleIndexLabel(title: String): String =
+    title.trim().firstOrNull()?.uppercaseChar()?.takeIf(Char::isLetter)?.toString() ?: "#"
+
+@Composable
+private fun SmoothCollapsibleHeader(visible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = expandVertically(expandFrom = Alignment.Top) + slideInVertically(initialOffsetY = { -it / 3 }) + fadeIn(),
+        exit = shrinkVertically(shrinkTowards = Alignment.Top) + slideOutVertically(targetOffsetY = { -it / 3 }) + fadeOut()
+    ) {
+        content()
+    }
+}
+
+@Composable
 fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    var controlsVisible by rememberSaveable { mutableStateOf(true) }
     val items = st.filteredCatalog
     val catalogSuggestions = remember(items, st.catalogQuery) {
         if (st.catalogQuery.isBlank()) emptyList() else items.take(3)
     }
     val isGrid = st.preferences.catalogViewMode == LibraryViewMode.GRID
 
+    val controlsState = rememberScrollAwareHeaderState(
+        gridState = gridState,
+        listState = listState,
+        isGrid = isGrid,
+        resetKey = "${st.catalogQuery}|${st.catalogGenre}|${st.preferences.catalogViewMode}"
+    )
+    var controlsVisible by controlsState
     LaunchedEffect(st.catalogQuery, st.catalogGenre, st.preferences.catalogViewMode) {
         controlsVisible = true
         if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
-    }
-    LaunchedEffect(listState, isGrid) {
-        if (isGrid) return@LaunchedEffect
-        var previous = 0
-        snapshotFlow { listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }
-            .collect { current ->
-                controlsVisible = current <= previous || current < 32
-                previous = current
-            }
-    }
-    LaunchedEffect(gridState, isGrid) {
-        if (!isGrid) return@LaunchedEffect
-        var previous = 0
-        snapshotFlow { gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset }
-            .collect { current ->
-                controlsVisible = current <= previous || current < 32
-                previous = current
-            }
     }
     if (st.catalog.items.isEmpty() && !st.catalogLoading) LaunchedEffect(Unit) { vm.loadCatalog() }
 
@@ -485,11 +537,7 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         modifier = Modifier.fillMaxSize()
     ) {
         Column(Modifier.fillMaxSize()) {
-            AnimatedVisibility(
-                visible = controlsVisible,
-                enter = slideInVertically(initialOffsetY = { -it / 2 }) + fadeIn(),
-                exit = slideOutVertically(targetOffsetY = { -it / 2 }) + fadeOut()
-            ) {
+            SmoothCollapsibleHeader(visible = controlsVisible) {
                 Column {
                     SearchFieldWithSuggestions(
                         value = st.catalogQuery,
@@ -643,15 +691,20 @@ private fun CatalogAlphabetRail(
     letters: List<String>,
     activeLetter: String?,
     onLetter: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabledLetters: Set<String> = letters.toSet()
 ) {
     Surface(modifier = modifier.padding(end = 2.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .88f)) {
         Column(Modifier.padding(horizontal = 4.dp, vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             letters.forEach { letter ->
                 Text(
                     text = letter,
-                    modifier = Modifier.clickable { onLetter(letter) }.padding(horizontal = 5.dp, vertical = 1.dp),
-                    color = if (letter == activeLetter) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.clickable(enabled = letter in enabledLetters) { onLetter(letter) }.padding(horizontal = 5.dp, vertical = 1.dp),
+                    color = when {
+                        letter == activeLetter -> MaterialTheme.colorScheme.primary
+                        letter in enabledLetters -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .30f)
+                    },
                     fontWeight = if (letter == activeLetter) FontWeight.Black else FontWeight.Medium,
                     fontSize = 10.sp
                 )
@@ -681,22 +734,35 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val quickTargets = libraryQuickTargets(st.preferences.favoriteSort, ordered.map { it.title }, ordered.map { it.updatedAt })
     val isGrid = st.preferences.favoritesViewMode == LibraryViewMode.GRID
     val activeIndex = if (isGrid) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
+    val controlsState = rememberScrollAwareHeaderState(
+        gridState = gridState,
+        listState = listState,
+        isGrid = isGrid,
+        resetKey = "${st.preferences.favoriteSort}|${st.preferences.favoritesViewMode}"
+    )
+    var controlsVisible by controlsState
+    LaunchedEffect(filter, st.preferences.favoriteSort, st.preferences.favoritesViewMode) {
+        controlsVisible = true
+        if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
+    }
 
     fun toggleSelection(slug: String) {
         selectedSlugs = selectedSlugs.toMutableSet().apply { if (!add(slug)) remove(slug) }
     }
 
     Column(Modifier.fillMaxSize()) {
-        LibraryScreenControls(
-            filter = filter,
-            onFilter = { filter = it },
-            sort = st.preferences.favoriteSort,
-            onSort = { selectedSlugs = emptySet(); vm.setFavoriteSort(it) },
-            viewMode = st.preferences.favoritesViewMode,
-            onViewMode = { selectedSlugs = emptySet(); vm.setFavoritesViewMode(it) },
-            suggestions = favoriteSuggestions,
-            onSuggestion = { series -> st.preferences.favorites.firstOrNull { it.slug == series.slug }?.let(vm::selectFavorite) }
-        )
+        SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
+            LibraryScreenControls(
+                filter = filter,
+                onFilter = { filter = it },
+                sort = st.preferences.favoriteSort,
+                onSort = { selectedSlugs = emptySet(); controlsVisible = true; vm.setFavoriteSort(it) },
+                viewMode = st.preferences.favoritesViewMode,
+                onViewMode = { selectedSlugs = emptySet(); controlsVisible = true; vm.setFavoritesViewMode(it) },
+                suggestions = favoriteSuggestions,
+                onSuggestion = { series -> st.preferences.favorites.firstOrNull { it.slug == series.slug }?.let(vm::selectFavorite) }
+            )
+        }
         if (selectionMode) {
             LibrarySelectionToolbar(
                 count = selectedSlugs.size,
@@ -763,13 +829,37 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                         }
                     }
                 }
-                if (quickTargets.size > 1) {
+                if (st.preferences.favoriteSort == LibrarySort.ALPHABETICAL) {
+                    val availableLetters = ordered.map { titleIndexLabel(it.title) }.toSet()
+                    val activeLetter = ordered.getOrNull(activeIndex)?.title?.let(::titleIndexLabel)
+                    CatalogAlphabetRail(
+                        letters = FullAlphabetIndex,
+                        activeLetter = activeLetter,
+                        enabledLetters = availableLetters,
+                        onLetter = { letter ->
+                            ordered.indexOfFirst { titleIndexLabel(it.title) == letter }.takeIf { it >= 0 }?.let { index ->
+                                controlsVisible = false
+                                scope.launch { if (isGrid) gridState.animateScrollToItem(index) else listState.animateScrollToItem(index) }
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    )
+                } else if (quickTargets.size > 1) {
                     QuickIndexRail(
                         targets = quickTargets,
                         activeIndex = activeIndex,
                         onTarget = { target -> scope.launch { if (isGrid) gridState.animateScrollToItem(target.index) else listState.animateScrollToItem(target.index) } },
                         modifier = Modifier.align(Alignment.CenterEnd)
                     )
+                }
+                if (!controlsVisible && !selectionMode) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp).clickable { controlsVisible = true },
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)
+                    ) {
+                        Icon(Icons.Default.Search, stringResource(R.string.show_library_controls), Modifier.padding(10.dp))
+                    }
                 }
             }
         }
@@ -821,25 +911,40 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val quickTargets = libraryQuickTargets(st.preferences.watchedSort, ordered.map { it.title }, ordered.map { it.updatedAt })
     val isGrid = st.preferences.historyViewMode == LibraryViewMode.GRID
     val activeIndex = if (isGrid) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
+    val controlsState = rememberScrollAwareHeaderState(
+        gridState = gridState,
+        listState = listState,
+        isGrid = isGrid,
+        resetKey = "${st.preferences.watchedSort}|${st.preferences.historyViewMode}|$statusFilter"
+    )
+    var controlsVisible by controlsState
+    LaunchedEffect(filter, statusFilter, st.preferences.watchedSort, st.preferences.historyViewMode) {
+        controlsVisible = true
+        if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
+    }
 
     fun toggleSelection(slug: String) {
         selectedSlugs = selectedSlugs.toMutableSet().apply { if (!add(slug)) remove(slug) }
     }
 
     Column(Modifier.fillMaxSize()) {
-        LibraryScreenControls(
-            filter = filter,
-            onFilter = { filter = it },
-            sort = st.preferences.watchedSort,
-            onSort = { selectedSlugs = emptySet(); vm.setWatchedSort(it) },
-            viewMode = st.preferences.historyViewMode,
-            onViewMode = { selectedSlugs = emptySet(); vm.setHistoryViewMode(it) },
-            suggestions = historySuggestions,
-            onSuggestion = { series -> allWatched.firstOrNull { it.slug == series.slug }?.let(vm::selectWatched) }
-        )
-        LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(HistoryFilter.entries) { item ->
-                FilterChip(selected = statusFilter == item, onClick = { selectedSlugs = emptySet(); statusFilter = item }, label = { Text(stringResource(item.labelRes)) })
+        SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
+            Column {
+                LibraryScreenControls(
+                    filter = filter,
+                    onFilter = { filter = it },
+                    sort = st.preferences.watchedSort,
+                    onSort = { selectedSlugs = emptySet(); controlsVisible = true; vm.setWatchedSort(it) },
+                    viewMode = st.preferences.historyViewMode,
+                    onViewMode = { selectedSlugs = emptySet(); controlsVisible = true; vm.setHistoryViewMode(it) },
+                    suggestions = historySuggestions,
+                    onSuggestion = { series -> allWatched.firstOrNull { it.slug == series.slug }?.let(vm::selectWatched) }
+                )
+                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(HistoryFilter.entries) { item ->
+                        FilterChip(selected = statusFilter == item, onClick = { selectedSlugs = emptySet(); controlsVisible = true; statusFilter = item }, label = { Text(stringResource(item.labelRes)) })
+                    }
+                }
             }
         }
         if (selectionMode) {
@@ -912,13 +1017,37 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                         }
                     }
                 }
-                if (quickTargets.size > 1) {
+                if (st.preferences.watchedSort == LibrarySort.ALPHABETICAL) {
+                    val availableLetters = ordered.map { titleIndexLabel(it.title) }.toSet()
+                    val activeLetter = ordered.getOrNull(activeIndex)?.title?.let(::titleIndexLabel)
+                    CatalogAlphabetRail(
+                        letters = FullAlphabetIndex,
+                        activeLetter = activeLetter,
+                        enabledLetters = availableLetters,
+                        onLetter = { letter ->
+                            ordered.indexOfFirst { titleIndexLabel(it.title) == letter }.takeIf { it >= 0 }?.let { index ->
+                                controlsVisible = false
+                                scope.launch { if (isGrid) gridState.animateScrollToItem(index) else listState.animateScrollToItem(index) }
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    )
+                } else if (quickTargets.size > 1) {
                     QuickIndexRail(
                         targets = quickTargets,
                         activeIndex = activeIndex,
                         onTarget = { target -> scope.launch { if (isGrid) gridState.animateScrollToItem(target.index) else listState.animateScrollToItem(target.index) } },
                         modifier = Modifier.align(Alignment.CenterEnd)
                     )
+                }
+                if (!controlsVisible && !selectionMode) {
+                    Surface(
+                        modifier = Modifier.align(Alignment.TopStart).padding(8.dp).clickable { controlsVisible = true },
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)
+                    ) {
+                        Icon(Icons.Default.Search, stringResource(R.string.show_library_controls), Modifier.padding(10.dp))
+                    }
                 }
             }
         }
@@ -947,10 +1076,7 @@ private fun libraryQuickTargets(sort: LibrarySort, titles: List<String>, updated
     val olderLabel = stringResource(R.string.quick_older)
     return remember(sort, titles, updatedAt, recentLabel, weekLabel, monthLabel, olderLabel) {
         when (sort) {
-            LibrarySort.ALPHABETICAL -> titles.mapIndexed { index, title ->
-                val label = title.trim().firstOrNull()?.uppercaseChar()?.takeIf(Char::isLetter)?.toString() ?: "#"
-                QuickTarget(label, index)
-            }.distinctBy { it.label }
+            LibrarySort.ALPHABETICAL -> emptyList()
             LibrarySort.UPDATED -> {
                 val now = System.currentTimeMillis()
                 val day = 24L * 60L * 60L * 1000L
