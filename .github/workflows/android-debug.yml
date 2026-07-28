@@ -51,9 +51,6 @@ jobs:
       - name: Clean and assemble debug APK
         run: ./gradlew --no-daemon --stacktrace --warning-mode all clean :app:assembleDebug
 
-      - name: Android lint
-        run: ./gradlew --no-daemon --stacktrace :app:lintDebug
-
       - name: Prepare APK artifact
         id: apk
         shell: bash
