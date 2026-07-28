@@ -315,4 +315,18 @@
     <string name="metadata_notification_finished_title">Katalog-Metadaten aktualisiert</string>
     <string name="metadata_notification_failed_title">Metadaten-Aktualisierung fehlgeschlagen</string>
     <string name="metadata_notification_complete">%1$d Titel sind jetzt offline verfügbar.</string>
+    <string name="xbox_cast">Auf Xbox / DLNA übertragen</string>
+    <string name="xbox_cast_searching">Xbox- und DLNA-Geräte werden gesucht…</string>
+    <string name="xbox_cast_no_devices">Kein kompatibles Gerät gefunden</string>
+    <string name="xbox_cast_refresh">Erneut suchen</string>
+    <string name="xbox_cast_hint">Öffne auf der Xbox die Medienwiedergabe-App und verbinde beide Geräte mit demselben Netzwerk.</string>
+    <string name="xbox_cast_xbox_device">Xbox-Medienrenderer</string>
+    <string name="xbox_cast_dlna_device">Kompatibler DLNA-Renderer</string>
+    <string name="xbox_cast_playing_on">Wiedergabe auf %1$s</string>
+    <string name="xbox_cast_disconnect_and_resume">Trennen und auf diesem Gerät fortsetzen</string>
+    <string name="xbox_cast_permission_denied">Zum Finden der Xbox wird die Berechtigung für Geräte in der Nähe benötigt.</string>
+    <string name="xbox_cast_discovery_failed">Die Suche nach Xbox-/DLNA-Geräten ist fehlgeschlagen.</string>
+    <string name="xbox_cast_local_network_failed">Die lokale Verbindung zur Xbox konnte nicht hergestellt werden.</string>
+    <string name="xbox_cast_failed">Der Stream konnte nicht an die Xbox gesendet werden.</string>
+    <string name="xbox_cast_header_warning">Geschützte Streams mit App-Headern können auf der Xbox scheitern. Wechsle dann zu einem anderen Hoster.</string>
 </resources>

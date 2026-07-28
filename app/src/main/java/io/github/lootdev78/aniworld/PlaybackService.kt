@@ -111,6 +111,8 @@ class PlaybackService : MediaSessionService() {
         when (intent?.action) {
             ACTION_PREPARE -> prepare(intent)
             ACTION_SEEK -> player.seekTo(intent.getLongExtra(EXTRA_SEEK_POSITION, player.currentPosition).coerceAtLeast(0L))
+            ACTION_PLAY -> player.play()
+            ACTION_PAUSE -> player.pause()
             ACTION_STOP -> {
                 player.stop()
                 player.clearMediaItems()
@@ -167,6 +169,8 @@ class PlaybackService : MediaSessionService() {
         const val ACTION_STOPPED = "io.github.lootdev78.aniworld.action.PLAYBACK_STOPPED"
         private const val ACTION_PREPARE = "io.github.lootdev78.aniworld.action.PREPARE_PLAYBACK"
         private const val ACTION_SEEK = "io.github.lootdev78.aniworld.action.SEEK_PLAYBACK"
+        private const val ACTION_PLAY = "io.github.lootdev78.aniworld.action.PLAY_PLAYBACK"
+        private const val ACTION_PAUSE = "io.github.lootdev78.aniworld.action.PAUSE_PLAYBACK"
         private const val ACTION_STOP = "io.github.lootdev78.aniworld.action.STOP_PLAYBACK"
         private const val COMMAND_PREVIOUS = "io.github.lootdev78.aniworld.command.PREVIOUS_EPISODE"
         private const val COMMAND_NEXT = "io.github.lootdev78.aniworld.command.NEXT_EPISODE"
@@ -206,6 +210,14 @@ class PlaybackService : MediaSessionService() {
                     .setAction(ACTION_SEEK)
                     .putExtra(EXTRA_SEEK_POSITION, positionMs.coerceAtLeast(0L))
             )
+        }
+
+        fun play(context: Context) {
+            context.startService(Intent(context, PlaybackService::class.java).setAction(ACTION_PLAY))
+        }
+
+        fun pause(context: Context) {
+            context.startService(Intent(context, PlaybackService::class.java).setAction(ACTION_PAUSE))
         }
 
         fun stop(context: Context) {

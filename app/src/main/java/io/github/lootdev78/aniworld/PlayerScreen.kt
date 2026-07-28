@@ -15,6 +15,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,11 +24,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.CastConnected
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Forward10
@@ -45,6 +49,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,6 +65,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
@@ -98,6 +104,11 @@ fun PlayerScreen(
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
     var languageMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var hosterMenuOpen by remember(playback.id) { mutableStateOf(false) }
+    var castMenuOpen by remember(playback.id) { mutableStateOf(false) }
+    var internalPausedForCast by remember(playback.id) { mutableStateOf(false) }
+    val castController = remember(context.applicationContext) { XboxCastController(context.applicationContext) }
+    val castState by castController.state.collectAsState()
+    val castActive = castState.connectedDevice != null
     val playerLanguages = remember(availableHosters, playback.stream.language) {
         (availableHosters.map { it.lang } + playback.stream.language).filter { it != Language.UNKNOWN }.distinct()
     }
@@ -105,6 +116,15 @@ fun PlayerScreen(
         availableHosters.distinctBy { "${HosterCatalog.normalize(it.name)}:${it.lang.token}" }
     }
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val nearbyDevicesPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            castMenuOpen = true
+            castController.discover()
+        } else {
+            playerError = context.getString(R.string.xbox_cast_permission_denied)
+            controlsVisible = true
+        }
+    }
 
     LaunchedEffect(playback.id) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -126,11 +146,56 @@ fun PlayerScreen(
         if (autoNextSeconds <= 0) {
             autoNextVisible = false
             onProgress(position, duration, true)
+            if (castActive) castController.disconnect()
             onNext()
         } else {
             delay(1_000L)
             autoNextSeconds--
         }
+    }
+
+    LaunchedEffect(castState.connectedDevice?.id, castState.transportState) {
+        if (castState.connectedDevice != null) {
+            PlaybackService.pause(context)
+            internalPausedForCast = true
+            isPlaying = castState.transportState == XboxTransportState.PLAYING
+        } else if (internalPausedForCast && castState.transportState == XboxTransportState.ERROR) {
+            PlaybackService.play(context)
+            internalPausedForCast = false
+        }
+    }
+
+    LaunchedEffect(castActive, castState.positionMs, castState.durationMs) {
+        if (castActive) {
+            position = castState.positionMs.coerceAtLeast(0L)
+            if (castState.durationMs > 0L) duration = castState.durationMs
+            if (!scrubbing) scrubPosition = position.toFloat()
+            onProgress(position, duration, false)
+        }
+    }
+
+    LaunchedEffect(castState.completionEvent) {
+        if (castState.completionEvent != 0L) {
+            val finalPosition = castState.positionMs
+            val finalDuration = castState.durationMs
+            onEnded(finalPosition, finalDuration)
+            if (autoNextEnabled && hasNext) {
+                autoNextSeconds = 8
+                autoNextVisible = true
+            }
+        }
+    }
+
+    LaunchedEffect(castState.error) {
+        castState.error?.let { message ->
+            playerError = message
+            controlsVisible = true
+            onError(message)
+        }
+    }
+
+    DisposableEffect(castController) {
+        onDispose { castController.close() }
     }
 
     DisposableEffect(activity) {
@@ -169,8 +234,47 @@ fun PlayerScreen(
             }
     }
 
+    fun openCastPicker() {
+        controlsVisible = true
+        castState.error?.let { castController.clearError() }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
+        ) {
+            nearbyDevicesPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+        } else {
+            castMenuOpen = true
+            castController.discover()
+        }
+    }
+
+    fun seekPlayback(targetMs: Long) {
+        val target = targetMs.coerceAtLeast(0L)
+        if (castActive) castController.seekTo(target) else PlaybackService.seekTo(context, target)
+        position = target
+        scrubPosition = target.toFloat()
+        onProgress(target, duration, true)
+        controlsGeneration++
+    }
+
+    fun disconnectCastAndResume() {
+        val remotePosition = castState.positionMs.coerceAtLeast(position)
+        castController.disconnect()
+        PlaybackService.seekTo(context, remotePosition)
+        PlaybackService.play(context)
+        position = remotePosition
+        scrubPosition = remotePosition.toFloat()
+        internalPausedForCast = false
+        isPlaying = true
+    }
+
+    fun stopCastForNavigation() {
+        if (castActive) castController.disconnect()
+        internalPausedForCast = false
+    }
+
     fun closePlayer() {
         autoNextVisible = false
+        if (castActive) castController.disconnect()
         PlaybackService.stop(context)
         onClose(position, duration)
     }
@@ -182,18 +286,22 @@ fun PlayerScreen(
             playback = playback,
             modifier = Modifier.fillMaxSize(),
             onProgress = { pos, dur ->
-                position = pos
-                duration = dur
-                if (!scrubbing) scrubPosition = pos.toFloat()
-                onProgress(pos, dur, false)
+                if (!castActive) {
+                    position = pos
+                    duration = dur
+                    if (!scrubbing) scrubPosition = pos.toFloat()
+                    onProgress(pos, dur, false)
+                }
             },
             onEnded = { finalPosition, finalDuration ->
-                position = finalPosition
-                duration = finalDuration
-                onEnded(finalPosition, finalDuration)
-                if (autoNextEnabled && hasNext) {
-                    autoNextSeconds = 8
-                    autoNextVisible = true
+                if (!castActive) {
+                    position = finalPosition
+                    duration = finalDuration
+                    onEnded(finalPosition, finalDuration)
+                    if (autoNextEnabled && hasNext) {
+                        autoNextSeconds = 8
+                        autoNextVisible = true
+                    }
                 }
             },
             onError = { message ->
@@ -206,10 +314,48 @@ fun PlayerScreen(
                 controlsGeneration++
             },
             onPlayingChanged = { playing ->
-                isPlaying = playing
-                if (!playing) controlsVisible = true
+                if (!castActive) {
+                    isPlaying = playing
+                    if (!playing) controlsVisible = true
+                }
             }
         )
+
+        if (castActive) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = .88f))
+                    .clickable {
+                        castController.togglePlayPause()
+                        controlsVisible = true
+                        controlsGeneration++
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Default.CastConnected,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 14.dp)
+                    )
+                    Text(
+                        stringResource(R.string.xbox_cast_playing_on, castState.connectedDevice?.displayName.orEmpty()),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        if (castState.transportState == XboxTransportState.PAUSED) stringResource(R.string.playback_paused)
+                        else stringResource(R.string.playback_running),
+                        color = Color.White.copy(alpha = .76f),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            }
+        }
 
         AnimatedVisibility(
             visible = controlsVisible,
@@ -237,6 +383,7 @@ fun PlayerScreen(
                                 onClick = {
                                     languageMenuOpen = false
                                     onProgress(position, duration, true)
+                                    stopCastForNavigation()
                                     onLanguageChange(language)
                                 }
                             )
@@ -261,11 +408,91 @@ fun PlayerScreen(
                                 onClick = {
                                     hosterMenuOpen = false
                                     onProgress(position, duration, true)
+                                    stopCastForNavigation()
                                     onHosterChange(hoster)
                                 }
                             )
                         }
                     }
+                }
+            }
+            Box {
+                IconButton(onClick = ::openCastPicker) {
+                    Icon(
+                        if (castActive) Icons.Default.CastConnected else Icons.Default.Cast,
+                        stringResource(R.string.xbox_cast),
+                        tint = if (castActive) MaterialTheme.colorScheme.primary else Color.White
+                    )
+                }
+                DropdownMenu(expanded = castMenuOpen, onDismissRequest = { castMenuOpen = false }) {
+                    castState.connectedDevice?.let { device ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(device.displayName, fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.xbox_cast_disconnect_and_resume), style = MaterialTheme.typography.labelSmall)
+                                }
+                            },
+                            leadingIcon = { Icon(Icons.Default.CastConnected, null) },
+                            onClick = {
+                                castMenuOpen = false
+                                disconnectCastAndResume()
+                            }
+                        )
+                    }
+                    if (playback.stream.headers.keys.any { !it.equals("User-Agent", true) }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.xbox_cast_header_warning), style = MaterialTheme.typography.labelSmall) },
+                            enabled = false,
+                            onClick = { castMenuOpen = false }
+                        )
+                    }
+                    if (castState.discovering) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.xbox_cast_searching)) },
+                            leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                            enabled = false,
+                            onClick = { castMenuOpen = false }
+                        )
+                    }
+                    castState.devices.filter { it.id != castState.connectedDevice?.id }.forEach { device ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(device.displayName)
+                                    Text(
+                                        if (device.isXbox) stringResource(R.string.xbox_cast_xbox_device)
+                                        else stringResource(R.string.xbox_cast_dlna_device),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            },
+                            leadingIcon = { Icon(if (device.isXbox) Icons.Default.CastConnected else Icons.Default.Cast, null) },
+                            onClick = {
+                                castMenuOpen = false
+                                playerError = null
+                                PlaybackService.pause(context)
+                                internalPausedForCast = true
+                                castController.cast(device, playback, position)
+                            }
+                        )
+                    }
+                    if (!castState.discovering && castState.devices.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.xbox_cast_no_devices)) },
+                            onClick = { castController.discover() }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.xbox_cast_refresh)) },
+                        leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                        onClick = { castController.discover() }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.xbox_cast_hint), style = MaterialTheme.typography.labelSmall) },
+                        enabled = false,
+                        onClick = { castMenuOpen = false }
+                    )
                 }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -277,6 +504,7 @@ fun PlayerScreen(
                 IconButton(
                     onClick = {
                         onProgress(position, duration, true)
+                        stopCastForNavigation()
                         launchExternalPlayback(context, playback)
                             .onSuccess { closePlayer() }
                             .onFailure { error ->
@@ -296,6 +524,7 @@ fun PlayerScreen(
                 onClick = {
                     autoNextVisible = false
                     onProgress(position, duration, true)
+                    stopCastForNavigation()
                     onPrevious()
                 },
                 enabled = hasPrevious
@@ -306,6 +535,7 @@ fun PlayerScreen(
                 onClick = {
                     autoNextVisible = false
                     onProgress(position, duration, true)
+                    stopCastForNavigation()
                     onNext()
                 },
                 enabled = hasNext
@@ -360,10 +590,8 @@ fun PlayerScreen(
                     onValueChangeFinished = {
                         knownDuration?.let { maximum ->
                             val target = scrubPosition.toLong().coerceIn(0L, maximum)
-                            PlaybackService.seekTo(context, target)
-                            position = target
+                            seekPlayback(target)
                             scrubbing = false
-                            onProgress(target, maximum, true)
                         }
                     },
                     valueRange = 0f..timelineMaximum.toFloat(),
@@ -402,31 +630,19 @@ fun PlayerScreen(
                 ) {
                     IconButton(onClick = {
                         val target = (position - 10_000L).coerceAtLeast(0L)
-                        PlaybackService.seekTo(context, target)
-                        position = target
-                        scrubPosition = target.toFloat()
-                        onProgress(target, duration, true)
-                        controlsGeneration++
+                        seekPlayback(target)
                     }) {
                         Icon(Icons.Default.Replay10, stringResource(R.string.seek_back_seconds), tint = Color.White)
                     }
                     IconButton(onClick = {
-                        PlaybackService.seekTo(context, 0L)
-                        position = 0L
-                        scrubPosition = 0f
-                        onProgress(0L, duration, true)
-                        controlsGeneration++
+                        seekPlayback(0L)
                     }) {
                         Icon(Icons.Default.Replay, stringResource(R.string.play_from_beginning), tint = Color.White)
                     }
                     IconButton(onClick = {
                         val target = knownDuration?.let { (position + 10_000L).coerceAtMost(it) }
                             ?: (position + 10_000L)
-                        PlaybackService.seekTo(context, target)
-                        position = target
-                        scrubPosition = target.toFloat()
-                        onProgress(target, duration, true)
-                        controlsGeneration++
+                        seekPlayback(target)
                     }) {
                         Icon(Icons.Default.Forward10, stringResource(R.string.seek_forward_seconds), tint = Color.White)
                     }

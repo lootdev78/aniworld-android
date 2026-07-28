@@ -3,6 +3,15 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
+## 1.7.4 Xbox-Casting
+
+- ergänzt im Player eine Cast-Schaltfläche für Xbox One sowie Xbox Series S/X über DLNA/UPnP AVTransport
+- sucht kompatible Renderer per SSDP im lokalen Netzwerk und priorisiert erkannte Xbox-Geräte
+- sendet die aktuelle Stream-URL inklusive Titel-Metadaten an die Xbox und startet an der aktuellen Wiedergabeposition
+- unterstützt Fernsteuerung für Wiedergabe/Pause, Stop, Zeitleisten-Suche sowie Rückkehr auf das Android-Gerät
+- lässt die globale HTTPS-only-Richtlinie unverändert; lokale UPnP-HTTP-Endpunkte werden über einen isolierten Socket-Client angesprochen
+- fordert die Berechtigung für Geräte in der Nähe erst beim Öffnen der Cast-Auswahl an
+
 ## 1.7.3 Picture-in-Picture, Anime-News und Metadaten-Benachrichtigung
 
 - konsolidiert den vollständigen Funktionsumfang der vorherigen Projektstände in einer gemeinsamen Codebasis
@@ -121,12 +130,13 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - dauerhaft sichtbare Wiedergabezeitleiste bei eingeblendeten Steuerelementen mit aktuellem Zeitpunkt, Videolänge und verschiebbarem Positionspunkt
 - Doppeltipp links/rechts sowie Icon-Aktionen für zehn Sekunden zurück/vor
 - Icon zum Starten von Anfang und Picture-in-Picture-Schaltfläche
+- Xbox-/DLNA-Cast-Schaltfläche mit Gerätesuche, Wiedergabe/Pause, Remote-Suche und Trennen/Fortsetzen
 - optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
 - stabilisierte Helligkeits-/Lautstärkegesten mit seitlichen Zonen und Bewegungsschwelle
 - automatisch ausblendende Player-Oberfläche während laufender Wiedergabe; Interaktion oder Pause blendet sie wieder ein
 - Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
 
-Es gibt weiterhin keine Qualitäts-, Geschwindigkeits- oder Chromecast-Menüs. Picture-in-Picture ist über das Player-Icon verfügbar.
+Es gibt weiterhin keine Qualitäts- oder Geschwindigkeitsmenüs. Picture-in-Picture ist über das Player-Icon verfügbar. Xbox One und Xbox Series S/X können über das Cast-Icon als DLNA/UPnP-Renderer ausgewählt werden; dafür müssen Konsole und Android-Gerät im selben lokalen Netzwerk sein.
 
 ## Navigation
 

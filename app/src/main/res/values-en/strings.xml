@@ -315,4 +315,18 @@
     <string name="metadata_notification_finished_title">Catalog metadata updated</string>
     <string name="metadata_notification_failed_title">Catalog metadata update failed</string>
     <string name="metadata_notification_complete">%1$d titles are now available offline.</string>
+    <string name="xbox_cast">Cast to Xbox / DLNA</string>
+    <string name="xbox_cast_searching">Searching for Xbox and DLNA devices…</string>
+    <string name="xbox_cast_no_devices">No compatible device found</string>
+    <string name="xbox_cast_refresh">Search again</string>
+    <string name="xbox_cast_hint">Open the Media Player app on the Xbox and keep both devices on the same network.</string>
+    <string name="xbox_cast_xbox_device">Xbox media renderer</string>
+    <string name="xbox_cast_dlna_device">Compatible DLNA renderer</string>
+    <string name="xbox_cast_playing_on">Playing on %1$s</string>
+    <string name="xbox_cast_disconnect_and_resume">Disconnect and continue on this device</string>
+    <string name="xbox_cast_permission_denied">Nearby devices permission is required to find the Xbox.</string>
+    <string name="xbox_cast_discovery_failed">Xbox/DLNA device search failed.</string>
+    <string name="xbox_cast_local_network_failed">The local Xbox connection could not be established.</string>
+    <string name="xbox_cast_failed">The stream could not be sent to the Xbox.</string>
+    <string name="xbox_cast_header_warning">Protected streams that require app headers may not play on the Xbox. Try another hoster if playback fails.</string>
 </resources>

@@ -1,4 +1,4 @@
-# Feature-Matrix – 1.7.1 Production-Debug Build-Fix
+# Feature-Matrix – 1.7.4 Xbox-Cast Production-Debug
 
 Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen zu. Sie dient als Schutz gegen versehentlich verlorene Funktionen bei späteren Änderungen.
 
@@ -15,6 +15,7 @@ Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen
 | WebView-Challenge | Manuelle CAPTCHA-/Turnstile-Prüfung ohne Bypass, Session-/Cookie-Übernahme, erneuter Resolverversuch | `ChallengeSession.kt`, `ChallengeScreen.kt`, `AppViewModel.kt` |
 | Adblocker | Werbung/Tracking/Popups/Weiterleitungen, Domain-Ausnahme, einklappbare Panels, standardmäßig deaktiviert | `WebAdBlocker.kt`, `ChallengeScreen.kt`, `AppStore.kt`, `UiScreens.kt` |
 | Interner Player | MediaSessionService, Systembenachrichtigung, Timeline-Scrubbing, ±10 s, Doppeltipp, von Anfang, Auto-Hide, Gesten, Auto-Next, vorherige/nächste Folge | `PlaybackService.kt`, `PlayerScreen.kt`, `ExoPlayerComposable.kt` |
+| Xbox-Casting | SSDP-Gerätesuche, Xbox-Priorisierung, DLNA/UPnP AVTransport, Start an aktueller Position, Play/Pause/Stop/Seek, Trennen und lokal fortsetzen | `XboxCast.kt`, `PlayerScreen.kt`, `PlaybackService.kt` |
 | Player-Auswahl | Sprache und Hoster im Player wechseln, optional externer Player, bevorzugter Hoster automatisch starten | `PlayerScreen.kt`, `ExternalPlayback.kt`, `AppViewModel.kt`, `AppStore.kt` |
 | Einstellungen | Material-3-Akzentpalette, dynamische Farben, Start-Tab, Host-/Sprachpriorität, Adblocker, Cache/Metadaten, Playeroptionen, Credits | `UiScreens.kt`, `AppStore.kt`, `MainActivity.kt` |
 | Persistenz | Room für strukturierte Metadaten/Favoriten/Verlauf/Fortschritt; DataStore für Einstellungen und Reihenfolgen | `AppDatabase.kt`, `AppStore.kt` |
@@ -22,6 +23,7 @@ Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen
 
 ## Bewusste Grenzen
 
+- Xbox-/DLNA-Casting übergibt eine direkt erreichbare Stream-URL. Hoster, die zwingend App-Cookies oder Referer-Header verlangen, können auf der Konsole scheitern.
 - Web-Challenges werden nicht automatisiert umgangen.
 - Der native WebView-Filter ist keine 1:1-Ausführung der Browser-Erweiterung uBlock Origin.
 - Externe Player können Streams ablehnen, wenn die Ziel-App HTTP-Header oder Cookies nicht übernehmen kann.
