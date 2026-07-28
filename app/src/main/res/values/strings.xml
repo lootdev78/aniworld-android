@@ -1,13 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version='1.0' encoding='utf-8'?>
 <resources>
     <string name="app_name">AniWorld</string>
-
     <string name="tab_start">Home</string>
     <string name="tab_catalog">Catalog</string>
     <string name="tab_search">Search</string>
     <string name="tab_favorites">Favorites</string>
     <string name="tab_history">History</string>
-
     <string name="seasons_and_movies">Seasons and movies</string>
     <string name="movies">Movies</string>
     <string name="season_number">Season %1$d</string>
@@ -43,13 +41,11 @@
     <string name="started">Started</string>
     <string name="all">All</string>
     <string name="anime">Anime</string>
-
     <string name="permissions_privacy_title">Permissions &amp; privacy</string>
     <string name="permissions_privacy_body">The app only needs internet access, network status and permission to keep the screen awake. These normal Android permissions are granted through the manifest. Files, location, camera, microphone, contacts and notifications are not requested.</string>
     <string name="understood">Got it</string>
     <string name="app_settings">App settings</string>
     <string name="app_settings_open_error">App settings could not be opened</string>
-
     <string name="diagnostic_empty">No diagnostic entries available.</string>
     <string name="diagnostic_title_count">Diagnostics &amp; error log (%1$d)</string>
     <string name="diagnostic_clip_label">AniWorld diagnostics</string>
@@ -57,7 +53,6 @@
     <string name="diagnostic_share_subject">AniWorld diagnostics</string>
     <string name="diagnostic_share_chooser">Share diagnostics</string>
     <string name="diagnostic_share_error">The log could not be shared</string>
-
     <string name="home_empty_title">No home content yet</string>
     <string name="home_empty_subtitle">Pull down to refresh or check the web verification.</string>
     <string name="continue_watching">Continue watching</string>
@@ -69,19 +64,16 @@
     <string name="currently_popular">Popular now</string>
     <string name="community_watching">What other AniWorld users are watching</string>
     <string name="titles_count">%1$d titles</string>
-
     <string name="catalog_search_all">Browse all anime</string>
     <string name="all_genres">All genres</string>
     <string name="catalog_count">%1$d of %2$d anime</string>
     <string name="no_anime_found">No anime found</string>
     <string name="adjust_catalog_filters">Change the letter, genre or search term.</string>
-
     <string name="search_anime">Search anime</string>
     <string name="recent_searches">Recent searches</string>
     <string name="no_results">No results</string>
     <string name="search_empty_hint">Enter a title or select a recent search.</string>
     <string name="search_no_results_hint">Try another search term.</string>
-
     <string name="favorites">Favorites</string>
     <string name="no_favorites">No favorites yet</string>
     <string name="no_favorites_hint">Long-press an anime or tap the heart.</string>
@@ -95,7 +87,6 @@
     <string name="sort_custom">Custom order</string>
     <string name="sort_updated">Recently updated</string>
     <string name="sort_alphabetical">Alphabetical</string>
-
     <string name="areas_count">%1$d sections</string>
     <string name="watched_out_of">%1$d of %2$d watched</string>
     <string name="watched_count">%1$d watched</string>
@@ -109,7 +100,6 @@
     <string name="move_up">Move up</string>
     <string name="move_down">Move down</string>
     <string name="progress_percent">%1$d%%</string>
-
     <string name="no_hosters_web_session">No hosters found. Check the web session.</string>
     <string name="play">Play</string>
     <string name="preferred_language">Preferred language</string>
@@ -121,16 +111,14 @@
     <string name="dynamic_colors_desc">Use Material 3 colors derived from the wallpaper (Android 12+).</string>
     <string name="web_verification">Web verification</string>
     <string name="manage_permissions">Manage permissions</string>
-
     <string name="language_german_dub">German dub</string>
     <string name="language_german_sub">German subtitles</string>
     <string name="language_english_sub">English subtitles</string>
     <string name="language_unknown">Unknown</string>
     <string name="manual_verification">Manual verification</string>
-
     <string name="player_close">Close player</string>
     <string name="player_title">%1$s · %2$s</string>
-    <string name="player_gesture_hint">Tap: pause/resume · swipe left: brightness · swipe right: volume</string>
+    <string name="player_gesture_hint">Tap: pause/resume · double-tap left/right: −/+10 seconds · swipe left: brightness · swipe right: volume</string>
     <string name="invalid_stream_url">Invalid stream URL</string>
     <string name="player_init_error">The player could not be initialized.</string>
     <string name="playback_error">Playback error</string>
@@ -138,7 +126,6 @@
     <string name="playback_paused">Playback paused</string>
     <string name="brightness_percent">Brightness %1$d%%</string>
     <string name="volume_percent">Volume %1$d%%</string>
-
     <string name="challenge_reload">Reload</string>
     <string name="challenge_page_loading">Page is loading</string>
     <string name="challenge_http_error">HTTP %1$d on the verification page</string>
@@ -150,7 +137,6 @@
     <string name="aniworld_verification">AniWorld verification</string>
     <string name="webview_session_checking">Checking WebView session…</string>
     <string name="webview_cookies_cleared">WebView cookies cleared</string>
-
     <string name="status_home_no_sections">No home sections were detected.</string>
     <string name="status_catalog_loading">Loading anime catalog…</string>
     <string name="status_catalog_loaded">%1$d anime · %2$d genres</string>
@@ -172,13 +158,11 @@
     <string name="status_none">none</string>
     <string name="status_playing_via">Playing via %1$s · %2$s</string>
     <string name="status_episode_marked_watched">%1$s marked as watched</string>
-
     <string name="error_no_internet">No internet connection or host unreachable.</string>
     <string name="error_timeout">Timed out. Please try again.</string>
     <string name="error_ssl">Secure connection failed.</string>
     <string name="error_unexpected_response">The server response had an unexpected format.</string>
     <string name="error_unknown">Unknown error</string>
-
     <string name="session_verification_applied">Verification applied · %1$s</string>
     <string name="session_check_failed_http">Session check failed: HTTP %1$d</string>
     <string name="session_check_failed">The session could not be checked</string>
@@ -188,7 +172,6 @@
     <string name="cookies_more">…</string>
     <string name="challenge_captcha_required">%1$s requires a manual CAPTCHA/Turnstile check.</string>
     <string name="challenge_browser_required">%1$s requires manual browser verification.</string>
-
     <string name="catalog_preloading_metadata">Preparing anime metadata for offline use</string>
     <string name="catalog_page_indicator">Page %1$d of %2$d</string>
     <string name="previous_page">Previous</string>
@@ -199,7 +182,6 @@
     <string name="choose_language">Choose language</string>
     <string name="choose_hoster">Choose hoster</string>
     <string name="preferred">Preferred</string>
-
     <string name="media_detector_title">Detected media</string>
     <string name="media_detector_count">%1$d found</string>
     <string name="media_detector_empty">Start the video on the page. Direct HLS, DASH, SmoothStreaming and progressive media requests will appear here.</string>
@@ -209,7 +191,6 @@
     <string name="media_detector_opening">Opening hoster page for direct media detection</string>
     <string name="media_detector_playing">Playing %1$s from %2$s</string>
     <string name="media_detector_open">Detect direct media</string>
-
     <string name="view_compact">Compact list</string>
     <string name="view_detailed">Detailed list</string>
     <string name="view_grid">Grid</string>
@@ -227,7 +208,7 @@
     <string name="user_rating">User rating</string>
     <string name="user_rating_with_count">%1$s / 5 · %2$d ratings</string>
     <string name="user_rating_without_count">%1$s / 5</string>
-<string name="metadata_notification_title">Updating catalog metadata</string>
+    <string name="metadata_notification_title">Updating catalog metadata</string>
     <string name="metadata_notification_preparing">Preparing catalog…</string>
     <string name="metadata_notification_progress">%1$d of %2$d titles</string>
     <string name="metadata_notification_channel">Metadata updates</string>
@@ -261,7 +242,6 @@
     <string name="web_filter_tracking">Tracking</string>
     <string name="web_filter_popups">Popups</string>
     <string name="web_filter_redirects">Redirects</string>
-
     <string name="show_catalog_controls">Show search and filters</string>
     <string name="season_description">Season description</string>
     <string name="movie_description">Movie description</string>
@@ -273,4 +253,59 @@
     <string name="tools">Tools</string>
     <string name="status_hoster_fallback">%1$s requires a browser check. Trying another hoster first…</string>
     <string name="challenge_retry_hoster">CAPTCHA completed – retry hoster</string>
+    <string name="clear_search">Clear search</string>
+    <string name="external_player">Allow external player</string>
+    <string name="external_player_desc">Shows a button in the player to open the stream in another video app</string>
+    <string name="open_external_player">Open in external player</string>
+    <string name="external_player_not_found">No suitable external player app was found</string>
+    <string name="external_player_failed">The external player could not be opened</string>
+    <string name="change_language">Change language</string>
+    <string name="change_hoster">Change hoster</string>
+    <string name="accent_color">Material 3 accent color</string>
+    <string name="accent_color_desc">Choose a fixed accent color. Selecting one disables dynamic system colors.</string>
+    <string name="selected">Selected</string>
+    <string name="color_red">Red</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_green">Green</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_cyan">Cyan</string>
+    <string name="color_pink">Pink</string>
+    <string name="seek_back_seconds">10 seconds back</string>
+    <string name="seek_forward_seconds">10 seconds forward</string>
+    <string name="play_best_hoster_external">Play externally with best hoster</string>
+    <string name="language_english_dub">English Dub</string>
+    <string name="language_japanese_dub">Japanese Dub</string>
+    <string name="language_japanese_sub">Japanese Sub</string>
+    <string name="language_japanese_original">Japanese Original</string>
+    <string name="catalog_metadata_required">Catalog metadata missing</string>
+    <string name="catalog_metadata_required_hint">Update catalog metadata in Settings. Search, filters, and entries stay disabled until then.</string>
+    <string name="catalog_metadata_progress">%1$d of %2$d titles stored</string>
+    <string name="about_and_credits">About &amp; Credits</string>
+    <string name="credits_created_by">Development and repository: lootdev78</string>
+    <string name="catalog_metadata_no_titles">Catalog metadata could not be loaded because no titles were returned.</string>
+    <string name="catalog_metadata_update_failed">Catalog metadata update failed.</string>
+    <string name="anime_news">Anime News</string>
+    <string name="live_from_aniworld">Live from AniWorld</string>
+    <string name="not_selected">Not selected</string>
+    <string name="tap_to_select">Long press to select</string>
+    <string name="selected_count">%1$d selected</string>
+    <string name="select_all">Select all</string>
+    <string name="delete_selected_title">Delete selected entries?</string>
+    <string name="delete_selected_message">Delete %1$d selected entries permanently?</string>
+    <string name="quick_recent">Now</string>
+    <string name="quick_week">7d</string>
+    <string name="quick_month">30d</string>
+    <string name="quick_older">Older</string>
+    <string name="auto_play_preferred_hoster">Start preferred hoster automatically</string>
+    <string name="auto_play_preferred_hoster_desc">Starts playback immediately with the preferred language and hoster when available.</string>
+    <string name="startup_area">Start screen</string>
+    <string name="startup_area_desc">Choose which section opens when the app starts.</string>
+    <string name="play_from_beginning">Play from beginning</string>
+    <string name="seek_back_10">Back 10 seconds</string>
+    <string name="seek_forward_10">Forward 10 seconds</string>
+    <string name="player_seek_controls">Seek controls</string>
+    <string name="startup_start">Home</string>
+    <string name="startup_favorites">Favorites</string>
+    <string name="startup_history">History</string>
 </resources>

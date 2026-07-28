@@ -2,10 +2,27 @@
 
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
+
+## 1.6.5 UI, Bibliothek und News
+
+- Kontrastfeste Material-3-Oberflächen für Detail-, Hoster-, Info-, Sammlungs- und Einstellungsansichten
+- Player mit verschiebbarer Zeitleiste, ±10-Sekunden-Sprüngen und „Von Anfang abspielen“
+- Favoriten und Verlauf mit Alphabet-/Zeit-/Positions-Schnellnavigation sowie Mehrfachauswahl und Löschbestätigung
+- Offline-Metadaten-Backfill für bereits vorhandene Favoriten und Verlaufseinträge
+- Anime-News mit Bildern aus dem Live-Startseitenfeed
+- Einstellungen für automatischen Start des bevorzugten Hosters und den Startbereich der App
+
 ## Version
 
-`1.6.2-ui-polish`
+`1.6.5-ui-library-news`
 
+
+
+## Paket und Projekt
+
+- Android-Paket/Namespace: `io.github.lootdev78.aniworld`
+- Projekt-Credits und Repository sind direkt in den Einstellungen verlinkt
+- Sprachvarianten zeigen Länderflaggen für Deutsch, Englisch und Japanisch
 
 ## App-Icon und Sprachen
 
@@ -32,9 +49,10 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 - persönliche „Weiterschauen“-Reihe
 - reduzierte Navigation ohne obere App-Leiste; schwebende Bottom Bar auf Smartphones und Navigation Rail auf größeren Displays
 - frei verschiebbarer Einstellungsbutton mit begrenzter, rotationsfester DataStore-Position und Rücksetzfunktion
-- Material-3-Dark-Mode, optional dynamische Android-Farben
+- Material-3-Dark-Mode, optional dynamische Android-Farben sowie eine feste Akzentfarbpalette in den Einstellungen
 - Pull-to-refresh, Skeleton-Ladezustände, leere Zustände und verständliche Fehlermeldungen
 - Cover, Anime-/Film-/Folgentitel, Genres, Veröffentlichungsjahr, Altersangabe, Beschreibungen und Fortschrittsanzeigen
+- alle Sucheingaben mit bis zu drei direkten Treffervorschlägen und einer Löschen-Schaltfläche am rechten Rand
 - Katalogsuche mit gespeicherten Suchbegriffen, A–Z- und Genre-Filter
 - durchgehend scrollbarer Katalog ohne sichtbare Seitennavigation, mit A–Z-Schnellleiste am rechten Rand
 
@@ -44,7 +62,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 - Favoritenliste mit alphabetischer, zeitlicher oder eigener Sortierung
 - eigene Verlaufseite mit denselben Raster-, Kompakt- und Detailansichten wie Favoriten
 - angefangen/gesehen-Markierungen für Folgen und Filme
-- Staffelstatus und Fortschrittsanzeige
+- Staffelstatus und Wiedergabefortschritt als `HH:MM:SS – HH:MM:SS`; Position und Laufzeit werden offline gespeichert
 - Verlaufsfilter für alle, begonnene, vollständig gesehene und favorisierte Inhalte
 - zuletzt verwendete Suchbegriffe
 - gespeicherte Katalogsuchbegriffe mit verzögerter Speicherung
@@ -55,9 +73,9 @@ Die Nutzerdaten werden ausschließlich lokal in Room und DataStore gespeichert. 
 ## Offline und Performance
 
 - Startseite, Anime-Details, Staffeln und Episodenseiten werden live geladen und nicht als Webseiten-Metadaten gecacht
-- Room speichert Metadaten ausschließlich für Einträge des alphabetischen Katalogs
-- Katalogseiten besitzen einen zeitlich begrenzten Room-Cache und eine veraltete Offline-Kopie als Netzwerk-Fallback
-- manuell startbarer WorkManager-Hintergrundauftrag für die vollständige Katalog-Metadatenaktualisierung
+- Room speichert für den alphabetischen Katalog Titel, URL, Beschreibung, Cover-/Poster-URL und Genres offline; Startseitenmetadaten bleiben live
+- vollständige Webseiten werden nicht offline gecacht; dauerhaft gespeichert werden nur die für den Katalog benötigten strukturierten Metadaten
+- manuell startbarer WorkManager-Hintergrundauftrag für die vollständige Katalog-Metadatenaktualisierung; bis zum abgeschlossenen Erstimport zeigt der Katalog Skeletons und deaktivierte Bedienelemente
 - Fortschritt und Abbrechen ausschließlich über eine Android-Systembenachrichtigung; der Auftrag läuft bei geschlossener Ansicht weiter
 - Coil-Disk- und Memory-Cache mit anime- und URL-spezifischen Cover-Schlüsseln
 - zentrale Filterung von Logo-, Branding-, Header-, Placeholder-, Tracking- und unplausibel dimensionierten Bildern
@@ -82,6 +100,7 @@ Die Nutzerdaten werden ausschließlich lokal in Room und DataStore gespeichert. 
 - getrennte AniWorld-Verifizierung und Hoster-WebView, einklappbare und gespeicherte Session-/Medienbereiche
 - nativer, konfigurierbarer WebView-Filter für typische Werbung, Tracking, Popups und Weiterleitungen sowie temporäre Domain-Ausnahme
 - Übergabe von Referer, User-Agent und vorhandenen Session-Cookies an Media3
+- optionaler Start in einer installierten externen Video-App; die Funktion muss zuvor in den Einstellungen aktiviert werden
 
 Die App löst Web-Challenges nicht automatisch und umgeht keine Schutzprüfung. Der Nutzer führt eine eventuell angezeigte Prüfung selbst durch. Der Medien-Detector verarbeitet ausschließlich bereits sichtbare HTTP(S)-Anfragen mit einem eindeutig Media3-kompatiblen Format. Er entschlüsselt keine Skripte, rekonstruiert keine Tokens und umgeht keine Zugriffskontrollen.
 
@@ -98,12 +117,14 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - kontextbezogene `POST_NOTIFICATIONS`-Abfrage ab Android 13
 - Schließen und lokales Speichern des realen Fortschritts
 - vorherige/nächste Folge innerhalb der geöffneten Staffel
+- Wechsel von Sprache und Hoster direkt in der eingeblendeten Player-Steuerung
+- verschiebbare Zeitleiste sowie Doppeltipp links/rechts für zehn Sekunden zurück/vor
 - optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
 - stabilisierte Helligkeits-/Lautstärkegesten mit seitlichen Zonen und Bewegungsschwelle
 - automatisch ausblendende Player-Oberfläche während laufender Wiedergabe; Interaktion oder Pause blendet sie wieder ein
 - Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
 
-Es gibt weiterhin keine Qualitäts-, Spur-, Geschwindigkeits-, Chromecast- oder Picture-in-Picture-Menüs.
+Es gibt weiterhin keine Qualitäts-, Geschwindigkeits-, Chromecast- oder Picture-in-Picture-Menüs.
 
 ## Navigation
 

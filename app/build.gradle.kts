@@ -6,15 +6,15 @@ plugins {
 }
 
 android {
-    namespace = "de.dxmoc.aniworld"
+    namespace = "io.github.lootdev78.aniworld"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "de.dxmoc.aniworld"
+        applicationId = "io.github.lootdev78.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 52
-        versionName = "1.6.2-ui-polish"
+        versionCode = 55
+        versionName = "1.6.5-ui-library-news"
         vectorDrawables.useSupportLibrary = true
     }
 
