@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
@@ -61,6 +62,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ClearAll
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -103,7 +105,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -113,9 +114,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
@@ -126,7 +131,6 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 @Composable
@@ -324,30 +328,35 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var controlsVisible by rememberSaveable { mutableStateOf(true) }
+    val scrollAccumulator = remember { floatArrayOf(0f) }
     val items = st.filteredCatalog
     val isGrid = st.preferences.catalogViewMode == LibraryViewMode.GRID
+    val catalogScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                val delta = available.y
+                if (delta == 0f) return Offset.Zero
+                if (scrollAccumulator[0] != 0f && scrollAccumulator[0] * delta < 0f) scrollAccumulator[0] = 0f
+                scrollAccumulator[0] += delta
+                when {
+                    scrollAccumulator[0] <= -28f && controlsVisible -> {
+                        controlsVisible = false
+                        scrollAccumulator[0] = 0f
+                    }
+                    scrollAccumulator[0] >= 20f && !controlsVisible -> {
+                        controlsVisible = true
+                        scrollAccumulator[0] = 0f
+                    }
+                }
+                return Offset.Zero
+            }
+        }
+    }
 
     LaunchedEffect(st.catalogQuery, st.catalogGenre, st.preferences.catalogViewMode) {
         controlsVisible = true
+        scrollAccumulator[0] = 0f
         if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
-    }
-    LaunchedEffect(listState, isGrid) {
-        if (isGrid) return@LaunchedEffect
-        var previous = 0
-        snapshotFlow { listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset }
-            .collect { current ->
-                controlsVisible = current <= previous || current < 32
-                previous = current
-            }
-    }
-    LaunchedEffect(gridState, isGrid) {
-        if (!isGrid) return@LaunchedEffect
-        var previous = 0
-        snapshotFlow { gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset }
-            .collect { current ->
-                controlsVisible = current <= previous || current < 32
-                previous = current
-            }
     }
     if (st.catalog.items.isEmpty() && !st.catalogLoading) LaunchedEffect(Unit) { vm.loadCatalog() }
 
@@ -356,7 +365,7 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         onRefresh = { vm.loadCatalog(true) },
         modifier = Modifier.fillMaxSize()
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().nestedScroll(catalogScrollConnection)) {
             AnimatedVisibility(
                 visible = controlsVisible,
                 enter = slideInVertically(initialOffsetY = { -it / 2 }) + fadeIn(),
@@ -1203,13 +1212,16 @@ fun SeriesCollectionScreen(
         page.items.filter { query.isBlank() || it.title.contains(query, true) || it.genres.any { genre -> genre.contains(query, true) } }
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column(Modifier.weight(1f)) {
                 Text(page.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                 Text(stringResource(R.string.titles_count, items.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ViewModeSelector(viewMode) { viewMode = it }
+            IconButton(onClick = onBack) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
         OutlinedTextField(
             value = query,
@@ -1277,12 +1289,15 @@ fun EpisodeCollectionScreen(
         }
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Column(Modifier.weight(1f)) {
                 Text(page.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                 Text(stringResource(R.string.episodes_count, items.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            IconButton(onClick = onBack) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
         OutlinedTextField(
             value = query,
@@ -1338,9 +1353,12 @@ fun EpisodeOptionsScreen(
             .let { index -> if (index < 0) Int.MAX_VALUE else index }
     })
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onDismiss) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(episode.localizedLabel(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -1440,9 +1458,12 @@ fun AnimeInfoScreen(
     onOpenImdb: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onDismiss) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(series.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f), maxLines = 2)
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -1472,7 +1493,9 @@ fun AnimeInfoScreen(
             item {
                 val headline = listOf(series.year, series.ageRating).filter(String::isNotBlank)
                 if (headline.isNotEmpty()) Text(headline.joinToString("  •  "), color = MaterialTheme.colorScheme.secondary, fontWeight = FontWeight.SemiBold)
-                Text(series.description.ifBlank { stringResource(R.string.no_description) })
+                if (episode == null) {
+                    Text(series.description.ifBlank { stringResource(R.string.no_description) })
+                }
             }
             if (series.genres.isNotEmpty()) item { InfoValue(stringResource(R.string.genres), series.genres.joinToString(" · ")) }
             if (series.directors.isNotEmpty()) item { InfoValue(stringResource(R.string.directors), series.directors.joinToString(", ")) }
@@ -1513,9 +1536,12 @@ fun SettingsScreen(
         ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else vm.refreshCatalogMetadata()
     }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onDismiss) { Icon(Icons.Default.ArrowBack, stringResource(R.string.back)) }
-            Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
         }
         LazyColumn(
             modifier = Modifier.weight(1f),

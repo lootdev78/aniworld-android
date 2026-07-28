@@ -129,7 +129,7 @@
 
     <string name="player_close">Player schließen</string>
     <string name="player_title">%1$s · %2$s</string>
-    <string name="player_gesture_hint">Antippen: Pause/Weiter · links wischen: Helligkeit · rechts wischen: Lautstärke</string>
+    <string name="player_gesture_hint">Antippen: Pause/Weiter · doppeltippen: 10 s zurück/vor · Zeitleiste ziehen zum Spulen</string>
     <string name="invalid_stream_url">Ungültige Stream-URL</string>
     <string name="player_init_error">Player konnte nicht initialisiert werden.</string>
     <string name="playback_error">Wiedergabefehler</string>

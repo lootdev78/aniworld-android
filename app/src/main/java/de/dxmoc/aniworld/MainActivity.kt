@@ -41,6 +41,7 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -156,9 +157,23 @@ fun AniWorldTheme(useDynamicColors: Boolean, content: @Composable () -> Unit) {
         error = Color(0xFFFF6B6B)
     )
     val scheme = if (useDynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        dynamicDarkColorScheme(context)
+        dynamicDarkColorScheme(context).copy(
+            background = fallback.background,
+            surface = fallback.surface,
+            surfaceVariant = fallback.surfaceVariant,
+            onBackground = fallback.onBackground,
+            onSurface = fallback.onSurface,
+            onSurfaceVariant = fallback.onSurfaceVariant
+        )
     } else fallback
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme) {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = scheme.background,
+            contentColor = scheme.onBackground,
+            content = content
+        )
+    }
 }
 
 enum class HomeTab(val route: String, @StringRes val labelRes: Int) {
@@ -336,6 +351,8 @@ fun AniWorldApp(vm: AppViewModel) {
             if (expanded && !inDetail) AppNavigationRail(currentTab, ::navigateToTab)
             Scaffold(
                 modifier = Modifier.weight(1f),
+                containerColor = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground,
                 snackbarHost = { SnackbarHost(snackbarHostState) },
                 bottomBar = { if (!expanded && !inDetail) AppBottomBar(currentTab, ::navigateToTab) }
             ) { padding ->

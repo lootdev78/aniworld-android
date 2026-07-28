@@ -129,7 +129,7 @@
 
     <string name="player_close">Close player</string>
     <string name="player_title">%1$s · %2$s</string>
-    <string name="player_gesture_hint">Tap: pause/resume · swipe left: brightness · swipe right: volume</string>
+    <string name="player_gesture_hint">Tap: pause/resume · double tap: seek 10 s back/forward · drag the timeline to seek</string>
     <string name="invalid_stream_url">Invalid stream URL</string>
     <string name="player_init_error">The player could not be initialized.</string>
     <string name="playback_error">Playback error</string>
