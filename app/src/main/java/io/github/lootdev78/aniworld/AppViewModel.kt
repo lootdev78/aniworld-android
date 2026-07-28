@@ -592,7 +592,8 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                     series = series,
                     episode = episode,
                     stream = stream,
-                    startPositionMs = previous?.takeUnless { state -> state.completed }?.positionMs ?: 0L
+                    startPositionMs = previous?.takeUnless { state -> state.completed }?.positionMs ?: 0L,
+                    knownDurationMs = previous?.durationMs?.coerceAtLeast(0L) ?: 0L
                 )
                 _state.update {
                     if (external && prefs.allowExternalPlayer) {
@@ -813,7 +814,8 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                     language = context.hoster.lang,
                     mimeType = candidate.mimeType
                 ),
-                startPositionMs = previous?.takeUnless { state -> state.completed }?.positionMs ?: 0L
+                startPositionMs = previous?.takeUnless { state -> state.completed }?.positionMs ?: 0L,
+                knownDurationMs = previous?.durationMs?.coerceAtLeast(0L) ?: 0L
             )
             _state.update { state ->
                 state.copy(

@@ -98,7 +98,8 @@ data class ResolvedPlayback(
     val series: Series,
     val episode: Episode,
     val stream: StreamSource,
-    val startPositionMs: Long = 0L
+    val startPositionMs: Long = 0L,
+    val knownDurationMs: Long = 0L
 ) {
     val seriesTitle: String get() = series.title
 }

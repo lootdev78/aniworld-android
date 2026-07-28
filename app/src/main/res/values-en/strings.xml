@@ -310,4 +310,9 @@
     <string name="startup_history">History</string>
     <string name="mark_watched">Mark as watched</string>
     <string name="mark_unwatched">Remove watched mark</string>
+    <string name="picture_in_picture">Picture in picture</string>
+    <string name="pip_failed">Picture-in-picture mode could not be started.</string>
+    <string name="metadata_notification_finished_title">Catalog metadata updated</string>
+    <string name="metadata_notification_failed_title">Catalog metadata update failed</string>
+    <string name="metadata_notification_complete">%1$d titles are now available offline.</string>
 </resources>

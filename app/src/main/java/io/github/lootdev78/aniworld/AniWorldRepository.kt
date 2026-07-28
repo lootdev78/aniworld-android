@@ -119,6 +119,16 @@ class AniWorldRepository(
     suspend fun homeFeed(forceRefresh: Boolean = false): HomeFeed = withContext(Dispatchers.IO) {
         val parsed = parseHomeFeed(getText("$baseUrl/", forceRefresh = forceRefresh))
         var feed = parsed
+        if (feed.news.any { it.imageUrl.isBlank() }) {
+            val newsWithImages = coroutineScope {
+                feed.news.map { item ->
+                    async {
+                        if (item.imageUrl.isNotBlank()) item else enrichHomeNewsImage(item)
+                    }
+                }.awaitAll()
+            }
+            feed = feed.copy(news = newsWithImages)
+        }
         val hero = feed.featured
         if (hero != null && (hero.coverUrl.isBlank() || hero.description.isBlank())) {
             val detailed = runCatching { enrichSeries(hero, forceRefresh) }.getOrDefault(hero)
@@ -491,41 +501,163 @@ class AniWorldRepository(
 
 
     private fun parseHomeNews(doc: Document): List<HomeNews> {
-        val all = doc.allElements
-        val end = all.indexOfFirst { element ->
-            element.tagName() in setOf("h1", "h2") && normalizeHeading(element.text()) == normalizeHeading("Beliebt bei AniWorld")
-        }.let { if (it < 0) all.size else it }
-        val supportedPath = Regex("""^/(?:support/frage/[^/]+|anime/stream/[^/]+(?:/(?:staffel-\d+|filme(?:/film-\d+)?))?)/?$""", RegexOption.IGNORE_CASE)
-        return all.asSequence()
-            .take(end)
-            .filter { it.tagName() == "a" && it.hasAttr("href") }
+        // AniWorld exposes the original news feed in its own "Anime News" section.
+        // Only anchors between that heading and the next h1/h2 belong to the feed.
+        return sectionAnchors(doc, "Anime News")
+            .asSequence()
             .mapNotNull { anchor ->
-                val path = pathOf(anchor) ?: return@mapNotNull null
-                if (!supportedPath.matches(path)) return@mapNotNull null
-                val source = anchor.closest("article, li, [class*=news], [class*=slider], [class*=teaser], [class*=feature], .card, .col")
-                    ?: closestContentContainer(anchor)
-                    ?: anchor.parent()
-                    ?: anchor
-                val targetUrl = anchor.absUrl("href").ifBlank { "$baseUrl$path" }
-                val image = generalContentImageUrl(source, targetUrl)
-                if (image.isBlank()) return@mapNotNull null
-                val imageAlt = firstCleanText(source.selectFirst("img[alt]")?.attr("alt"), anchor.selectFirst("img[alt]")?.attr("alt"))
-                val title = firstCleanText(
-                    anchor.attr("title"),
-                    source.selectFirst("h1, h2, h3, h4, .title, [class*=title]")?.text(),
-                    imageAlt,
-                    anchor.text()
-                ).replace(Regex(""",?\s*Cover,?\s*HD,?\s*Anime Stream.*$""", RegexOption.IGNORE_CASE), "")
-                    .removePrefix("Cover von ")
-                    .trim()
-                if (title.length < 3 || title.length > 140) return@mapNotNull null
-                val subtitle = source.select("p, time, .description, [class*=description], [class*=subtitle], [class*=date]")
-                    .eachText().map(::clean).firstOrNull { it.isNotBlank() && !it.equals(title, true) }
-                    ?: clean(source.text()).removePrefix(title).trim(' ', '·', '-', '–', '—').take(180)
+                val targetUrl = anchor.absUrl("href").ifBlank {
+                    normalizeUrl(anchor.attr("href"), "$baseUrl/").orEmpty()
+                }
+                if (targetUrl.isBlank()) return@mapNotNull null
+                val host = runCatching { URI(targetUrl).host.orEmpty().lowercase() }.getOrDefault("")
+                // The original AniWorld news block currently embeds Anime2You articles.
+                // Restricting the feed prevents anime cards and support links from being
+                // misclassified as news if the surrounding homepage changes.
+                if (host != "anime2you.de" && !host.endsWith(".anime2you.de")) return@mapNotNull null
+
+                val source = closestNewsContainer(anchor)
+                val title = newsTitle(source, anchor)
+                if (title.length !in 3..180) return@mapNotNull null
+                val image = newsImageUrl(
+                    source = source,
+                    anchor = anchor,
+                    targetUrl = targetUrl,
+                    base = source.baseUri().ifBlank { "$baseUrl/" }
+                )
+                val subtitle = source.select("p, .description, [class*=description], [class*=excerpt], [class*=subtitle], time")
+                    .eachText()
+                    .asSequence()
+                    .map(::clean)
+                    .firstOrNull { value -> value.isNotBlank() && !sameNewsText(value, title) }
+                    .orEmpty()
+                    .take(220)
                 HomeNews(title = title, url = targetUrl, imageUrl = image, subtitle = subtitle)
             }
-            .distinctBy { it.url }
+            .distinctBy { it.url.substringBefore('#') }
+            .take(12)
             .toList()
+    }
+
+    private fun closestNewsContainer(anchor: Element): Element {
+        var current: Element? = anchor
+        repeat(7) {
+            val element = current ?: return@repeat
+            if (element.tagName() in setOf("h1", "h2", "body", "html")) return@repeat
+            val hasImage = element.select("img, picture source, [style*=background-image]").isNotEmpty()
+            val linkCount = element.select("a[href]").size
+            if (hasImage && linkCount in 1..5) return element
+            current = element.parent()
+        }
+        return anchor.closest("article, li, [class*=news], [class*=teaser], [class*=card], [class*=item], .col")
+            ?: anchor.parent()
+            ?: anchor
+    }
+
+    private fun newsTitle(source: Element, anchor: Element): String {
+        val candidates = sequenceOf(
+            source.selectFirst("h3, h4, h5, .title, [class*=title]")?.text(),
+            anchor.attr("title"),
+            anchor.selectFirst("img[alt]")?.attr("alt"),
+            source.selectFirst("img[alt]")?.attr("alt"),
+            anchor.text()
+        ).map { clean(it.orEmpty()) }.filter(String::isNotBlank)
+        return candidates.firstOrNull().orEmpty()
+            .replace(Regex("\\s+"), " ")
+            .trim(' ', '…', '.', '-', '–', '—')
+    }
+
+    private fun sameNewsText(first: String, second: String): Boolean {
+        fun normalized(value: String) = clean(value).lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), "")
+        val left = normalized(first)
+        val right = normalized(second)
+        return left == right || (left.length > 24 && right.length > 24 && (left.contains(right) || right.contains(left)))
+    }
+
+    private fun newsImageUrl(source: Element, anchor: Element, targetUrl: String, base: String): String {
+        data class NewsImageCandidate(val url: String, val score: Int)
+
+        val target = targetUrl.substringBefore('#').trimEnd('/')
+        val elements = (source.select("picture source, img") + anchor.select("picture source, img")).distinct()
+        val candidates = elements.asSequence().flatMap { image ->
+            val linkedUrl = image.closest("a[href]")?.absUrl("href")
+                ?.ifBlank { normalizeUrl(image.closest("a[href]")?.attr("href").orEmpty(), base).orEmpty() }
+                .orEmpty()
+                .substringBefore('#')
+                .trimEnd('/')
+            val relationScore = when {
+                linkedUrl.isNotBlank() && linkedUrl == target -> 100
+                image.parents().contains(anchor) || anchor.parents().contains(image) -> 65
+                else -> 0
+            }
+            sequenceOf(
+                image.attr("data-src") to 30,
+                image.attr("data-lazy-src") to 28,
+                image.attr("data-original") to 26,
+                image.attr("data-url") to 24,
+                image.attr("data-image") to 22,
+                image.attr("data-srcset").substringBefore(',') to 20,
+                image.attr("srcset").substringBefore(',') to 18,
+                image.attr("src") to 12
+            ).mapNotNull { (raw, sourceScore) ->
+                normalizeAnimeImageUrl(raw.trim().substringBefore(' '), base)?.let { normalized ->
+                    NewsImageCandidate(normalized, relationScore + sourceScore)
+                }
+            }
+        }.toMutableList()
+
+        fun addBackground(element: Element, score: Int) {
+            val attributes = sequenceOf(
+                element.attr("data-bg"),
+                element.attr("data-background"),
+                element.attr("data-background-image"),
+                element.attr("data-lazy-bg"),
+                element.attr("data-image")
+            )
+            attributes.mapNotNull { normalizeAnimeImageUrl(it, base) }
+                .forEach { candidates += NewsImageCandidate(it, score) }
+            backgroundImageUrl(element, base).takeIf(String::isNotBlank)
+                ?.let { candidates += NewsImageCandidate(it, score + 5) }
+        }
+        addBackground(anchor, 90)
+        addBackground(source, 55)
+        source.select("[style*=background], [data-bg], [data-background], [data-background-image], [data-lazy-bg]")
+            .forEach { element -> addBackground(element, if (element.closest("a[href]") == anchor) 85 else 45) }
+
+        return candidates
+            .filterNot { candidate ->
+                val lower = candidate.url.lowercase()
+                lower.contains("logo") || lower.contains("avatar") || lower.contains("icon")
+            }
+            .groupBy(NewsImageCandidate::url)
+            .map { (url, matches) -> NewsImageCandidate(url, matches.maxOf(NewsImageCandidate::score)) }
+            .maxByOrNull(NewsImageCandidate::score)
+            ?.url
+            .orEmpty()
+    }
+
+    private fun enrichHomeNewsImage(news: HomeNews): HomeNews {
+        return runCatching {
+            val document = Jsoup.parse(getText(news.url), news.url)
+            val image = sequenceOf(
+                document.selectFirst("meta[property=og:image]")?.attr("content"),
+                document.selectFirst("meta[name=twitter:image]")?.attr("content"),
+                document.selectFirst("meta[property=twitter:image]")?.attr("content"),
+                document.selectFirst("article img, main img, [itemprop=image]")?.let { element ->
+                    firstCleanText(
+                        element.attr("data-src"),
+                        element.attr("data-lazy-src"),
+                        element.attr("data-original"),
+                        element.attr("src")
+                    )
+                }
+            ).mapNotNull { value -> normalizeAnimeImageUrl(value.orEmpty(), news.url) }
+                .firstOrNull()
+                .orEmpty()
+            if (image.isBlank()) news else news.copy(imageUrl = image)
+        }.onFailure { error ->
+            AppLogger.warn("Anime News", "News-Bild konnte nicht nachgeladen werden", error.message.orEmpty())
+        }.getOrDefault(news)
     }
 
     private fun generalContentImageUrl(source: Element, base: String): String {

@@ -3,17 +3,20 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
-## 1.7.1 Production-Debug Build-Fix
+## 1.7.3 Picture-in-Picture, Anime-News und Metadaten-Benachrichtigung
 
 - konsolidiert den vollständigen Funktionsumfang der vorherigen Projektstände in einer gemeinsamen Codebasis
 - behebt den Kotlin-Compilerfehler im generischen DataStore-Migrationsparser: Callback-Funktionen werden nicht mehr fälschlich als `inline` durch eine Java-Iteration gereicht
 - enthält einen statischen Release-Gate-Checker für Paket, Ressourcen, Manifest, Featuremarker und bekannte Regressionen
+- ergänzt Bild-in-Bild im internen Player, eine dauerhaft sichtbare und verschiebbare Wiedergabezeitleiste sowie reine Icon-Aktionen für Neustart und ±10 Sekunden
+- liest den originalen Startseitenabschnitt „Anime News“ aus und ordnet Bilder artikelgenau zu; fehlende Bilder werden über das Open-Graph-Bild des verlinkten Artikels ergänzt
+- zeigt den Katalog-Metadatenimport als laufende Android-Systembenachrichtigung mit Fortschritt, Abbrechen und Abschlussstatus
 - enthält eine CI-Pipeline, die den statischen Gate, einen sauberen Debug-Build und Android Lint ausführt und anschließend APK plus SHA-256-Prüfsumme bereitstellt
 - behält den Debug-Paket-Suffix `.debug`; es werden keine privaten Signing-Schlüssel ausgeliefert
 
 ## Version
 
-`1.7.1-production-build-fix`
+`1.7.3-pip-news-metadata`
 
 ## Paket und Projekt
 
@@ -115,13 +118,15 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - Schließen und lokales Speichern des realen Fortschritts
 - vorherige/nächste Folge innerhalb der geöffneten Staffel
 - Wechsel von Sprache und Hoster direkt in der eingeblendeten Player-Steuerung
-- verschiebbare Zeitleiste sowie Doppeltipp links/rechts für zehn Sekunden zurück/vor
+- dauerhaft sichtbare Wiedergabezeitleiste bei eingeblendeten Steuerelementen mit aktuellem Zeitpunkt, Videolänge und verschiebbarem Positionspunkt
+- Doppeltipp links/rechts sowie Icon-Aktionen für zehn Sekunden zurück/vor
+- Icon zum Starten von Anfang und Picture-in-Picture-Schaltfläche
 - optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
 - stabilisierte Helligkeits-/Lautstärkegesten mit seitlichen Zonen und Bewegungsschwelle
 - automatisch ausblendende Player-Oberfläche während laufender Wiedergabe; Interaktion oder Pause blendet sie wieder ein
 - Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
 
-Es gibt weiterhin keine Qualitäts-, Geschwindigkeits-, Chromecast- oder Picture-in-Picture-Menüs.
+Es gibt weiterhin keine Qualitäts-, Geschwindigkeits- oder Chromecast-Menüs. Picture-in-Picture ist über das Player-Icon verfügbar.
 
 ## Navigation
 

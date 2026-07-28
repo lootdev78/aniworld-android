@@ -26,23 +26,74 @@ class CatalogMetadataWorker(
         val app = applicationContext as AniWorldApplication
         val force = inputData.getBoolean(KEY_FORCE, true)
         createChannel()
+        setProgress(Data.Builder().putInt(KEY_COMPLETED, 0).putInt(KEY_TOTAL, 0).build())
         setForeground(notification(0, 0, indeterminate = true))
         return try {
             val catalog = app.repository.catalog(forceRefresh = force)
             if (catalog.items.isEmpty()) {
-                return Result.failure(Data.Builder().putString(KEY_ERROR, applicationContext.getString(R.string.catalog_metadata_no_titles)).build())
+                val message = applicationContext.getString(R.string.catalog_metadata_no_titles)
+                showFinishedNotification(success = false, message = message)
+                Result.failure(Data.Builder().putString(KEY_ERROR, message).build())
+            } else {
+                setProgress(Data.Builder().putInt(KEY_COMPLETED, 0).putInt(KEY_TOTAL, catalog.items.size).build())
+                setForeground(notification(0, catalog.items.size, indeterminate = false))
+                app.repository.preloadCatalogMetadata(catalog.items, force = force) { completed, total, _ ->
+                    setProgress(Data.Builder().putInt(KEY_COMPLETED, completed).putInt(KEY_TOTAL, total).build())
+                    setForeground(notification(completed, total, indeterminate = false))
+                }
+                app.store.setInitialPreloadCompleted()
+                showFinishedNotification(
+                    success = true,
+                    message = applicationContext.getString(R.string.metadata_notification_complete, catalog.items.size)
+                )
+                Result.success(
+                    Data.Builder()
+                        .putInt(KEY_COMPLETED, catalog.items.size)
+                        .putInt(KEY_TOTAL, catalog.items.size)
+                        .build()
+                )
             }
-            setForeground(notification(0, catalog.items.size, indeterminate = false))
-            app.repository.preloadCatalogMetadata(catalog.items, force = force) { completed, total, _ ->
-                setProgress(Data.Builder().putInt(KEY_COMPLETED, completed).putInt(KEY_TOTAL, total).build())
-                setForeground(notification(completed, total, indeterminate = false))
-            }
-            app.store.setInitialPreloadCompleted()
-            Result.success(Data.Builder().putInt(KEY_COMPLETED, catalog.items.size).putInt(KEY_TOTAL, catalog.items.size).build())
         } catch (error: Exception) {
             AppLogger.error("Metadaten", "Hintergrundaktualisierung fehlgeschlagen", error)
-            if (runAttemptCount < 2) Result.retry()
-            else Result.failure(Data.Builder().putString(KEY_ERROR, error.message ?: applicationContext.getString(R.string.catalog_metadata_update_failed)).build())
+            val message = error.message ?: applicationContext.getString(R.string.catalog_metadata_update_failed)
+            if (runAttemptCount < 2) {
+                Result.retry()
+            } else {
+                showFinishedNotification(success = false, message = message)
+                Result.failure(Data.Builder().putString(KEY_ERROR, message).build())
+            }
+        }
+    }
+
+    private fun showFinishedNotification(success: Boolean, message: String) {
+        val intent = Intent(applicationContext, MainActivity::class.java)
+        val pendingIntent = PendingIntent.getActivity(
+            applicationContext,
+            1,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
+            .setSmallIcon(if (success) R.drawable.ic_stat_sync else android.R.drawable.stat_notify_error)
+            .setContentTitle(
+                applicationContext.getString(
+                    if (success) R.string.metadata_notification_finished_title
+                    else R.string.metadata_notification_failed_title
+                )
+            )
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setPriority(if (success) NotificationCompat.PRIORITY_LOW else NotificationCompat.PRIORITY_DEFAULT)
+            .build()
+        runCatching {
+            applicationContext.getSystemService(NotificationManager::class.java)
+                .notify(FINISHED_NOTIFICATION_ID, notification)
+        }.onFailure { error ->
+            AppLogger.warn("Metadaten", "Abschlussbenachrichtigung konnte nicht angezeigt werden", error.message.orEmpty())
         }
     }
 
@@ -95,6 +146,7 @@ class CatalogMetadataWorker(
         const val KEY_ERROR = "error"
         private const val CHANNEL_ID = "metadata_updates"
         private const val NOTIFICATION_ID = 1410
+        private const val FINISHED_NOTIFICATION_ID = 1411
 
         fun enqueue(context: Context, force: Boolean = true) {
             val request = OneTimeWorkRequestBuilder<CatalogMetadataWorker>()

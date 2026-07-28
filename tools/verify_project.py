@@ -17,8 +17,8 @@ SRC = APP / "src" / "main"
 KOTLIN = SRC / "java" / "io" / "github" / "lootdev78" / "aniworld"
 RES = SRC / "res"
 EXPECTED_PACKAGE = "io.github.lootdev78.aniworld"
-EXPECTED_VERSION_CODE = 58
-EXPECTED_VERSION_NAME = "1.7.1-production-build-fix"
+EXPECTED_VERSION_CODE = 60
+EXPECTED_VERSION_NAME = "1.7.3-pip-news-metadata"
 
 errors: list[str] = []
 notes: list[str] = []
@@ -81,6 +81,7 @@ manifest_text = read(manifest_path)
 require('android:allowBackup="false"' in manifest_text, "Android-Backup muss deaktiviert bleiben")
 require('android:usesCleartextTraffic="false"' in manifest_text, "Cleartext-Traffic muss deaktiviert bleiben")
 require('android:name=".PlaybackService"' in manifest_text, "PlaybackService fehlt im Manifest")
+require('android:supportsPictureInPicture="true"' in manifest_text, "Picture-in-Picture fehlt im Manifest")
 require('android:name=".AniWorldApplication"' in manifest_text, "Application-Klasse fehlt im Manifest")
 
 # XML well-formedness.
@@ -153,6 +154,7 @@ for pattern, description in {
     r"onClick\s*=\s*\{\s*\}": "Leerer onClick-Handler",
     r"librarySeries\.forEach\(store::ensureOfflineMetadata\)": "Suspend-Metadatenfunktion in nicht-suspendierender forEach-Referenz",
     r"item\.episode\.localizedDisplayTitle\(\)\.contains": "Composable Texthelfer innerhalb von remember",
+    r"val\s+suggestions\s*=\s*remember\(page\.items,\s*query\)": "Problematische Suggestions-Typinferenz in Collection-Views",
 }.items():
     if re.search(pattern, all_kotlin):
         fail(f"Regression gefunden: {description}")
@@ -166,12 +168,12 @@ feature_markers: dict[str, tuple[Path, tuple[str, ...]]] = {
     "Hoster-WebView und Session": (KOTLIN / "ChallengeScreen.kt", ("CookieManager", "shouldInterceptRequest", "mediaDetectionEnabled")),
     "Challenge-Fallback": (KOTLIN / "ChallengeSession.kt", ("ChallengeRequiredException", "throwIfRequired")),
     "MediaSession-Player": (KOTLIN / "PlaybackService.kt", ("MediaSessionService", "ACTION_PREVIOUS", "ACTION_NEXT", "ACTION_SEEK")),
-    "Player-Zeitleiste und ±10 s": (KOTLIN / "PlayerScreen.kt", ("Slider(", "10_000L", "play_from_beginning")),
+    "Player-Zeitleiste, ±10 s und PiP": (KOTLIN / "PlayerScreen.kt", ("Slider(", "SliderDefaults.colors", "Replay10", "Forward10", "knownDurationMs", "play_from_beginning", "enterPictureInPictureMode")),
     "Externer Player": (KOTLIN / "ExternalPlayback.kt", ("ACTION_VIEW", "FLAG_GRANT_READ_URI_PERMISSION")),
-    "Katalog-Worker": (KOTLIN / "CatalogMetadataWorker.kt", ("CoroutineWorker", "setForeground", "UNIQUE_WORK")),
+    "Katalog-Worker": (KOTLIN / "CatalogMetadataWorker.kt", ("CoroutineWorker", "setForeground", "showFinishedNotification", "UNIQUE_WORK")),
     "Offline-Metadaten": (KOTLIN / "AppDatabase.kt", ("SeriesMetadataEntity", "coverUrl", "description", "genres")),
     "Katalog-/Coverparser": (KOTLIN / "AniWorldRepository.kt", ("catalog", "cover", "parseSeries")),
-    "Anime-News": (KOTLIN / "AniWorldRepository.kt", ("HomeNews", "parseHomeNews")),
+    "Anime-News": (KOTLIN / "AniWorldRepository.kt", ("HomeNews", "parseHomeNews", "sectionAnchors(doc, \"Anime News\")", "anime2you.de")),
     "Favoriten und Verlauf": (KOTLIN / "UiScreens.kt", ("FavoritesScreen", "HistoryScreen", "LibraryViewMode")),
     "Mehrfachauswahl": (KOTLIN / "UiScreens.kt", ("selectedSlugs", "delete_selected")),
     "Start-Tab und Akzentfarbe": (KOTLIN / "AppStore.kt", ("STARTUP_TAB", "ACCENT_COLOR")),

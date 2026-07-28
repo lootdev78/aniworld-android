@@ -1761,13 +1761,20 @@ fun SeriesCollectionScreen(
 ) {
     var query by rememberSaveable(page.title) { mutableStateOf("") }
     var viewMode by rememberSaveable(page.title) { mutableStateOf(LibraryViewMode.GRID) }
-    val items = remember(page.items, query) {
-        page.items.filter { query.isBlank() || it.title.contains(query, true) || it.genres.any { genre -> genre.contains(query, true) } }
+    val items: List<Series> = page.items.filter { series ->
+        query.isBlank() || series.title.contains(query, ignoreCase = true) ||
+            series.genres.any { genre -> genre.contains(query, ignoreCase = true) }
     }
-    val suggestions = remember(page.items, query) {
-        if (query.isBlank()) emptyList() else page.items.filter { item ->
-            item.title.contains(query, true) || item.genres.any { it.contains(query, true) }
-        }.take(3)
+    val suggestions: List<Series> = if (query.isBlank()) {
+        emptyList()
+    } else {
+        page.items.asSequence()
+            .filter { series ->
+                series.title.contains(query, ignoreCase = true) ||
+                    series.genres.any { genre -> genre.contains(query, ignoreCase = true) }
+            }
+            .take(3)
+            .toList()
     }
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -1844,18 +1851,24 @@ fun EpisodeCollectionScreen(
     vm: AppViewModel,
     onBack: () -> Unit
 ) {
-    val context = LocalContext.current
+    val appContext = LocalContext.current
     var query by rememberSaveable(page.title) { mutableStateOf("") }
-    val items = remember(page.items, query) {
-        page.items.filter { item ->
-            query.isBlank() || item.series.title.contains(query, true) ||
-                item.episode.title.contains(query, true) || item.episode.secondaryTitle.contains(query, true)
-        }
+    val items: List<HomeEpisode> = page.items.filter { item ->
+        query.isBlank() || item.series.title.contains(query, ignoreCase = true) ||
+            item.episode.title.contains(query, ignoreCase = true) ||
+            item.episode.secondaryTitle.contains(query, ignoreCase = true)
     }
-    val suggestions = remember(page.items, query) {
-        if (query.isBlank()) emptyList() else page.items.filter { item ->
-            item.series.title.contains(query, true) || item.episode.localizedDisplayTitle(context).contains(query, true)
-        }.take(3)
+    val suggestions: List<HomeEpisode> = if (query.isBlank()) {
+        emptyList()
+    } else {
+        page.items.asSequence()
+            .filter { item ->
+                item.series.title.contains(query, ignoreCase = true) ||
+                    item.episode.title.contains(query, ignoreCase = true) ||
+                    item.episode.secondaryTitle.contains(query, ignoreCase = true)
+            }
+            .take(3)
+            .toList()
     }
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -1876,7 +1889,7 @@ fun EpisodeCollectionScreen(
             label = stringResource(R.string.search_in_list),
             suggestions = suggestions,
             suggestionTitle = { it.series.title },
-            suggestionSubtitle = { "${it.episode.localizedLabel(context)} · ${it.episode.localizedDisplayTitle(context)}" },
+            suggestionSubtitle = { "${it.episode.localizedLabel(appContext)} · ${it.episode.localizedDisplayTitle(appContext)}" },
             onSuggestion = { item -> onBack(); vm.openHomeEpisode(item) },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
         )

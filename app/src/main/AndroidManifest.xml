@@ -34,6 +34,7 @@
             android:name=".MainActivity"
             android:screenOrientation="unspecified"
             android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:exported="true">
             <intent-filter>

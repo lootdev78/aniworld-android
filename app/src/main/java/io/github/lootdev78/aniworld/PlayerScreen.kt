@@ -2,9 +2,11 @@ package io.github.lootdev78.aniworld
 
 import android.Manifest
 import android.app.Activity
+import android.app.PictureInPictureParams
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -25,6 +27,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -34,10 +40,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,7 +87,7 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context as? Activity
     var position by remember(playback.id) { mutableLongStateOf(playback.startPositionMs) }
-    var duration by remember(playback.id) { mutableLongStateOf(0L) }
+    var duration by remember(playback.id) { mutableLongStateOf(playback.knownDurationMs.coerceAtLeast(0L)) }
     var scrubPosition by remember(playback.id) { mutableFloatStateOf(playback.startPositionMs.toFloat()) }
     var scrubbing by remember(playback.id) { mutableStateOf(false) }
     var playerError by remember(playback.id) { mutableStateOf<String?>(null) }
@@ -145,6 +151,22 @@ fun PlayerScreen(
                 host.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             }
         }
+    }
+
+    fun enterPictureInPicture() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val host = activity ?: return
+        controlsVisible = false
+        languageMenuOpen = false
+        hosterMenuOpen = false
+        val params = PictureInPictureParams.Builder()
+            .setAspectRatio(Rational(16, 9))
+            .build()
+        runCatching { host.enterPictureInPictureMode(params) }
+            .onFailure { error ->
+                playerError = error.message ?: context.getString(R.string.pip_failed)
+                controlsVisible = true
+            }
     }
 
     fun closePlayer() {
@@ -246,6 +268,11 @@ fun PlayerScreen(
                     }
                 }
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                IconButton(onClick = ::enterPictureInPicture) {
+                    Icon(Icons.Default.PictureInPictureAlt, stringResource(R.string.picture_in_picture), tint = Color.White)
+                }
+            }
             if (allowExternalPlayer) {
                 IconButton(
                     onClick = {
@@ -316,54 +343,92 @@ fun PlayerScreen(
             Column(Modifier.padding(12.dp)) {
                 Text(stringResource(R.string.player_title, playback.seriesTitle, playback.episode.localizedLabel()), color = Color.White, fontWeight = FontWeight.Bold)
                 Text(playback.episode.localizedDisplayTitle(), color = Color.White.copy(alpha = .82f), style = MaterialTheme.typography.bodySmall)
-                if (duration > 0L) {
-                    Slider(
-                        value = scrubPosition.coerceIn(0f, duration.toFloat()),
-                        onValueChange = { value ->
+                val knownDuration = duration.takeIf { it > 0L && it != Long.MAX_VALUE }
+                val timelineMaximum = knownDuration ?: maxOf(position, playback.startPositionMs, 1L)
+                val displayedPosition = (if (scrubbing) scrubPosition.toLong() else position)
+                    .coerceIn(0L, timelineMaximum)
+                Slider(
+                    value = displayedPosition.toFloat(),
+                    onValueChange = { value ->
+                        if (knownDuration != null) {
                             scrubbing = true
                             scrubPosition = value
                             controlsVisible = true
                             controlsGeneration++
-                        },
-                        onValueChangeFinished = {
-                            val target = scrubPosition.toLong().coerceIn(0L, duration)
+                        }
+                    },
+                    onValueChangeFinished = {
+                        knownDuration?.let { maximum ->
+                            val target = scrubPosition.toLong().coerceIn(0L, maximum)
                             PlaybackService.seekTo(context, target)
                             position = target
                             scrubbing = false
-                            onProgress(target, duration, true)
-                        },
-                        valueRange = 0f..duration.toFloat(),
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                            onProgress(target, maximum, true)
+                        }
+                    },
+                    valueRange = 0f..timelineMaximum.toFloat(),
+                    enabled = knownDuration != null,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        inactiveTrackColor = Color.White.copy(alpha = .30f),
+                        disabledThumbColor = Color.White.copy(alpha = .72f),
+                        disabledActiveTrackColor = MaterialTheme.colorScheme.primary.copy(alpha = .72f),
+                        disabledInactiveTrackColor = Color.White.copy(alpha = .22f)
+                    ),
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        formatTime(displayedPosition),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
                     )
-                    Text("${formatTime(if (scrubbing) scrubPosition.toLong() else position)} / ${formatTime(duration)}", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(onClick = {
-                            val target = (position - 10_000L).coerceAtLeast(0L)
-                            PlaybackService.seekTo(context, target)
-                            position = target
-                            scrubPosition = target.toFloat()
-                            onProgress(target, duration, true)
-                            controlsGeneration++
-                        }) { Text("−10 s", color = Color.White) }
-                        Button(onClick = {
-                            PlaybackService.seekTo(context, 0L)
-                            position = 0L
-                            scrubPosition = 0f
-                            onProgress(0L, duration, true)
-                            controlsGeneration++
-                        }) { Text(stringResource(R.string.play_from_beginning)) }
-                        TextButton(onClick = {
-                            val target = (position + 10_000L).coerceAtMost(duration)
-                            PlaybackService.seekTo(context, target)
-                            position = target
-                            scrubPosition = target.toFloat()
-                            onProgress(target, duration, true)
-                            controlsGeneration++
-                        }) { Text("+10 s", color = Color.White) }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        knownDuration?.let(::formatTime) ?: "--:--",
+                        color = Color.White.copy(alpha = .86f),
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        val target = (position - 10_000L).coerceAtLeast(0L)
+                        PlaybackService.seekTo(context, target)
+                        position = target
+                        scrubPosition = target.toFloat()
+                        onProgress(target, duration, true)
+                        controlsGeneration++
+                    }) {
+                        Icon(Icons.Default.Replay10, stringResource(R.string.seek_back_seconds), tint = Color.White)
+                    }
+                    IconButton(onClick = {
+                        PlaybackService.seekTo(context, 0L)
+                        position = 0L
+                        scrubPosition = 0f
+                        onProgress(0L, duration, true)
+                        controlsGeneration++
+                    }) {
+                        Icon(Icons.Default.Replay, stringResource(R.string.play_from_beginning), tint = Color.White)
+                    }
+                    IconButton(onClick = {
+                        val target = knownDuration?.let { (position + 10_000L).coerceAtMost(it) }
+                            ?: (position + 10_000L)
+                        PlaybackService.seekTo(context, target)
+                        position = target
+                        scrubPosition = target.toFloat()
+                        onProgress(target, duration, true)
+                        controlsGeneration++
+                    }) {
+                        Icon(Icons.Default.Forward10, stringResource(R.string.seek_forward_seconds), tint = Color.White)
                     }
                 }
                 Text(stringResource(R.string.player_gesture_hint), color = Color.White.copy(alpha = .72f), style = MaterialTheme.typography.labelSmall)
