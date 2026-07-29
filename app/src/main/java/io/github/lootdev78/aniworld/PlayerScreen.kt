@@ -257,13 +257,12 @@ fun PlayerScreen(
             internalPausedForCast = true
             isPlaying = remoteTransportState == XboxTransportState.PLAYING
         } else if (internalPausedForCast) {
-            val resumeAt = remotePositionMs.takeIf { it > 0L } ?: position
-            PlaybackService.seekTo(context, resumeAt)
-            PlaybackService.play(context)
-            position = resumeAt
-            scrubPosition = resumeAt.toFloat()
-            isPlaying = true
+            // A remote session disappeared or was ended outside the app. Never resume
+            // silently on the phone; stop Android playback to avoid double playback.
+            PlaybackService.stop(context)
+            isPlaying = false
             internalPausedForCast = false
+            controlsVisible = true
         }
     }
 
@@ -310,6 +309,11 @@ fun PlayerScreen(
 
     DisposableEffect(dlnaController, fcastController, chromecastController, smartViewController, castRelay) {
         onDispose {
+            runCatching { smartViewController.disconnect() }
+            runCatching { chromecastController.disconnect() }
+            runCatching { fcastController.disconnect() }
+            runCatching { dlnaController.disconnect() }
+            PlaybackService.stop(context)
             smartViewController.close()
             dlnaController.close()
             fcastController.close()
@@ -463,8 +467,16 @@ fun PlayerScreen(
                 onError(message)
             },
             onInteraction = {
-                controlsVisible = true
                 controlsGeneration++
+            },
+            onSingleTap = {
+                if (!controlsVisible) {
+                    controlsVisible = true
+                    controlsGeneration++
+                    true
+                } else {
+                    false
+                }
             },
             onPlayingChanged = { playing ->
                 if (!castActive) {
@@ -480,13 +492,16 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = .88f))
                     .clickable {
-                        when {
-                            smartViewActive -> smartViewController.togglePlayPause()
-                            chromecastActive -> chromecastController.togglePlayPause()
-                            fcastActive -> fcastController.togglePlayPause()
-                            else -> dlnaController.togglePlayPause()
+                        if (!controlsVisible) {
+                            controlsVisible = true
+                        } else {
+                            when {
+                                smartViewActive -> smartViewController.togglePlayPause()
+                                chromecastActive -> chromecastController.togglePlayPause()
+                                fcastActive -> fcastController.togglePlayPause()
+                                else -> dlnaController.togglePlayPause()
+                            }
                         }
-                        controlsVisible = true
                         controlsGeneration++
                     },
                 contentAlignment = Alignment.Center
@@ -521,94 +536,60 @@ fun PlayerScreen(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
         ) {
-            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = ::closePlayer) {
-                Icon(Icons.Default.Close, stringResource(R.string.player_close), tint = Color.White)
-            }
-            Spacer(Modifier.weight(1f))
-            if (playerLanguages.isNotEmpty()) {
-                Box {
-                    IconButton(onClick = { controlsVisible = true; languageMenuOpen = true }) {
-                        Icon(Icons.Default.Language, stringResource(R.string.change_language), tint = Color.White)
-                    }
-                    DropdownMenu(expanded = false, onDismissRequest = { languageMenuOpen = false }) {
-                        playerLanguages.forEach { language ->
-                            DropdownMenuItem(
-                                text = { Text(language.localizedLabel()) },
-                                leadingIcon = {
-                                    if (playback.stream.language == language) Icon(Icons.Default.Check, null)
-                                },
-                                onClick = {
-                                    languageMenuOpen = false
-                                    onProgress(position, duration, true)
-                                    stopCastForNavigation()
-                                    onLanguageChange(language)
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-            if (orderedHosters.isNotEmpty()) {
-                Box {
-                    IconButton(onClick = { controlsVisible = true; hosterMenuOpen = true }) {
-                        Icon(Icons.Default.Tune, stringResource(R.string.change_hoster), tint = Color.White)
-                    }
-                    DropdownMenu(expanded = false, onDismissRequest = { hosterMenuOpen = false }) {
-                        orderedHosters.forEach { hoster ->
-                            DropdownMenuItem(
-                                text = { Text("${localizedHosterName(hoster.name)} · ${hoster.lang.localizedLabel()}") },
-                                leadingIcon = {
-                                    if (HosterCatalog.normalize(playback.stream.hoster) == HosterCatalog.normalize(hoster.name) && playback.stream.language == hoster.lang) {
-                                        Icon(Icons.Default.Check, null)
-                                    }
-                                },
-                                onClick = {
-                                    hosterMenuOpen = false
-                                    onProgress(position, duration, true)
-                                    stopCastForNavigation()
-                                    onHosterChange(hoster)
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-            if (castEnabled && chromecastState.available) {
-                IconButton(
-                    onClick = {
-                        controlsVisible = true
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                            ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            chromecastPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
-                        } else {
-                            chromecastController.prepare(playback, position)
-                            if (chromecastController.initialize()) {
-                                chromecastDialogOpen = true
-                            } else {
-                                playerError = context.getString(R.string.chromecast_unavailable)
-                            }
-                        }
-                    }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = .42f))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    color = Color.Black.copy(alpha = .38f),
+                    shape = androidx.compose.foundation.shape.CircleShape
                 ) {
-                    Icon(
-                        if (chromecastActive) Icons.Default.CastConnected else Icons.Default.Cast,
-                        stringResource(R.string.chromecast_button),
-                        tint = if (chromecastActive) MaterialTheme.colorScheme.primary else Color.White
-                    )
+                    IconButton(onClick = ::closePlayer) {
+                        Icon(Icons.Default.Close, stringResource(R.string.player_close), tint = Color.White)
+                    }
                 }
-            }
+                Spacer(Modifier.weight(1f))
             if (castEnabled) {
             Box {
                 IconButton(onClick = ::openCastPicker) {
                     Icon(
-                        if (smartViewActive || dlnaActive || fcastActive) Icons.Default.CastConnected else Icons.Default.Cast,
+                        if (castActive) Icons.Default.CastConnected else Icons.Default.Cast,
                         stringResource(R.string.local_cast),
-                        tint = if (smartViewActive || dlnaActive || fcastActive) MaterialTheme.colorScheme.primary else Color.White
+                        tint = if (castActive) MaterialTheme.colorScheme.primary else Color.White
                     )
                 }
                 DropdownMenu(expanded = castMenuOpen, onDismissRequest = { castMenuOpen = false }) {
+                    if (chromecastState.available) {
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(stringResource(R.string.chromecast_button), fontWeight = FontWeight.Bold)
+                                    Text(
+                                        if (chromecastActive) remoteDeviceName else stringResource(R.string.chromecast_device),
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            },
+                            leadingIcon = { Icon(if (chromecastActive) Icons.Default.CastConnected else Icons.Default.Cast, null) },
+                            onClick = {
+                                castMenuOpen = false
+                                if (chromecastActive) {
+                                    disconnectCastAndResume()
+                                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                    ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    chromecastPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+                                } else {
+                                    chromecastController.prepare(playback, position)
+                                    if (chromecastController.initialize()) chromecastDialogOpen = true
+                                    else playerError = context.getString(R.string.chromecast_unavailable)
+                                }
+                            }
+                        )
+                    }
                     if (castActive) {
                         DropdownMenuItem(
                             text = {
@@ -810,53 +791,14 @@ fun PlayerScreen(
                 }
             }
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                IconButton(onClick = ::enterPictureInPicture) {
-                    Icon(Icons.Default.PictureInPictureAlt, stringResource(R.string.picture_in_picture), tint = Color.White)
-                }
-            }
-            if (allowExternalPlayer) {
-                IconButton(
-                    onClick = {
-                        onProgress(position, duration, true)
-                        stopCastForNavigation()
-                        launchExternalPlayback(context, playback)
-                            .onSuccess { closePlayer() }
-                            .onFailure { error ->
-                                playerError = if (error is android.content.ActivityNotFoundException) {
-                                    context.getString(R.string.external_player_not_found)
-                                } else {
-                                    error.message ?: context.getString(R.string.external_player_failed)
-                                }
-                                controlsVisible = true
-                            }
-                    }
+                Surface(
+                    color = Color.Black.copy(alpha = .38f),
+                    shape = androidx.compose.foundation.shape.CircleShape
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_external_player), tint = Color.White)
+                    IconButton(onClick = { streamInfoOpen = true; controlsVisible = true }) {
+                        Icon(Icons.Default.Info, stringResource(R.string.player_stream_info), tint = Color.White)
+                    }
                 }
-            }
-            IconButton(
-                onClick = {
-                    autoNextVisible = false
-                    onProgress(position, duration, true)
-                    stopCastForNavigation()
-                    onPrevious()
-                },
-                enabled = hasPrevious
-            ) {
-                Icon(Icons.Default.SkipPrevious, stringResource(R.string.player_previous_episode), tint = if (hasPrevious) Color.White else Color.White.copy(alpha = .32f))
-            }
-            IconButton(
-                onClick = {
-                    autoNextVisible = false
-                    onProgress(position, duration, true)
-                    stopCastForNavigation()
-                    onNext()
-                },
-                enabled = hasNext
-            ) {
-                Icon(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), tint = if (hasNext) Color.White else Color.White.copy(alpha = .32f))
-            }
             }
         }
 
@@ -926,6 +868,11 @@ fun PlayerScreen(
                         Modifier.fillMaxWidth(),
                         verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
                     ) {
+                        Text(
+                            streamInfo.compactLabel,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
                         PlayerStreamInfoRow(stringResource(R.string.player_stream_format), streamInfo.formatLabel)
                         PlayerStreamInfoRow(stringResource(R.string.player_stream_mime), streamInfo.mimeType)
                         if (streamInfo.host.isNotBlank()) {
@@ -1116,32 +1063,6 @@ fun PlayerScreen(
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 5.dp)
-                        .clickable {
-                            controlsVisible = true
-                            streamInfoOpen = true
-                        },
-                    color = Color.White.copy(alpha = .10f),
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Info, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Text(
-                            streamInfo.compactLabel,
-                            modifier = Modifier.padding(start = 8.dp).weight(1f),
-                            color = Color.White.copy(alpha = .90f),
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    }
-                }
                 LazyRow(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
@@ -1175,29 +1096,6 @@ fun PlayerScreen(
                             icon = { Icon(Icons.Default.Tune, null, tint = Color.White) },
                             label = stringResource(R.string.change_hoster),
                             onClick = { controlsVisible = true; hosterMenuOpen = true }
-                        )
-                    }
-                    if (castEnabled && chromecastState.available) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(if (chromecastActive) Icons.Default.CastConnected else Icons.Default.Cast, null, tint = if (chromecastActive) MaterialTheme.colorScheme.primary else Color.White) },
-                            label = stringResource(R.string.chromecast_button),
-                            onClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                    ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
-                                ) chromecastPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
-                                else {
-                                    chromecastController.prepare(playback, position)
-                                    if (chromecastController.initialize()) chromecastDialogOpen = true
-                                    else playerError = context.getString(R.string.chromecast_unavailable)
-                                }
-                            }
-                        )
-                    }
-                    if (castEnabled) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(if (smartViewActive || dlnaActive || fcastActive) Icons.Default.CastConnected else Icons.Default.Cast, null, tint = if (smartViewActive || dlnaActive || fcastActive) MaterialTheme.colorScheme.primary else Color.White) },
-                            label = stringResource(R.string.local_cast),
-                            onClick = ::openCastPicker
                         )
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) item {

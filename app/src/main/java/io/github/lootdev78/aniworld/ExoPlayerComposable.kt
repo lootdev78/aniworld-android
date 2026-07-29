@@ -60,6 +60,7 @@ fun EmbeddedExoPlayer(
     onEnded: (positionMs: Long, durationMs: Long) -> Unit,
     onError: (String) -> Unit,
     onInteraction: () -> Unit = {},
+    onSingleTap: () -> Boolean = { false },
     onPlayingChanged: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -186,11 +187,14 @@ fun EmbeddedExoPlayer(
                         }
                     },
                     onTap = {
+                        val consumed = onSingleTap()
                         onInteraction()
-                        player?.let {
-                            if (it.isPlaying) it.pause() else it.play()
-                            isPlaying = it.isPlaying
-                            playStateVisible = true
+                        if (!consumed) {
+                            player?.let {
+                                if (it.isPlaying) it.pause() else it.play()
+                                isPlaying = it.isPlaying
+                                playStateVisible = true
+                            }
                         }
                     }
                 )
