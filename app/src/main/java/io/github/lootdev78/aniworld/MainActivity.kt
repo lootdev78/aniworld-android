@@ -1,16 +1,18 @@
 package io.github.lootdev78.aniworld
 
+import android.Manifest
 import android.content.ActivityNotFoundException
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.StringRes
@@ -31,7 +33,6 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,7 +43,6 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
@@ -209,6 +209,20 @@ fun AniWorldApp(vm: AppViewModel) {
     var settingsOpen by remember { mutableStateOf(false) }
     var diagnosticsOpen by remember { mutableStateOf(false) }
     var restoredTab by rememberSaveable { mutableStateOf(false) }
+    val firstStartNotificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { vm.markNotificationPermissionAsked() }
+
+    LaunchedEffect(st.preferencesReady, st.preferences.notificationPermissionAsked) {
+        if (!st.preferencesReady || st.preferences.notificationPermissionAsked) return@LaunchedEffect
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            firstStartNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            vm.markNotificationPermissionAsked()
+        }
+    }
 
     LaunchedEffect(st.externalPlayback?.id) {
         val playback = st.externalPlayback ?: return@LaunchedEffect
@@ -242,6 +256,26 @@ fun AniWorldApp(vm: AppViewModel) {
         if (st.selected != null && navController.currentBackStackEntry?.destination?.route != DETAIL_ROUTE) {
             navController.navigate(DETAIL_ROUTE) { launchSingleTop = true }
         }
+    }
+
+    st.newsPage?.let { news ->
+        IsolatedWebPageScreen(
+            title = news.title,
+            initialUrl = news.url,
+            onClose = vm::closeNews
+        )
+        return
+    }
+
+    if (diagnosticsOpen) {
+        DiagnosticScreen(
+            entries = st.diagnostics,
+            enabled = st.preferences.diagnosticsEnabled,
+            onEnabledChange = vm::setDiagnosticsEnabled,
+            onClear = vm::clearDiagnostics,
+            onDismiss = { diagnosticsOpen = false }
+        )
+        return
     }
 
     st.challenge?.let { request ->
@@ -327,12 +361,11 @@ fun AniWorldApp(vm: AppViewModel) {
     if (settingsOpen) {
         BackHandler { settingsOpen = false }
         SettingsScreen(
-            prefs = st.preferences,
+            st = st,
             vm = vm,
             onDismiss = { settingsOpen = false },
             onDiagnostics = { settingsOpen = false; diagnosticsOpen = true }
         )
-        if (diagnosticsOpen) DiagnosticDialog(st.diagnostics, vm::clearDiagnostics, { diagnosticsOpen = false }, context)
         return
     }
 
@@ -396,7 +429,6 @@ fun AniWorldApp(vm: AppViewModel) {
         }
     }
 
-    if (diagnosticsOpen) DiagnosticDialog(st.diagnostics, vm::clearDiagnostics, { diagnosticsOpen = false }, context)
 }
 
 @Composable
@@ -471,42 +503,4 @@ private fun tabIcon(tab: HomeTab) = when (tab) {
     HomeTab.CATALOG -> Icons.Default.Explore
     HomeTab.FAVORITES -> Icons.Default.Favorite
     HomeTab.HISTORY -> Icons.Default.History
-}
-
-@Composable
-fun DiagnosticDialog(entries: List<DiagnosticEntry>, onClear: () -> Unit, onDismiss: () -> Unit, context: Context) {
-    val text = entries.joinToString("\n\n") { it.asText() }.ifBlank { context.getString(R.string.diagnostic_empty) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.diagnostic_title_count, entries.size)) },
-        text = { androidx.compose.foundation.text.selection.SelectionContainer { androidx.compose.foundation.lazy.LazyColumn { item { Text(text, style = MaterialTheme.typography.bodySmall) } } } },
-        confirmButton = {
-            TextButton(onClick = {
-                runCatching {
-                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                        .setPrimaryClip(ClipData.newPlainText(context.getString(R.string.diagnostic_clip_label), text))
-                }.onFailure { AppLogger.error(context.getString(R.string.diagnostics), context.getString(R.string.diagnostic_copy_error), it) }
-            }) { Text(stringResource(R.string.copy)) }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent.createChooser(
-                                Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, context.getString(R.string.diagnostic_share_subject))
-                                    putExtra(Intent.EXTRA_TEXT, text)
-                                },
-                                context.getString(R.string.diagnostic_share_chooser)
-                            )
-                        )
-                    }.onFailure { AppLogger.error(context.getString(R.string.diagnostics), context.getString(R.string.diagnostic_share_error), it) }
-                }) { Text(stringResource(R.string.share)) }
-                TextButton(onClick = onClear) { Text(stringResource(R.string.clear)) }
-                TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
-            }
-        }
-    )
 }

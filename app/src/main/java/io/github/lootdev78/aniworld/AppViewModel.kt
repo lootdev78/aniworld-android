@@ -57,6 +57,9 @@ data class UiState(
     val preferences: AppPreferences = AppPreferences(),
     val preferencesReady: Boolean = false,
     val diagnostics: List<DiagnosticEntry> = emptyList(),
+    val metadataInventoryChecking: Boolean = false,
+    val offlineMetadataCount: Int = 0,
+    val newsPage: HomeNews? = null,
     val challenge: ChallengeRequest? = null,
     val challengeChecking: Boolean = false,
     val challengeStatus: String? = null,
@@ -109,6 +112,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     init {
         viewModelScope.launch {
             store.preferences.collect { prefs ->
+                AppLogger.setEnabled(prefs.diagnosticsEnabled)
                 _state.update { it.copy(preferences = prefs, preferencesReady = true) }
                 if (!libraryMetadataBackfillTriggered) {
                     libraryMetadataBackfillTriggered = true
@@ -154,34 +158,39 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 if (info?.state == WorkInfo.State.SUCCEEDED && handledSuccessId != info.id) {
                     handledSuccessId = info.id
                     loadCatalog(force = true)
+                    checkOfflineMetadata()
                 }
             }
         }
         AppLogger.info("App", "Anwendung gestartet")
     }
 
-    fun loadHome(force: Boolean = false) {
-        if (_state.value.homeLoading && !force) return
+    fun loadHome(force: Boolean = false, liveRefresh: Boolean = false, offlineOverride: Boolean? = null) {
+        if (_state.value.homeLoading && !force && !liveRefresh) return
         viewModelScope.launch {
             _state.update { it.copy(homeLoading = true, homeError = null) }
             try {
-                val feed = repo.homeFeed(forceRefresh = force)
-                app.prefetchCovers(
-                    buildList {
-                        feed.featured?.let { add(it) }
-                        addAll(feed.popularAtAniWorld)
-                        addAll(feed.latestEpisodes.map(HomeEpisode::series))
-                        addAll(feed.newAnimes)
-                        addAll(feed.currentlyPopular)
-                        addAll(feed.communityWatching)
-                        addAll(feed.mostWatched)
+                val offlineMode = (offlineOverride ?: _state.value.preferences.homeOfflineMode) && !liveRefresh
+                val feed = if (offlineMode) {
+                    store.loadHomeFeed() ?: HomeFeed()
+                } else {
+                    repo.homeFeed(forceRefresh = force || liveRefresh).also { fresh ->
+                        if (!fresh.isEmpty) store.saveHomeFeed(fresh)
                     }
-                )
-                feed.news.forEach { news -> app.prefetchCover(news.imageUrl, "news:${news.url}") }
-                _state.update { it.copy(homeFeed = feed, homeError = if (feed.isEmpty) text(R.string.status_home_no_sections) else null) }
-                AppLogger.info("Startseite", "${feed.latestEpisodes.size} neue Episoden und ${feed.popularAtAniWorld.size} beliebte Titel geladen")
+                }
+                prefetchHomeFeed(feed)
+                val emptyMessage = when {
+                    !feed.isEmpty -> null
+                    offlineMode -> text(R.string.home_offline_metadata_missing)
+                    else -> text(R.string.status_home_no_sections)
+                }
+                _state.update { it.copy(homeFeed = feed, homeError = emptyMessage) }
+                if (!feed.isEmpty) {
+                    val source = if (offlineMode) "Offline" else "Live"
+                    AppLogger.info("Startseite", "$source: ${feed.latestEpisodes.size} neue Episoden und ${feed.popularAtAniWorld.size} beliebte Titel geladen")
+                }
             } catch (error: Exception) {
-                if (error is ChallengeRequiredException) handleFailure(error) { loadHome(true) }
+                if (error is ChallengeRequiredException) handleFailure(error) { loadHome(force = true, liveRefresh = liveRefresh, offlineOverride = offlineOverride) }
                 else {
                     AppLogger.error("Startseite", "Startseite konnte nicht geladen werden", error)
                     _state.update { it.copy(homeError = friendlyMessage(error)) }
@@ -189,6 +198,23 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             } finally { _state.update { it.copy(homeLoading = false) } }
         }
     }
+
+    private fun prefetchHomeFeed(feed: HomeFeed) {
+        app.prefetchCovers(
+            buildList {
+                feed.featured?.let { add(it) }
+                addAll(feed.popularAtAniWorld)
+                addAll(feed.latestEpisodes.map(HomeEpisode::series))
+                addAll(feed.newAnimes)
+                addAll(feed.currentlyPopular)
+                addAll(feed.communityWatching)
+                addAll(feed.mostWatched)
+            }
+        )
+        feed.news.forEach { news -> app.prefetchCover(news.imageUrl, "news:${news.url}") }
+    }
+
+    fun refreshHomeMetadata() = loadHome(force = true, liveRefresh = true)
 
     fun loadCatalog(force: Boolean = false) {
         if (_state.value.catalogLoading || (_state.value.catalog.items.isNotEmpty() && !force)) return
@@ -725,7 +751,43 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun setHistoryViewMode(mode: LibraryViewMode) = viewModelScope.launch { store.setHistoryViewMode(mode) }.let { Unit }
     fun clearRecentSearches() = viewModelScope.launch { store.clearRecentSearches() }.let { Unit }
     fun markPermissionIntroSeen() = viewModelScope.launch { store.setPermissionIntroSeen() }.let { Unit }
+    fun markNotificationPermissionAsked() = viewModelScope.launch { store.setNotificationPermissionAsked() }.let { Unit }
     fun clearDiagnostics() = AppLogger.clear()
+    fun setDiagnosticsEnabled(enabled: Boolean) {
+        AppLogger.setEnabled(enabled)
+        viewModelScope.launch { store.setDiagnosticsEnabled(enabled) }
+    }
+    fun setHomeSectionVisible(section: HomeSection, visible: Boolean) =
+        viewModelScope.launch { store.setHomeSectionVisible(section, visible) }.let { Unit }
+    fun moveHomeSection(section: HomeSection, delta: Int) =
+        viewModelScope.launch { store.moveHomeSection(section, delta) }.let { Unit }
+
+    fun checkOfflineMetadata() {
+        viewModelScope.launch {
+            _state.update { it.copy(metadataInventoryChecking = true) }
+            val count = runCatching { withContext(Dispatchers.IO) { store.offlineMetadataCount() } }
+                .onFailure { AppLogger.error("Metadaten", "Metadatenbestand konnte nicht geprüft werden", it) }
+                .getOrDefault(0)
+            _state.update { it.copy(metadataInventoryChecking = false, offlineMetadataCount = count) }
+        }
+    }
+
+    fun deleteOfflineMetadata() {
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { store.deleteOfflineMetadata() } }
+                .onSuccess {
+                    _state.update { state -> state.copy(offlineMetadataCount = 0, catalog = CatalogData(), homeFeed = HomeFeed(), status = text(R.string.metadata_delete_complete)) }
+                }
+                .onFailure { error ->
+                    AppLogger.error("Metadaten", text(R.string.metadata_delete_failed), error)
+                    _state.update { it.copy(error = text(R.string.metadata_delete_failed_detail, error.message.orEmpty())) }
+                }
+        }
+    }
+
+    fun openNews(news: HomeNews) = _state.update { it.copy(newsPage = news, error = null) }
+    fun closeNews() = _state.update { it.copy(newsPage = null) }
+
     fun dismissError() = _state.update { it.copy(error = null) }
     fun dismissStatus() = _state.update { it.copy(status = null) }
 
@@ -874,6 +936,13 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun setAutoPlayPreferredHoster(enabled: Boolean) = viewModelScope.launch { store.setAutoPlayPreferredHoster(enabled) }.let { Unit }
     fun setAllowExternalPlayer(enabled: Boolean) = viewModelScope.launch { store.setAllowExternalPlayer(enabled) }.let { Unit }
     fun setStartupTab(tab: HomeTab) = viewModelScope.launch { store.setStartupTab(tab.name) }.let { Unit }
+    fun setHomeOfflineMode(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled && !_state.value.homeFeed.isEmpty) store.saveHomeFeed(_state.value.homeFeed)
+            store.setHomeOfflineMode(enabled)
+            if (enabled) loadHome(force = true, offlineOverride = true) else loadHome(force = true, liveRefresh = true, offlineOverride = false)
+        }
+    }
     fun setAccentColor(accent: AppAccent) = viewModelScope.launch { store.setAccentColor(accent) }.let { Unit }
     fun setWebAdBlockEnabled(enabled: Boolean) = viewModelScope.launch { store.setWebAdBlockEnabled(enabled) }.let { Unit }
     fun setWebFilterLists(ids: Set<String>) = viewModelScope.launch { store.setWebFilterLists(ids) }.let { Unit }
@@ -882,12 +951,52 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun setSettingsButtonPosition(x: Float, y: Float) = viewModelScope.launch { store.setSettingsButtonPosition(x, y) }.let { Unit }
     fun resetSettingsButtonPosition() = viewModelScope.launch { store.resetSettingsButtonPosition() }.let { Unit }
 
+    fun exportOfflineMetadata(uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val json = store.exportOfflineMetadata()
+                withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    resolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { it.write(json) }
+                        ?: error(text(R.string.metadata_export_open_failed))
+                }
+            }.onSuccess {
+                AppLogger.info("Metadaten", text(R.string.metadata_export_complete))
+            }.onFailure { error ->
+                AppLogger.error("Metadaten", text(R.string.metadata_export_failed), error)
+                _state.update { it.copy(error = text(R.string.metadata_export_failed_detail, error.message.orEmpty())) }
+            }
+        }
+    }
+
+    fun importOfflineMetadata(uri: Uri) {
+        viewModelScope.launch {
+            runCatching {
+                val raw = withContext(Dispatchers.IO) {
+                    val resolver = getApplication<Application>().contentResolver
+                    resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                        ?: error(text(R.string.metadata_import_open_failed))
+                }
+                store.importOfflineMetadata(raw)
+            }.onSuccess { result ->
+                AppLogger.info("Metadaten", text(R.string.metadata_import_complete, result.catalogItems))
+                checkOfflineMetadata()
+                loadCatalog(force = true)
+                if (_state.value.preferences.homeOfflineMode) loadHome(force = true)
+            }.onFailure { error ->
+                AppLogger.error("Metadaten", text(R.string.metadata_import_failed), error)
+                _state.update { it.copy(error = text(R.string.metadata_import_failed_detail, error.message.orEmpty())) }
+            }
+        }
+    }
+
     fun resetCoverDataAndCache() {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     app.database.seriesMetadataDao().clear()
                     app.database.pageCacheDao().clear()
+                    store.clearHomeFeedCache()
                     store.clearStoredCovers()
                     app.clearImageCaches()
                 }

@@ -3,6 +3,27 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
+## 1.7.7 Einstellungen, Startseite und erweitertes Casting
+
+- strukturiert die Einstellungen in klar getrennte Material-3-Bereiche mit überarbeiteten Bezeichnungen und Hilfetexten
+- prüft beim Öffnen der Einstellungen den lokalen Metadatenbestand und aktiviert „Vorhandene löschen“ sowie „Exportieren“ nur bei tatsächlich vorhandenen Daten
+- ordnet die Metadatenaktionen als Aktualisieren, Vorhandene löschen, Exportieren und Importieren an
+- ergänzt einen globalen Diagnose-/Logging-Schalter und eine eigene Vollbild-Diagnoseansicht statt des bisherigen Popups
+- zeigt Favoriten als frei konfigurierbaren Startseitenbereich und speichert Sichtbarkeit sowie Reihenfolge aller Startseitenbereiche dauerhaft
+- belässt die vorhandenen News-Karten unverändert, öffnet Artikel aber in einem isolierten normalen WebView ohne Challenge-, Cloudflare- oder Medien-Extractor-Logik
+- erweitert den Player um offizielles Google Cast für Chromecast, FCast als offenes Cast-Protokoll und den Android-Systemeinstieg für Miracast; AirPlay/AirServer sind nicht enthalten
+- erweitert DLNA/UPnP- und FCast-Erkennung um direkte lokale Subnetz-/Nachbar-Fallbacks für Geräte, die als Clients mit dem Handy-Hotspot verbunden sind
+- begrenzt parallele Anime-Detailabrufe bei der Katalog-Metadatenaktualisierung auf maximal vier gleichzeitig
+
+## 1.7.6 Offline-Metadaten und Erststart-Berechtigung
+
+- blendet Suche, Sortierung und Filter in Favoriten und Verlauf erst ein, sobald tatsächlich Einträge vorhanden sind
+- überarbeitet die rechte `#`-/A–Z-Leiste als deutlich sichtbare, vollhohe Schnellnavigation bei alphabetischer Sortierung
+- exportiert Katalog- und optional gespeicherte Startseitenmetadaten über den Android-Dokumentanbieter als JSON-Datei
+- importiert eine ausgewählte Metadatendatei über den Android-Dokumentanbieter und schaltet den Katalog danach sofort für die Offline-Nutzung frei
+- ergänzt einen umschaltbaren Offline-Modus für die Startseite; im Offline-Modus wird der letzte gespeicherte Feed verwendet und nur über die manuelle Einstellungsaktion neu gecrawlt
+- fragt ab Android 13 die Benachrichtigungsberechtigung beim ersten App-Start einmalig über den Android-Systemdialog ab
+
 ## 1.7.5 Hotspot-Cast und Bibliotheksleisten
 
 - erweitert Xbox-/DLNA-Erkennung für Android-Hotspots um schnittstellengebundene SSDP-Suche, Subnetz-Broadcast, lokalen /24-Unicast-Fallback und bekannte Hotspot-Nachbarn
@@ -33,7 +54,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.7.5-hotspot-library-ui`
+`1.7.7-settings-home-cast`
 
 ## Paket und Projekt
 
@@ -64,6 +85,8 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 - eigene Top-50-/Meistgesehen-Sammlung
 - Vollansichten für alle Startseiten-Sammlungen über die anklickbaren Abschnittsüberschriften
 - persönliche „Weiterschauen“-Reihe
+- persönliche Favoriten-Reihe auf der Startseite
+- dauerhaft gespeicherte Sichtbarkeit und Reihenfolge aller Startseitenbereiche
 - reduzierte Navigation ohne obere App-Leiste; schwebende Bottom Bar auf Smartphones und Navigation Rail auf größeren Displays
 - frei verschiebbarer Einstellungsbutton mit begrenzter, rotationsfester DataStore-Position und Rücksetzfunktion
 - Material-3-Dark-Mode, optional dynamische Android-Farben sowie eine feste Akzentfarbpalette in den Einstellungen
@@ -97,7 +120,8 @@ Die Nutzerdaten werden ausschließlich lokal in Room und DataStore gespeichert. 
 - Coil-Disk- und Memory-Cache mit anime- und URL-spezifischen Cover-Schlüsseln
 - zentrale Filterung von Logo-, Branding-, Header-, Placeholder-, Tracking- und unplausibel dimensionierten Bildern
 - Rücksetzfunktion für gespeicherte Coverdaten, Katalogseiten, Metadaten sowie Coil-Bildcache
-- begrenzte parallele Katalog- und Metadatenanfragen, automatische Wiederholungsversuche mit Backoff und eine kurze DNS-Sperre gegen Retry-Kaskaden
+- begrenzte parallele Katalog- und Metadatenanfragen; Anime-Detailmetadaten werden mit maximal vier gleichzeitigen Jobs verarbeitet
+- automatische Wiederholungsversuche mit Backoff und eine kurze DNS-Sperre gegen Retry-Kaskaden
 - der vollständige Katalog wird erst beim Öffnen des Katalog-Tabs geladen, damit der App-Start keine tausenden Kataloganfragen auslöst
 
 ## AniWorld-Workflow
@@ -138,13 +162,16 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - dauerhaft sichtbare Wiedergabezeitleiste bei eingeblendeten Steuerelementen mit aktuellem Zeitpunkt, Videolänge und verschiebbarem Positionspunkt
 - Doppeltipp links/rechts sowie Icon-Aktionen für zehn Sekunden zurück/vor
 - Icon zum Starten von Anfang und Picture-in-Picture-Schaltfläche
-- Xbox-/DLNA-Cast-Schaltfläche mit Gerätesuche, Wiedergabe/Pause, Remote-Suche und Trennen/Fortsetzen
+- DLNA/UPnP-Casting einschließlich Xbox mit Gerätesuche, Wiedergabe/Pause, Remote-Suche und Trennen/Fortsetzen
+- offizielles Google Cast für Chromecast über die Android MediaRoute-Auswahl
+- FCast-Wiedergabe als offenes Cast-Protokoll sowie Miracast-Einstieg über die Android-Systemauswahl
+- lokaler Subnetz- und Nachbartabellen-Fallback für DLNA/FCast-Geräte am Handy-Hotspot
 - optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
 - stabilisierte Helligkeits-/Lautstärkegesten mit seitlichen Zonen und Bewegungsschwelle
 - automatisch ausblendende Player-Oberfläche während laufender Wiedergabe; Interaktion oder Pause blendet sie wieder ein
 - Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
 
-Es gibt weiterhin keine Qualitäts- oder Geschwindigkeitsmenüs. Picture-in-Picture ist über das Player-Icon verfügbar. Xbox One und Xbox Series S/X können über das Cast-Icon als DLNA/UPnP-Renderer ausgewählt werden; dafür müssen Konsole und Android-Gerät im selben lokalen Netzwerk sein.
+Es gibt weiterhin keine Qualitäts- oder Geschwindigkeitsmenüs. Picture-in-Picture ist über das Player-Icon verfügbar. Unterstützt werden DLNA/UPnP-Renderer einschließlich Xbox, Chromecast über Google Cast, FCast sowie Miracast über die Android-Systemauswahl. Lokale Renderer können sich im selben WLAN oder als Clients am vom Android-Gerät bereitgestellten Hotspot befinden. AirPlay und AirServer sind nicht enthalten.
 
 ## Navigation
 

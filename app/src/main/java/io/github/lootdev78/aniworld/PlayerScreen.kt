@@ -3,9 +3,11 @@ package io.github.lootdev78.aniworld
 import android.Manifest
 import android.app.Activity
 import android.app.PictureInPictureParams
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.util.Rational
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CastConnected
@@ -70,8 +73,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
@@ -111,9 +117,36 @@ fun PlayerScreen(
     var manualCastDialogOpen by remember(playback.id) { mutableStateOf(false) }
     var manualCastAddress by remember(playback.id) { mutableStateOf("") }
     var internalPausedForCast by remember(playback.id) { mutableStateOf(false) }
-    val castController = remember(context.applicationContext) { XboxCastController(context.applicationContext) }
-    val castState by castController.state.collectAsState()
-    val castActive = castState.connectedDevice != null
+    val dlnaController = remember(context.applicationContext) { XboxCastController(context.applicationContext) }
+    val dlnaState by dlnaController.state.collectAsState()
+    val fcastController = remember(context.applicationContext) { FCastController(context.applicationContext) }
+    val fcastState by fcastController.state.collectAsState()
+    val chromecastController = remember(context.applicationContext) { ChromecastController(context.applicationContext) }
+    val chromecastState by chromecastController.state.collectAsState()
+    val dlnaActive = dlnaState.connectedDevice != null
+    val fcastActive = fcastState.connectedDevice != null
+    val chromecastActive = chromecastState.connectedDeviceName != null
+    val castActive = dlnaActive || fcastActive || chromecastActive
+    val remoteTransportState = when {
+        chromecastActive -> chromecastState.transportState
+        fcastActive -> fcastState.transportState
+        else -> dlnaState.transportState
+    }
+    val remotePositionMs = when {
+        chromecastActive -> chromecastState.positionMs
+        fcastActive -> fcastState.positionMs
+        else -> dlnaState.positionMs
+    }
+    val remoteDurationMs = when {
+        chromecastActive -> chromecastState.durationMs
+        fcastActive -> fcastState.durationMs
+        else -> dlnaState.durationMs
+    }
+    val remoteDeviceName = when {
+        chromecastActive -> chromecastState.connectedDeviceName.orEmpty()
+        fcastActive -> fcastState.connectedDevice?.displayName.orEmpty()
+        else -> dlnaState.connectedDevice?.displayName.orEmpty()
+    }
     val playerLanguages = remember(availableHosters, playback.stream.language) {
         (availableHosters.map { it.lang } + playback.stream.language).filter { it != Language.UNKNOWN }.distinct()
     }
@@ -124,7 +157,8 @@ fun PlayerScreen(
     val nearbyDevicesPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             castMenuOpen = true
-            castController.discover()
+            dlnaController.discover()
+            fcastController.discover()
         } else {
             playerError = context.getString(R.string.xbox_cast_permission_denied)
             controlsVisible = true
@@ -146,12 +180,18 @@ fun PlayerScreen(
         }
     }
 
+    LaunchedEffect(playback.id, position) {
+        chromecastController.prepare(playback, position)
+    }
+
     LaunchedEffect(autoNextVisible, autoNextSeconds) {
         if (!autoNextVisible) return@LaunchedEffect
         if (autoNextSeconds <= 0) {
             autoNextVisible = false
             onProgress(position, duration, true)
-            if (castActive) castController.disconnect()
+            if (dlnaActive) dlnaController.disconnect()
+            if (fcastActive) fcastController.disconnect()
+            if (chromecastActive) chromecastController.disconnect()
             onNext()
         } else {
             delay(1_000L)
@@ -159,31 +199,42 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(castState.connectedDevice?.id, castState.transportState) {
-        if (castState.connectedDevice != null) {
+    LaunchedEffect(castActive, remoteTransportState) {
+        if (castActive) {
             PlaybackService.pause(context)
             internalPausedForCast = true
-            isPlaying = castState.transportState == XboxTransportState.PLAYING
-        } else if (internalPausedForCast && castState.transportState == XboxTransportState.ERROR) {
+            isPlaying = remoteTransportState == XboxTransportState.PLAYING
+        } else if (internalPausedForCast) {
+            val resumeAt = remotePositionMs.takeIf { it > 0L } ?: position
+            PlaybackService.seekTo(context, resumeAt)
             PlaybackService.play(context)
+            position = resumeAt
+            scrubPosition = resumeAt.toFloat()
+            isPlaying = true
             internalPausedForCast = false
         }
     }
 
-    LaunchedEffect(castActive, castState.positionMs, castState.durationMs) {
+    LaunchedEffect(chromecastActive) {
+        while (chromecastActive) {
+            chromecastController.refreshProgress()
+            delay(1_000L)
+        }
+    }
+
+    LaunchedEffect(castActive, remotePositionMs, remoteDurationMs) {
         if (castActive) {
-            position = castState.positionMs.coerceAtLeast(0L)
-            if (castState.durationMs > 0L) duration = castState.durationMs
+            position = remotePositionMs.coerceAtLeast(0L)
+            if (remoteDurationMs > 0L) duration = remoteDurationMs
             if (!scrubbing) scrubPosition = position.toFloat()
             onProgress(position, duration, false)
         }
     }
 
-    LaunchedEffect(castState.completionEvent) {
-        if (castState.completionEvent != 0L) {
-            val finalPosition = castState.positionMs
-            val finalDuration = castState.durationMs
-            onEnded(finalPosition, finalDuration)
+    LaunchedEffect(dlnaState.completionEvent, fcastState.completionEvent, chromecastState.completionEvent) {
+        val completion = maxOf(dlnaState.completionEvent, fcastState.completionEvent, chromecastState.completionEvent)
+        if (completion != 0L) {
+            onEnded(remotePositionMs, remoteDurationMs)
             if (autoNextEnabled && hasNext) {
                 autoNextSeconds = 8
                 autoNextVisible = true
@@ -191,16 +242,21 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(castState.error) {
-        castState.error?.let { message ->
-            playerError = message
+    LaunchedEffect(dlnaState.error, fcastState.error, chromecastState.error) {
+        val message = chromecastState.error ?: fcastState.error ?: dlnaState.error
+        message?.let {
+            playerError = it
             controlsVisible = true
-            onError(message)
+            onError(it)
         }
     }
 
-    DisposableEffect(castController) {
-        onDispose { castController.close() }
+    DisposableEffect(dlnaController, fcastController, chromecastController) {
+        onDispose {
+            dlnaController.close()
+            fcastController.close()
+            chromecastController.close()
+        }
     }
 
     DisposableEffect(activity) {
@@ -241,20 +297,28 @@ fun PlayerScreen(
 
     fun openCastPicker() {
         controlsVisible = true
-        castState.error?.let { castController.clearError() }
+        dlnaState.error?.let { dlnaController.clearError() }
+        fcastState.error?.let { fcastController.clearError() }
+        chromecastState.error?.let { chromecastController.clearError() }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
         ) {
             nearbyDevicesPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
         } else {
             castMenuOpen = true
-            castController.discover()
+            dlnaController.discover()
+            fcastController.discover()
         }
     }
 
     fun seekPlayback(targetMs: Long) {
         val target = targetMs.coerceAtLeast(0L)
-        if (castActive) castController.seekTo(target) else PlaybackService.seekTo(context, target)
+        when {
+            chromecastActive -> chromecastController.seekTo(target)
+            fcastActive -> fcastController.seekTo(target)
+            dlnaActive -> dlnaController.seekTo(target)
+            else -> PlaybackService.seekTo(context, target)
+        }
         position = target
         scrubPosition = target.toFloat()
         onProgress(target, duration, true)
@@ -262,24 +326,30 @@ fun PlayerScreen(
     }
 
     fun disconnectCastAndResume() {
-        val remotePosition = castState.positionMs.coerceAtLeast(position)
-        castController.disconnect()
-        PlaybackService.seekTo(context, remotePosition)
+        val resumePosition = remotePositionMs.takeIf { it > 0L } ?: position
+        if (chromecastActive) chromecastController.disconnect()
+        if (fcastActive) fcastController.disconnect()
+        if (dlnaActive) dlnaController.disconnect()
+        PlaybackService.seekTo(context, resumePosition)
         PlaybackService.play(context)
-        position = remotePosition
-        scrubPosition = remotePosition.toFloat()
+        position = resumePosition
+        scrubPosition = resumePosition.toFloat()
         internalPausedForCast = false
         isPlaying = true
     }
 
     fun stopCastForNavigation() {
-        if (castActive) castController.disconnect()
+        if (chromecastActive) chromecastController.disconnect()
+        if (fcastActive) fcastController.disconnect()
+        if (dlnaActive) dlnaController.disconnect()
         internalPausedForCast = false
     }
 
     fun closePlayer() {
         autoNextVisible = false
-        if (castActive) castController.disconnect()
+        if (chromecastActive) chromecastController.disconnect()
+        if (fcastActive) fcastController.disconnect()
+        if (dlnaActive) dlnaController.disconnect()
         PlaybackService.stop(context)
         onClose(position, duration)
     }
@@ -332,7 +402,11 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = .88f))
                     .clickable {
-                        castController.togglePlayPause()
+                        when {
+                            chromecastActive -> chromecastController.togglePlayPause()
+                            fcastActive -> fcastController.togglePlayPause()
+                            else -> dlnaController.togglePlayPause()
+                        }
                         controlsVisible = true
                         controlsGeneration++
                     },
@@ -346,13 +420,13 @@ fun PlayerScreen(
                         modifier = Modifier.padding(bottom = 14.dp)
                     )
                     Text(
-                        stringResource(R.string.xbox_cast_playing_on, castState.connectedDevice?.displayName.orEmpty()),
+                        stringResource(R.string.cast_playing_on, remoteDeviceName),
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
                     Text(
-                        if (castState.transportState == XboxTransportState.PAUSED) stringResource(R.string.playback_paused)
+                        if (remoteTransportState == XboxTransportState.PAUSED) stringResource(R.string.playback_paused)
                         else stringResource(R.string.playback_running),
                         color = Color.White.copy(alpha = .76f),
                         style = MaterialTheme.typography.bodySmall,
@@ -421,21 +495,34 @@ fun PlayerScreen(
                     }
                 }
             }
+            if (chromecastState.available) {
+                AndroidView(
+                    modifier = Modifier.size(48.dp),
+                    factory = { routeContext ->
+                        MediaRouteButton(routeContext).apply {
+                            contentDescription = routeContext.getString(R.string.chromecast_button)
+                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                            CastButtonFactory.setUpMediaRouteButton(routeContext, this)
+                        }
+                    },
+                    update = { chromecastController.prepare(playback, position) }
+                )
+            }
             Box {
                 IconButton(onClick = ::openCastPicker) {
                     Icon(
-                        if (castActive) Icons.Default.CastConnected else Icons.Default.Cast,
-                        stringResource(R.string.xbox_cast),
-                        tint = if (castActive) MaterialTheme.colorScheme.primary else Color.White
+                        if (dlnaActive || fcastActive) Icons.Default.CastConnected else Icons.Default.Cast,
+                        stringResource(R.string.local_cast),
+                        tint = if (dlnaActive || fcastActive) MaterialTheme.colorScheme.primary else Color.White
                     )
                 }
                 DropdownMenu(expanded = castMenuOpen, onDismissRequest = { castMenuOpen = false }) {
-                    castState.connectedDevice?.let { device ->
+                    if (castActive) {
                         DropdownMenuItem(
                             text = {
                                 Column {
-                                    Text(device.displayName, fontWeight = FontWeight.Bold)
-                                    Text(stringResource(R.string.xbox_cast_disconnect_and_resume), style = MaterialTheme.typography.labelSmall)
+                                    Text(remoteDeviceName, fontWeight = FontWeight.Bold)
+                                    Text(stringResource(R.string.cast_disconnect_and_resume), style = MaterialTheme.typography.labelSmall)
                                 }
                             },
                             leadingIcon = { Icon(Icons.Default.CastConnected, null) },
@@ -447,27 +534,27 @@ fun PlayerScreen(
                     }
                     if (playback.stream.headers.keys.any { !it.equals("User-Agent", true) }) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.xbox_cast_header_warning), style = MaterialTheme.typography.labelSmall) },
+                            text = { Text(stringResource(R.string.cast_header_warning), style = MaterialTheme.typography.labelSmall) },
                             enabled = false,
                             onClick = { castMenuOpen = false }
                         )
                     }
-                    if (castState.discovering) {
+                    if (dlnaState.discovering || fcastState.discovering) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.xbox_cast_searching)) },
+                            text = { Text(stringResource(R.string.cast_searching)) },
                             leadingIcon = { Icon(Icons.Default.Refresh, null) },
                             enabled = false,
                             onClick = { castMenuOpen = false }
                         )
                     }
-                    castState.devices.filter { it.id != castState.connectedDevice?.id }.forEach { device ->
+                    dlnaState.devices.filter { it.id != dlnaState.connectedDevice?.id }.forEach { device ->
                         DropdownMenuItem(
                             text = {
                                 Column {
                                     Text(device.displayName)
                                     Text(
-                                        if (device.isXbox) stringResource(R.string.xbox_cast_xbox_device)
-                                        else stringResource(R.string.xbox_cast_dlna_device),
+                                        if (device.isXbox) stringResource(R.string.cast_xbox_dlna_device)
+                                        else stringResource(R.string.cast_dlna_device),
                                         style = MaterialTheme.typography.labelSmall
                                     )
                                 }
@@ -476,25 +563,53 @@ fun PlayerScreen(
                             onClick = {
                                 castMenuOpen = false
                                 playerError = null
+                                if (chromecastActive) chromecastController.disconnect()
+                                if (fcastActive) fcastController.disconnect()
                                 PlaybackService.pause(context)
                                 internalPausedForCast = true
-                                castController.cast(device, playback, position)
+                                dlnaController.cast(device, playback, position)
                             }
                         )
                     }
-                    if (!castState.discovering && castState.devices.isEmpty()) {
+                    fcastState.devices.filter { it.id != fcastState.connectedDevice?.id }.forEach { device ->
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.xbox_cast_no_devices)) },
-                            onClick = { castController.discover() }
+                            text = {
+                                Column {
+                                    Text(device.displayName)
+                                    Text(stringResource(R.string.cast_fcast_device), style = MaterialTheme.typography.labelSmall)
+                                }
+                            },
+                            leadingIcon = { Icon(Icons.Default.Cast, null) },
+                            onClick = {
+                                castMenuOpen = false
+                                playerError = null
+                                if (chromecastActive) chromecastController.disconnect()
+                                if (dlnaActive) dlnaController.disconnect()
+                                PlaybackService.pause(context)
+                                internalPausedForCast = true
+                                fcastController.cast(device, playback, position)
+                            }
+                        )
+                    }
+                    if (!dlnaState.discovering && !fcastState.discovering && dlnaState.devices.isEmpty() && fcastState.devices.isEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.cast_no_local_devices)) },
+                            onClick = {
+                                dlnaController.discover()
+                                fcastController.discover()
+                            }
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.xbox_cast_refresh)) },
+                        text = { Text(stringResource(R.string.cast_refresh_local)) },
                         leadingIcon = { Icon(Icons.Default.Refresh, null) },
-                        onClick = { castController.discover() }
+                        onClick = {
+                            dlnaController.discover()
+                            fcastController.discover()
+                        }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.xbox_cast_manual)) },
+                        text = { Text(stringResource(R.string.cast_manual_address)) },
                         leadingIcon = { Icon(Icons.Default.Tune, null) },
                         onClick = {
                             castMenuOpen = false
@@ -502,7 +617,24 @@ fun PlayerScreen(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text(stringResource(R.string.xbox_cast_hotspot_hint), style = MaterialTheme.typography.labelSmall) },
+                        text = {
+                            Column {
+                                Text(stringResource(R.string.miracast_system_settings))
+                                Text(stringResource(R.string.miracast_system_settings_desc), style = MaterialTheme.typography.labelSmall)
+                            }
+                        },
+                        leadingIcon = { Icon(Icons.Default.Cast, null) },
+                        onClick = {
+                            castMenuOpen = false
+                            runCatching { context.startActivity(Intent(Settings.ACTION_CAST_SETTINGS)) }
+                                .onFailure { error ->
+                                    playerError = error.message ?: context.getString(R.string.miracast_settings_failed)
+                                    controlsVisible = true
+                                }
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.cast_hotspot_hint), style = MaterialTheme.typography.labelSmall) },
                         enabled = false,
                         onClick = { castMenuOpen = false }
                     )
@@ -577,7 +709,8 @@ fun PlayerScreen(
                             manualCastDialogOpen = false
                             castMenuOpen = true
                             playerError = null
-                            castController.discoverAt(manualCastAddress)
+                            dlnaController.discoverAt(manualCastAddress)
+                            fcastController.discoverAt(manualCastAddress)
                         }
                     ) { Text(stringResource(R.string.xbox_cast_manual_connect)) }
                 },

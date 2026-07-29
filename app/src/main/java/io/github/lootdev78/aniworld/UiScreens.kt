@@ -72,6 +72,8 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.List
@@ -81,6 +83,7 @@ import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Tune
@@ -139,6 +142,10 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(st: UiState, vm: AppViewModel) {
+    val visibleSections = st.preferences.homeSectionOrder.filterNot(st.preferences.hiddenHomeSections::contains)
+    val continueWatching = st.preferences.progress.values.sortedByDescending { it.updatedAt }.take(12)
+    val favoriteSeries = st.preferences.favorites.sortedByDescending { it.updatedAt }.take(12).map(FavoriteEntry::asSeries)
+
     Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
             isRefreshing = st.homeLoading,
@@ -152,72 +159,80 @@ fun HomeScreen(st: UiState, vm: AppViewModel) {
             ) {
                 if (st.homeLoading && st.homeFeed.isEmpty) item { HomeSkeleton() }
                 st.homeError?.let { message -> item { ErrorCard(message) { vm.loadHome(true) } } }
-                if (!st.homeLoading && st.homeError == null && st.homeFeed.isEmpty) item {
+                if (!st.homeLoading && st.homeError == null && st.homeFeed.isEmpty && favoriteSeries.isEmpty() && continueWatching.isEmpty()) item {
                     EmptyState(stringResource(R.string.home_empty_title), stringResource(R.string.home_empty_subtitle), Modifier.fillMaxWidth().height(260.dp))
                 }
-                if (st.homeFeed.news.isNotEmpty()) item {
-                    HomeNewsRow(st.homeFeed.news) { news -> vm.openManualPage(news.url, news.title) }
-                }
-                st.homeFeed.featured?.let { series ->
-                    item {
-                        HomeHero(
-                            series,
-                            st.preferences.isFavorite(series.slug),
-                            { vm.select(series) },
-                            { vm.toggleFavorite(series) },
-                            { vm.openAnimeInfo(series) }
-                        )
-                    }
-                }
-                val continueWatching = st.preferences.progress.values.sortedByDescending { it.updatedAt }.take(12)
-                if (continueWatching.isNotEmpty()) item {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionTitle(stringResource(R.string.continue_watching), stringResource(R.string.your_last_position))
-                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(continueWatching, key = { it.seriesSlug }) { progress ->
-                                ContinueCard(
-                                    progress,
-                                    st.preferences,
-                                    { vm.openProgress(progress) },
-                                    {
-                                        vm.openAnimeInfo(
-                                            Series(
-                                                title = progress.seriesTitle,
-                                                slug = progress.seriesSlug,
-                                                url = progress.seriesUrl,
-                                                coverUrl = progress.coverUrl
-                                            )
-                                        )
-                                    },
-                                    { vm.toggleProgressWatched(progress) }
+
+                visibleSections.forEach { section ->
+                    when (section) {
+                        HomeSection.NEWS -> if (st.homeFeed.news.isNotEmpty()) item(key = section.name) {
+                            HomeNewsRow(st.homeFeed.news, vm::openNews)
+                        }
+                        HomeSection.FEATURED -> st.homeFeed.featured?.let { series ->
+                            item(key = section.name) {
+                                HomeHero(
+                                    series,
+                                    st.preferences.isFavorite(series.slug),
+                                    { vm.select(series) },
+                                    { vm.toggleFavorite(series) },
+                                    { vm.openAnimeInfo(series) }
                                 )
                             }
                         }
+                        HomeSection.FAVORITES -> if (favoriteSeries.isNotEmpty()) item(key = section.name) {
+                            val title = stringResource(R.string.favorites)
+                            HomeSeriesRow(title, favoriteSeries, st, vm) { vm.openSeriesCollection(title, favoriteSeries) }
+                        }
+                        HomeSection.CONTINUE_WATCHING -> if (continueWatching.isNotEmpty()) item(key = section.name) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                SectionTitle(stringResource(R.string.continue_watching), stringResource(R.string.your_last_position))
+                                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    items(continueWatching, key = { it.seriesSlug }) { progress ->
+                                        ContinueCard(
+                                            progress,
+                                            st.preferences,
+                                            { vm.openProgress(progress) },
+                                            {
+                                                vm.openAnimeInfo(
+                                                    Series(
+                                                        title = progress.seriesTitle,
+                                                        slug = progress.seriesSlug,
+                                                        url = progress.seriesUrl,
+                                                        coverUrl = progress.coverUrl
+                                                    )
+                                                )
+                                            },
+                                            { vm.toggleProgressWatched(progress) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        HomeSection.POPULAR_AT_ANIWORLD -> if (st.homeFeed.popularAtAniWorld.isNotEmpty()) item(key = section.name) {
+                            val title = stringResource(R.string.popular_at_aniworld)
+                            HomeSeriesRow(title, st.homeFeed.popularAtAniWorld, st, vm) { vm.openSeriesCollection(title, st.homeFeed.popularAtAniWorld) }
+                        }
+                        HomeSection.LATEST_EPISODES -> if (st.homeFeed.latestEpisodes.isNotEmpty()) item(key = section.name) {
+                            val title = stringResource(R.string.latest_episodes)
+                            LatestEpisodesRow(st.homeFeed.latestEpisodes, st, vm) { vm.openEpisodeCollection(title, st.homeFeed.latestEpisodes) }
+                        }
+                        HomeSection.NEW_ANIMES -> if (st.homeFeed.newAnimes.isNotEmpty()) item(key = section.name) {
+                            val title = stringResource(R.string.new_animes)
+                            HomeSeriesRow(title, st.homeFeed.newAnimes, st, vm) { vm.openSeriesCollection(title, st.homeFeed.newAnimes) }
+                        }
+                        HomeSection.CURRENTLY_POPULAR -> if (st.homeFeed.currentlyPopular.isNotEmpty()) item(key = section.name) {
+                            val title = stringResource(R.string.currently_popular)
+                            HomeSeriesRow(title, st.homeFeed.currentlyPopular, st, vm) { vm.openSeriesCollection(title, st.homeFeed.currentlyPopular) }
+                        }
+                        HomeSection.COMMUNITY_WATCHING -> if (st.homeFeed.communityWatching.isNotEmpty()) item(key = section.name) {
+                            val title = stringResource(R.string.community_watching)
+                            HomeSeriesRow(title, st.homeFeed.communityWatching, st, vm) { vm.openSeriesCollection(title, st.homeFeed.communityWatching) }
+                        }
+                        HomeSection.MOST_WATCHED -> if (st.homeFeed.mostWatched.isNotEmpty()) item(key = section.name) {
+                            val title = stringResource(R.string.most_watched_top_50)
+                            HomeSeriesRow(title, st.homeFeed.mostWatched, st, vm) { vm.openSeriesCollection(title, st.homeFeed.mostWatched) }
+                        }
                     }
-                }
-                if (st.homeFeed.popularAtAniWorld.isNotEmpty()) item {
-                    val title = stringResource(R.string.popular_at_aniworld)
-                    HomeSeriesRow(title, st.homeFeed.popularAtAniWorld, st, vm) { vm.openSeriesCollection(title, st.homeFeed.popularAtAniWorld) }
-                }
-                if (st.homeFeed.latestEpisodes.isNotEmpty()) item {
-                    val title = stringResource(R.string.latest_episodes)
-                    LatestEpisodesRow(st.homeFeed.latestEpisodes, st, vm) { vm.openEpisodeCollection(title, st.homeFeed.latestEpisodes) }
-                }
-                if (st.homeFeed.newAnimes.isNotEmpty()) item {
-                    val title = stringResource(R.string.new_animes)
-                    HomeSeriesRow(title, st.homeFeed.newAnimes, st, vm) { vm.openSeriesCollection(title, st.homeFeed.newAnimes) }
-                }
-                if (st.homeFeed.currentlyPopular.isNotEmpty()) item {
-                    val title = stringResource(R.string.currently_popular)
-                    HomeSeriesRow(title, st.homeFeed.currentlyPopular, st, vm) { vm.openSeriesCollection(title, st.homeFeed.currentlyPopular) }
-                }
-                if (st.homeFeed.communityWatching.isNotEmpty()) item {
-                    val title = stringResource(R.string.community_watching)
-                    HomeSeriesRow(title, st.homeFeed.communityWatching, st, vm) { vm.openSeriesCollection(title, st.homeFeed.communityWatching) }
-                }
-                if (st.homeFeed.mostWatched.isNotEmpty()) item {
-                    val title = stringResource(R.string.most_watched_top_50)
-                    HomeSeriesRow(title, st.homeFeed.mostWatched, st, vm) { vm.openSeriesCollection(title, st.homeFeed.mostWatched) }
                 }
             }
         }
@@ -694,20 +709,46 @@ private fun CatalogAlphabetRail(
     modifier: Modifier = Modifier,
     enabledLetters: Set<String> = letters.toSet()
 ) {
-    Surface(modifier = modifier.padding(end = 2.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .88f)) {
-        Column(Modifier.padding(horizontal = 4.dp, vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Surface(
+        modifier = modifier.width(34.dp).fillMaxHeight(.94f).padding(end = 2.dp),
+        shape = RoundedCornerShape(17.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        tonalElevation = 6.dp
+    ) {
+        Column(
+            Modifier.fillMaxSize().padding(vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             letters.forEach { letter ->
-                Text(
-                    text = letter,
-                    modifier = Modifier.clickable(enabled = letter in enabledLetters) { onLetter(letter) }.padding(horizontal = 5.dp, vertical = 1.dp),
-                    color = when {
-                        letter == activeLetter -> MaterialTheme.colorScheme.primary
-                        letter in enabledLetters -> MaterialTheme.colorScheme.onSurfaceVariant
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .30f)
-                    },
-                    fontWeight = if (letter == activeLetter) FontWeight.Black else FontWeight.Medium,
-                    fontSize = 10.sp
-                )
+                val enabled = letter in enabledLetters
+                val selected = letter == activeLetter
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable(enabled = enabled) { onLetter(letter) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    ) {
+                        Text(
+                            text = letter,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                            color = when {
+                                selected -> MaterialTheme.colorScheme.onPrimaryContainer
+                                enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .28f)
+                            },
+                            fontWeight = if (selected) FontWeight.Black else FontWeight.SemiBold,
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
         }
     }
@@ -751,17 +792,19 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
-            LibraryScreenControls(
-                filter = filter,
-                onFilter = { filter = it },
-                sort = st.preferences.favoriteSort,
-                onSort = { selectedSlugs = emptySet(); controlsVisible = true; vm.setFavoriteSort(it) },
-                viewMode = st.preferences.favoritesViewMode,
-                onViewMode = { selectedSlugs = emptySet(); controlsVisible = true; vm.setFavoritesViewMode(it) },
-                suggestions = favoriteSuggestions,
-                onSuggestion = { series -> st.preferences.favorites.firstOrNull { it.slug == series.slug }?.let(vm::selectFavorite) }
-            )
+        if (allFavorites.isNotEmpty()) {
+            SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
+                LibraryScreenControls(
+                    filter = filter,
+                    onFilter = { filter = it },
+                    sort = st.preferences.favoriteSort,
+                    onSort = { selectedSlugs = emptySet(); controlsVisible = true; vm.setFavoriteSort(it) },
+                    viewMode = st.preferences.favoritesViewMode,
+                    onViewMode = { selectedSlugs = emptySet(); controlsVisible = true; vm.setFavoritesViewMode(it) },
+                    suggestions = favoriteSuggestions,
+                    onSuggestion = { series -> st.preferences.favorites.firstOrNull { it.slug == series.slug }?.let(vm::selectFavorite) }
+                )
+            }
         }
         if (selectionMode) {
             LibrarySelectionToolbar(
@@ -928,21 +971,23 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
-            Column {
-                LibraryScreenControls(
-                    filter = filter,
-                    onFilter = { filter = it },
-                    sort = st.preferences.watchedSort,
-                    onSort = { selectedSlugs = emptySet(); controlsVisible = true; vm.setWatchedSort(it) },
-                    viewMode = st.preferences.historyViewMode,
-                    onViewMode = { selectedSlugs = emptySet(); controlsVisible = true; vm.setHistoryViewMode(it) },
-                    suggestions = historySuggestions,
-                    onSuggestion = { series -> allWatched.firstOrNull { it.slug == series.slug }?.let(vm::selectWatched) }
-                )
-                LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(HistoryFilter.entries) { item ->
-                        FilterChip(selected = statusFilter == item, onClick = { selectedSlugs = emptySet(); controlsVisible = true; statusFilter = item }, label = { Text(stringResource(item.labelRes)) })
+        if (allWatched.isNotEmpty()) {
+            SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
+                Column {
+                    LibraryScreenControls(
+                        filter = filter,
+                        onFilter = { filter = it },
+                        sort = st.preferences.watchedSort,
+                        onSort = { selectedSlugs = emptySet(); controlsVisible = true; vm.setWatchedSort(it) },
+                        viewMode = st.preferences.historyViewMode,
+                        onViewMode = { selectedSlugs = emptySet(); controlsVisible = true; vm.setHistoryViewMode(it) },
+                        suggestions = historySuggestions,
+                        onSuggestion = { series -> allWatched.firstOrNull { it.slug == series.slug }?.let(vm::selectWatched) }
+                    )
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(HistoryFilter.entries) { item ->
+                            FilterChip(selected = statusFilter == item, onClick = { selectedSlugs = emptySet(); controlsVisible = true; statusFilter = item }, label = { Text(stringResource(item.labelRes)) })
+                        }
                     }
                 }
             }
@@ -2267,176 +2312,369 @@ fun AnimeInfoScreen(
 }
 @Composable
 fun SettingsScreen(
-    prefs: AppPreferences,
+    st: UiState,
     vm: AppViewModel,
     onDismiss: () -> Unit,
     onDiagnostics: () -> Unit
 ) {
+    val prefs = st.preferences
     val context = LocalContext.current
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refreshCatalogMetadata() }
+    var confirmMetadataDelete by rememberSaveable { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        vm.refreshCatalogMetadata()
+    }
+    val exportMetadataLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let(vm::exportOfflineMetadata) }
+    val importMetadataLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(vm::importOfflineMetadata) }
     val startMetadataRefresh = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) else vm.refreshCatalogMetadata()
+        ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        else vm.refreshCatalogMetadata()
     }
+
+    LaunchedEffect(Unit) { vm.checkOfflineMetadata() }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground
     ) {
-    Column(Modifier.fillMaxSize().systemBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
-            Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-        }
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                Text(stringResource(R.string.playback_settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.preferred_language), fontWeight = FontWeight.Bold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Language.DEFAULT_PRIORITY.forEach { lang ->
-                        FilterChip(selected = prefs.languagePriority.firstOrNull() == lang, onClick = { vm.setPrimaryLanguage(lang) }, label = { Text(lang.localizedLabel()) })
-                    }
+        Column(Modifier.fillMaxSize().systemBarsPadding()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                    Text(
+                        stringResource(R.string.settings_subtitle),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
-            item {
-                Text(stringResource(R.string.hoster_order), fontWeight = FontWeight.Bold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    HosterCatalog.DEFAULT_PRIORITY.forEach { hoster ->
-                        FilterChip(
-                            selected = HosterCatalog.normalize(prefs.hosterPriority.firstOrNull().orEmpty()) == HosterCatalog.normalize(hoster),
-                            onClick = { vm.setPrimaryHoster(hoster) },
-                            label = { Text(stringResource(R.string.hoster_first, hoster)) },
-                            leadingIcon = { Icon(Icons.Default.Tune, null, Modifier.size(16.dp)) }
-                        )
-                    }
-                }
-            }
-            item { SettingSwitch(stringResource(R.string.verify_stream_before_start), stringResource(R.string.verify_stream_before_start_desc), prefs.verifyStreams, vm::setVerifyStreams) }
-            item { SettingSwitch(stringResource(R.string.auto_next), stringResource(R.string.auto_next_desc), prefs.autoNextEnabled, vm::setAutoNextEnabled) }
-            item { SettingSwitch(stringResource(R.string.external_player), stringResource(R.string.external_player_desc), prefs.allowExternalPlayer, vm::setAllowExternalPlayer) }
-            item { SettingSwitch(stringResource(R.string.auto_play_preferred_hoster), stringResource(R.string.auto_play_preferred_hoster_desc), prefs.autoPlayPreferredHoster, vm::setAutoPlayPreferredHoster) }
-            item {
-                HorizontalDivider()
-                Text(
-                    stringResource(R.string.web_adblock),
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(top = 12.dp)
-                )
-            }
-            item { SettingSwitch(stringResource(R.string.web_adblock), stringResource(R.string.web_adblock_desc), prefs.webAdBlockEnabled, vm::setWebAdBlockEnabled) }
-            if (prefs.webAdBlockEnabled) {
+
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
                 item {
-                    Text(stringResource(R.string.web_filter_lists), fontWeight = FontWeight.Bold)
-                    FlowRow(
-                        modifier = Modifier.padding(top = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    SettingsSectionCard(
+                        title = stringResource(R.string.playback_settings),
+                        subtitle = stringResource(R.string.playback_settings_desc)
                     ) {
-                        listOf(
-                            WebFilterList.ADVERTISING to R.string.web_filter_advertising,
-                            WebFilterList.TRACKING to R.string.web_filter_tracking,
-                            WebFilterList.POPUPS to R.string.web_filter_popups,
-                            WebFilterList.REDIRECTS to R.string.web_filter_redirects
-                        ).forEach { (id, label) ->
-                            FilterChip(
-                                selected = id in prefs.webFilterLists,
-                                onClick = {
-                                    val updated = prefs.webFilterLists.toMutableSet().apply {
-                                        if (!add(id)) remove(id)
-                                    }
-                                    vm.setWebFilterLists(updated)
-                                },
-                                label = { Text(stringResource(label)) }
-                            )
+                        Text(stringResource(R.string.preferred_language), fontWeight = FontWeight.Bold)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Language.DEFAULT_PRIORITY.forEach { lang ->
+                                FilterChip(
+                                    selected = prefs.languagePriority.firstOrNull() == lang,
+                                    onClick = { vm.setPrimaryLanguage(lang) },
+                                    label = { Text(lang.localizedLabel()) }
+                                )
+                            }
                         }
+                        Text(stringResource(R.string.hoster_order), fontWeight = FontWeight.Bold)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            HosterCatalog.DEFAULT_PRIORITY.forEach { hoster ->
+                                FilterChip(
+                                    selected = HosterCatalog.normalize(prefs.hosterPriority.firstOrNull().orEmpty()) == HosterCatalog.normalize(hoster),
+                                    onClick = { vm.setPrimaryHoster(hoster) },
+                                    label = { Text(stringResource(R.string.hoster_first, hoster)) },
+                                    leadingIcon = { Icon(Icons.Default.Tune, null, Modifier.size(16.dp)) }
+                                )
+                            }
+                        }
+                        SettingSwitch(stringResource(R.string.verify_stream_before_start), stringResource(R.string.verify_stream_before_start_desc), prefs.verifyStreams, vm::setVerifyStreams)
+                        SettingSwitch(stringResource(R.string.auto_next), stringResource(R.string.auto_next_desc), prefs.autoNextEnabled, vm::setAutoNextEnabled)
+                        SettingSwitch(stringResource(R.string.external_player), stringResource(R.string.external_player_desc), prefs.allowExternalPlayer, vm::setAllowExternalPlayer)
+                        SettingSwitch(stringResource(R.string.auto_play_preferred_hoster), stringResource(R.string.auto_play_preferred_hoster_desc), prefs.autoPlayPreferredHoster, vm::setAutoPlayPreferredHoster)
                     }
                 }
-            }
-            item {
-                Text(stringResource(R.string.startup_area), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                Text(stringResource(R.string.startup_area_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(
-                    modifier = Modifier.padding(top = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf(HomeTab.START, HomeTab.FAVORITES, HomeTab.HISTORY).forEach { tab ->
-                        FilterChip(
-                            selected = prefs.startupTab == tab.name,
-                            onClick = { vm.setStartupTab(tab) },
-                            label = { Text(stringResource(tab.labelRes)) }
-                        )
-                    }
-                }
-            }
-            item {
-                HorizontalDivider()
-                Text(stringResource(R.string.display_settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(top = 12.dp))
-            }
-            item { SettingSwitch(stringResource(R.string.dynamic_colors), stringResource(R.string.dynamic_colors_desc), prefs.useDynamicColors, vm::setDynamicColors) }
-            item {
-                Text(stringResource(R.string.accent_color), fontWeight = FontWeight.Bold)
-                Text(stringResource(R.string.accent_color_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(
-                    modifier = Modifier.padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    AppAccent.entries.forEach { accent ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Surface(
-                                modifier = Modifier.size(46.dp).clip(CircleShape).clickable { vm.setAccentColor(accent) },
-                                shape = CircleShape,
-                                color = accentPreviewColor(accent),
-                                tonalElevation = if (prefs.accentColor == accent) 8.dp else 0.dp
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    if (prefs.accentColor == accent && !prefs.useDynamicColors) {
-                                        Icon(Icons.Default.CheckCircle, stringResource(R.string.selected), tint = accentPreviewContentColor(accent))
-                                    }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.web_and_security),
+                        subtitle = stringResource(R.string.web_and_security_desc)
+                    ) {
+                        SettingSwitch(stringResource(R.string.web_adblock), stringResource(R.string.web_adblock_desc), prefs.webAdBlockEnabled, vm::setWebAdBlockEnabled)
+                        if (prefs.webAdBlockEnabled) {
+                            Text(stringResource(R.string.web_filter_lists), fontWeight = FontWeight.Bold)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(
+                                    WebFilterList.ADVERTISING to R.string.web_filter_advertising,
+                                    WebFilterList.TRACKING to R.string.web_filter_tracking,
+                                    WebFilterList.POPUPS to R.string.web_filter_popups,
+                                    WebFilterList.REDIRECTS to R.string.web_filter_redirects
+                                ).forEach { (id, label) ->
+                                    FilterChip(
+                                        selected = id in prefs.webFilterLists,
+                                        onClick = {
+                                            val updated = prefs.webFilterLists.toMutableSet().apply { if (!add(id)) remove(id) }
+                                            vm.setWebFilterLists(updated)
+                                        },
+                                        label = { Text(stringResource(label)) }
+                                    )
                                 }
                             }
-                            Text(stringResource(accent.labelRes()), style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.home_screen_settings),
+                        subtitle = stringResource(R.string.home_screen_settings_desc)
+                    ) {
+                        Text(stringResource(R.string.startup_area), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.startup_area_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(HomeTab.START, HomeTab.FAVORITES, HomeTab.HISTORY).forEach { tab ->
+                                FilterChip(
+                                    selected = prefs.startupTab == tab.name,
+                                    onClick = { vm.setStartupTab(tab) },
+                                    label = { Text(stringResource(tab.labelRes)) }
+                                )
+                            }
+                        }
+                        HorizontalDivider()
+                        Text(stringResource(R.string.home_sections), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.home_sections_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        prefs.homeSectionOrder.forEachIndexed { index, section ->
+                            val visible = section !in prefs.hiddenHomeSections
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.medium,
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)
+                            ) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Switch(checked = visible, onCheckedChange = { vm.setHomeSectionVisible(section, it) })
+                                    Text(stringResource(section.labelRes), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                    IconButton(
+                                        enabled = index > 0,
+                                        onClick = { vm.moveHomeSection(section, -1) }
+                                    ) { Icon(Icons.Default.ArrowUpward, stringResource(R.string.move_up)) }
+                                    IconButton(
+                                        enabled = index < prefs.homeSectionOrder.lastIndex,
+                                        onClick = { vm.moveHomeSection(section, 1) }
+                                    ) { Icon(Icons.Default.ArrowDownward, stringResource(R.string.move_down)) }
+                                }
+                            }
+                        }
+                        HorizontalDivider()
+                        SettingSwitch(
+                            stringResource(R.string.home_offline_mode),
+                            stringResource(R.string.home_offline_mode_desc),
+                            prefs.homeOfflineMode,
+                            vm::setHomeOfflineMode
+                        )
+                        OutlinedButton(onClick = vm::refreshHomeMetadata, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Refresh, null)
+                            Text(" " + stringResource(R.string.refresh_home_metadata))
+                        }
+                    }
+                }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.metadata_management),
+                        subtitle = stringResource(R.string.metadata_management_desc)
+                    ) {
+                        val inventoryText = when {
+                            st.metadataInventoryChecking -> stringResource(R.string.metadata_inventory_checking)
+                            st.offlineMetadataCount > 0 -> stringResource(R.string.metadata_inventory_count, st.offlineMetadataCount)
+                            else -> stringResource(R.string.metadata_inventory_empty)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (st.metadataInventoryChecking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                            else Icon(
+                                if (st.offlineMetadataCount > 0) Icons.Default.CheckCircle else Icons.Default.Info,
+                                null,
+                                tint = if (st.offlineMetadataCount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(inventoryText, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        if (st.catalogMetadataUpdating) {
+                            val total = st.catalogMetadataTotal
+                            val completed = st.catalogMetadataCompleted
+                            LinearProgressIndicator(
+                                progress = { if (total > 0) completed.toFloat() / total else 0f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Text(
+                                if (total > 0) stringResource(R.string.catalog_metadata_progress, completed, total)
+                                else stringResource(R.string.metadata_notification_preparing),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(
+                            onClick = startMetadataRefresh,
+                            enabled = !st.catalogMetadataUpdating,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.CloudDownload, null)
+                            Text(" " + stringResource(R.string.metadata_action_update))
+                        }
+                        OutlinedButton(
+                            onClick = { confirmMetadataDelete = true },
+                            enabled = !st.metadataInventoryChecking && !st.catalogMetadataUpdating && st.offlineMetadataCount > 0,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Delete, null)
+                            Text(" " + stringResource(R.string.metadata_action_delete))
+                        }
+                        OutlinedButton(
+                            onClick = { exportMetadataLauncher.launch("aniworld-offline-metadata.json") },
+                            enabled = !st.metadataInventoryChecking && st.offlineMetadataCount > 0,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.FileDownload, null)
+                            Text(" " + stringResource(R.string.metadata_action_export))
+                        }
+                        OutlinedButton(
+                            onClick = { importMetadataLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.FileUpload, null)
+                            Text(" " + stringResource(R.string.metadata_action_import))
+                        }
+                        Text(stringResource(R.string.metadata_file_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.display_settings),
+                        subtitle = stringResource(R.string.display_settings_desc)
+                    ) {
+                        SettingSwitch(stringResource(R.string.dynamic_colors), stringResource(R.string.dynamic_colors_desc), prefs.useDynamicColors, vm::setDynamicColors)
+                        Text(stringResource(R.string.accent_color), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.accent_color_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AppAccent.entries.forEach { accent ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Surface(
+                                        modifier = Modifier.size(46.dp).clip(CircleShape).clickable { vm.setAccentColor(accent) },
+                                        shape = CircleShape,
+                                        color = accentPreviewColor(accent),
+                                        tonalElevation = if (prefs.accentColor == accent) 8.dp else 0.dp
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (prefs.accentColor == accent && !prefs.useDynamicColors) {
+                                                Icon(Icons.Default.CheckCircle, stringResource(R.string.selected), tint = accentPreviewContentColor(accent))
+                                            }
+                                        }
+                                    }
+                                    Text(stringResource(accent.labelRes()), style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.diagnostics_and_logs),
+                        subtitle = stringResource(R.string.diagnostics_and_logs_desc)
+                    ) {
+                        SettingSwitch(
+                            stringResource(R.string.diagnostics_logging),
+                            stringResource(R.string.diagnostics_logging_desc),
+                            prefs.diagnosticsEnabled,
+                            vm::setDiagnosticsEnabled
+                        )
+                        OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.BugReport, null)
+                            Text(" " + stringResource(R.string.open_diagnostics))
+                        }
+                    }
+                }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.maintenance),
+                        subtitle = stringResource(R.string.maintenance_desc)
+                    ) {
+                        OutlinedButton(onClick = vm::resetCoverDataAndCache, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.ClearAll, null)
+                            Text(" " + stringResource(R.string.reset_cover_cache))
+                        }
+                        OutlinedButton(onClick = vm::resetSettingsButtonPosition, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Tune, null)
+                            Text(" " + stringResource(R.string.reset_settings_button_position))
+                        }
+                    }
+                }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.about_and_credits),
+                        subtitle = stringResource(R.string.credits_created_by)
+                    ) {
+                        OutlinedButton(
+                            onClick = { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/lootdev78"))) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Icon(Icons.Default.OpenInBrowser, null); Text(" GitHub · lootdev78") }
+                        OutlinedButton(
+                            onClick = { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/lootdev78/aniworld-android"))) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Icon(Icons.Default.OpenInBrowser, null); Text(" aniworld-android") }
+                    }
+                }
+                item { Spacer(Modifier.height(18.dp)) }
             }
-            item {
-                HorizontalDivider()
-                Text(stringResource(R.string.catalog_and_cache), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 12.dp))
-            }
-            item { OutlinedButton(onClick = startMetadataRefresh, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.CloudDownload, null); Text(" " + stringResource(R.string.update_metadata)) } }
-            item { OutlinedButton(onClick = vm::resetCoverDataAndCache, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.ClearAll, null); Text(" " + stringResource(R.string.reset_cover_cache)) } }
-            item { OutlinedButton(onClick = vm::resetSettingsButtonPosition, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Tune, null); Text(" " + stringResource(R.string.reset_settings_button_position)) } }
-            item {
-                HorizontalDivider()
-                Text(stringResource(R.string.tools), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 12.dp))
-            }
-            item { OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.BugReport, null); Text(stringResource(R.string.diagnostics)) } }
-            item {
-                HorizontalDivider()
-                Text(stringResource(R.string.about_and_credits), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, modifier = Modifier.padding(top = 12.dp))
-                Text(stringResource(R.string.credits_created_by), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(
-                    onClick = { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/lootdev78"))) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) { Icon(Icons.Default.OpenInBrowser, null); Text(" GitHub · lootdev78") }
-                OutlinedButton(
-                    onClick = { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/lootdev78/aniworld-android"))) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) { Icon(Icons.Default.OpenInBrowser, null); Text(" aniworld-android") }
-            }
-            item { Spacer(Modifier.height(18.dp)) }
         }
     }
+
+    if (confirmMetadataDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmMetadataDelete = false },
+            title = { Text(stringResource(R.string.metadata_delete_confirm_title)) },
+            text = { Text(stringResource(R.string.metadata_delete_confirm_body, st.offlineMetadataCount)) },
+            confirmButton = {
+                Button(onClick = {
+                    confirmMetadataDelete = false
+                    vm.deleteOfflineMetadata()
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmMetadataDelete = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+}
+
+@Composable
+private fun SettingsSectionCard(
+    title: String,
+    subtitle: String,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            HorizontalDivider()
+            content()
+        }
     }
 }
 

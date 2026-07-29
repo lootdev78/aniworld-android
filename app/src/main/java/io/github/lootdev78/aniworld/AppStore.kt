@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -26,6 +28,7 @@ private data class SettingsSnapshot(
     val favoriteSort: LibrarySort,
     val watchedSort: LibrarySort,
     val permissionIntroSeen: Boolean,
+    val notificationPermissionAsked: Boolean,
     val useDynamicColors: Boolean,
     val lastHomeTab: String,
     val initialPreloadCompleted: Boolean,
@@ -37,12 +40,16 @@ private data class SettingsSnapshot(
     val autoPlayPreferredHoster: Boolean,
     val allowExternalPlayer: Boolean,
     val startupTab: String,
+    val homeOfflineMode: Boolean,
     val accentColor: AppAccent,
     val settingsButtonX: Float,
     val settingsButtonY: Float,
     val catalogViewMode: LibraryViewMode,
     val favoritesViewMode: LibraryViewMode,
-    val historyViewMode: LibraryViewMode
+    val historyViewMode: LibraryViewMode,
+    val diagnosticsEnabled: Boolean,
+    val homeSectionOrder: List<HomeSection>,
+    val hiddenHomeSections: Set<HomeSection>
 )
 
 private data class LibrarySnapshot(
@@ -81,6 +88,7 @@ class AppStore(
                 favoriteSort = parseSort(prefs[FAVORITE_SORT], LibrarySort.CUSTOM),
                 watchedSort = parseSort(prefs[WATCHED_SORT], LibrarySort.UPDATED),
                 permissionIntroSeen = prefs[PERMISSION_INTRO_SEEN] ?: false,
+                notificationPermissionAsked = prefs[NOTIFICATION_PERMISSION_ASKED] ?: false,
                 useDynamicColors = prefs[DYNAMIC_COLORS] ?: false,
                 lastHomeTab = prefs[LAST_HOME_TAB] ?: "START",
                 initialPreloadCompleted = prefs[INITIAL_PRELOAD_COMPLETED] ?: false,
@@ -92,12 +100,16 @@ class AppStore(
                 autoPlayPreferredHoster = prefs[AUTO_PLAY_PREFERRED_HOSTER] ?: false,
                 allowExternalPlayer = prefs[ALLOW_EXTERNAL_PLAYER] ?: false,
                 startupTab = prefs[STARTUP_TAB] ?: "START",
+                homeOfflineMode = prefs[HOME_OFFLINE_MODE] ?: false,
                 accentColor = prefs[ACCENT_COLOR]?.let { raw -> AppAccent.entries.firstOrNull { it.name == raw } } ?: AppAccent.RED,
                 settingsButtonX = (prefs[SETTINGS_BUTTON_X] ?: 0.92f).coerceIn(0f, 1f),
                 settingsButtonY = (prefs[SETTINGS_BUTTON_Y] ?: 0.72f).coerceIn(0f, 1f),
                 catalogViewMode = parseViewMode(prefs[CATALOG_VIEW_MODE], LibraryViewMode.DETAILED),
                 favoritesViewMode = parseViewMode(prefs[FAVORITES_VIEW_MODE], LibraryViewMode.DETAILED),
-                historyViewMode = parseViewMode(prefs[HISTORY_VIEW_MODE], LibraryViewMode.DETAILED)
+                historyViewMode = parseViewMode(prefs[HISTORY_VIEW_MODE], LibraryViewMode.DETAILED),
+                diagnosticsEnabled = prefs[DIAGNOSTICS_ENABLED] ?: true,
+                homeSectionOrder = HomeSection.normalizeOrder(parseStoredList(prefs[HOME_SECTION_ORDER])),
+                hiddenHomeSections = parseStoredList(prefs[HIDDEN_HOME_SECTIONS]).mapNotNull { raw -> HomeSection.entries.firstOrNull { it.name == raw } }.toSet()
             )
         }
 
@@ -146,6 +158,7 @@ class AppStore(
             favoriteSort = settings.favoriteSort,
             watchedSort = settings.watchedSort,
             permissionIntroSeen = settings.permissionIntroSeen,
+            notificationPermissionAsked = settings.notificationPermissionAsked,
             useDynamicColors = settings.useDynamicColors,
             lastHomeTab = settings.lastHomeTab,
             initialPreloadCompleted = settings.initialPreloadCompleted,
@@ -157,12 +170,16 @@ class AppStore(
             autoPlayPreferredHoster = settings.autoPlayPreferredHoster,
             allowExternalPlayer = settings.allowExternalPlayer,
             startupTab = settings.startupTab,
+            homeOfflineMode = settings.homeOfflineMode,
             accentColor = settings.accentColor,
             settingsButtonX = settings.settingsButtonX,
             settingsButtonY = settings.settingsButtonY,
             catalogViewMode = settings.catalogViewMode,
             favoritesViewMode = settings.favoritesViewMode,
-            historyViewMode = settings.historyViewMode
+            historyViewMode = settings.historyViewMode,
+            diagnosticsEnabled = settings.diagnosticsEnabled,
+            homeSectionOrder = settings.homeSectionOrder,
+            hiddenHomeSections = settings.hiddenHomeSections
         )
     }
 
@@ -220,6 +237,7 @@ class AppStore(
 
     suspend fun setVerifyStreams(enabled: Boolean) = editSafely("Stream-Prüfung speichern") { it[VERIFY_STREAMS] = enabled }
     suspend fun setPermissionIntroSeen() = editSafely("Berechtigungsinfo speichern") { it[PERMISSION_INTRO_SEEN] = true }
+    suspend fun setNotificationPermissionAsked() = editSafely("Benachrichtigungsabfrage speichern") { it[NOTIFICATION_PERMISSION_ASKED] = true }
     suspend fun setFavoriteSort(sort: LibrarySort) = editSafely("Favoriten-Sortierung speichern") { it[FAVORITE_SORT] = sort.name }
     suspend fun setWatchedSort(sort: LibrarySort) = editSafely("Verlauf-Sortierung speichern") { it[WATCHED_SORT] = sort.name }
     suspend fun setDynamicColors(enabled: Boolean) = editSafely("Farbschema speichern") { it[DYNAMIC_COLORS] = enabled }
@@ -247,6 +265,9 @@ class AppStore(
     suspend fun setStartupTab(tab: String) = editSafely("Startbereich speichern") {
         it[STARTUP_TAB] = tab
     }
+    suspend fun setHomeOfflineMode(enabled: Boolean) = editSafely("Startseitenmodus speichern") {
+        it[HOME_OFFLINE_MODE] = enabled
+    }
     suspend fun setAccentColor(accent: AppAccent) = editSafely("Akzentfarbe speichern") {
         it[ACCENT_COLOR] = accent.name
         it[DYNAMIC_COLORS] = false
@@ -272,6 +293,29 @@ class AppStore(
     }
     suspend fun setHistoryViewMode(mode: LibraryViewMode) = editSafely("Verlaufsansicht speichern") {
         it[HISTORY_VIEW_MODE] = mode.name
+    }
+    suspend fun setDiagnosticsEnabled(enabled: Boolean) = editSafely("Diagnoseeinstellung speichern") {
+        it[DIAGNOSTICS_ENABLED] = enabled
+    }
+    suspend fun setHomeSectionVisible(section: HomeSection, visible: Boolean) = editSafely("Startseitenbereich speichern") { prefs ->
+        val hidden = parseStoredList(prefs[HIDDEN_HOME_SECTIONS]).toMutableSet()
+        if (visible) hidden.remove(section.name) else hidden.add(section.name)
+        prefs[HIDDEN_HOME_SECTIONS] = hidden.sorted().joinToString(",")
+    }
+    suspend fun moveHomeSection(section: HomeSection, delta: Int) = editSafely("Startseitenreihenfolge speichern") { prefs ->
+        val order = HomeSection.normalizeOrder(parseStoredList(prefs[HOME_SECTION_ORDER])).toMutableList()
+        val from = order.indexOf(section)
+        if (from < 0 || order.isEmpty()) return@editSafely
+        val to = (from + delta).coerceIn(0, order.lastIndex)
+        if (from != to) order.add(to, order.removeAt(from))
+        prefs[HOME_SECTION_ORDER] = order.joinToString(",") { it.name }
+    }
+
+    suspend fun offlineMetadataCount(): Int = metadataDao.count()
+    suspend fun deleteOfflineMetadata() {
+        metadataDao.clear()
+        clearHomeFeedCache()
+        editSafely("Metadatenstatus zurücksetzen") { it[INITIAL_PRELOAD_COMPLETED] = false }
     }
 
     suspend fun rememberSearch(query: String) {
@@ -336,6 +380,194 @@ class AppStore(
         )
         metadataDao.upsert(SeriesMetadataEntity.from(merged))
     }
+
+    suspend fun saveHomeFeed(feed: HomeFeed) = withContext(Dispatchers.IO) {
+        if (feed.isEmpty) return@withContext
+        homeFeedCacheFile().writeText(homeFeedToJson(feed).toString())
+    }
+
+    suspend fun loadHomeFeed(): HomeFeed? = withContext(Dispatchers.IO) {
+        readHomeFeedCache()
+    }
+
+    suspend fun clearHomeFeedCache() = withContext(Dispatchers.IO) {
+        runCatching { homeFeedCacheFile().delete() }
+    }
+
+    suspend fun exportOfflineMetadata(): String = withContext(Dispatchers.IO) {
+        val catalogArray = JSONArray()
+        metadataDao.all().forEach { entity ->
+            catalogArray.put(seriesToJson(entity.toModel()).put("updatedAt", entity.updatedAt))
+        }
+        JSONObject()
+            .put("format", "aniworld-offline-metadata")
+            .put("version", 1)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("catalog", catalogArray)
+            .apply { readHomeFeedCache()?.let { put("homeFeed", homeFeedToJson(it)) } }
+            .toString(2)
+    }
+
+    suspend fun importOfflineMetadata(raw: String): MetadataImportResult = withContext(Dispatchers.IO) {
+        val root = JSONObject(raw)
+        require(root.optString("format") == "aniworld-offline-metadata") { "Unbekanntes Metadatenformat" }
+        val catalog = root.optJSONArray("catalog") ?: JSONArray()
+        val entities = buildList {
+            for (index in 0 until catalog.length()) {
+                val item = catalog.optJSONObject(index) ?: continue
+                val series = seriesFromJson(item) ?: continue
+                add(SeriesMetadataEntity.from(series, item.optLong("updatedAt", System.currentTimeMillis())))
+            }
+        }.distinctBy { it.slug }
+        require(entities.isNotEmpty()) { "Die Datei enthält keine gültigen Katalog-Metadaten" }
+        database.withTransaction { metadataDao.upsertAll(entities) }
+        root.optJSONObject("homeFeed")?.let { homeJson ->
+            homeFeedFromJson(homeJson)?.takeUnless { it.isEmpty }?.let { feed ->
+                homeFeedCacheFile().writeText(homeFeedToJson(feed).toString())
+            }
+        }
+        setInitialPreloadCompleted()
+        MetadataImportResult(entities.size, root.optJSONObject("homeFeed") != null)
+    }
+
+    private fun homeFeedCacheFile() = context.filesDir.resolve(HOME_FEED_CACHE_FILE)
+
+    private fun readHomeFeedCache(): HomeFeed? = runCatching {
+        val file = homeFeedCacheFile()
+        if (!file.isFile) null else homeFeedFromJson(JSONObject(file.readText()))
+    }.onFailure { AppLogger.warn("Speicher", "Offline-Startseite konnte nicht gelesen werden", it.message.orEmpty()) }
+        .getOrNull()
+
+    private fun seriesToJson(series: Series): JSONObject = JSONObject()
+        .put("title", series.title)
+        .put("slug", series.slug)
+        .put("url", series.url)
+        .put("description", series.description)
+        .put("coverUrl", series.coverUrl)
+        .put("genres", JSONArray(series.genres))
+        .put("year", series.year)
+        .put("ageRating", series.ageRating)
+
+    private fun seriesFromJson(item: JSONObject): Series? {
+        val slug = item.optString("slug").trim()
+        val title = item.optString("title").trim()
+        if (slug.isBlank() || title.isBlank()) return null
+        val genres = item.optJSONArray("genres")?.let { array ->
+            buildList {
+                for (i in 0 until array.length()) {
+                    val genre = array.optString(i)
+                    if (genre.isNotBlank()) add(genre)
+                }
+            }
+        }.orEmpty()
+        return Series(
+            title = title,
+            slug = slug,
+            url = item.optString("url").ifBlank { "https://aniworld.to/anime/stream/$slug" },
+            description = item.optString("description"),
+            coverUrl = item.optString("coverUrl"),
+            genres = genres,
+            year = item.optString("year"),
+            ageRating = item.optString("ageRating")
+        )
+    }
+
+    private fun episodeToJson(episode: Episode): JSONObject = JSONObject()
+        .put("season", episode.season)
+        .put("number", episode.number)
+        .put("title", episode.title)
+        .put("secondaryTitle", episode.secondaryTitle)
+        .put("description", episode.description)
+        .put("releasedAt", episode.releasedAt)
+        .put("url", episode.url)
+        .put("seriesSlug", episode.seriesSlug)
+        .put("seriesTitle", episode.seriesTitle)
+
+    private fun episodeFromJson(item: JSONObject): Episode? {
+        val slug = item.optString("seriesSlug")
+        val url = item.optString("url")
+        if (slug.isBlank() || url.isBlank()) return null
+        return Episode(
+            season = item.optInt("season"),
+            number = item.optInt("number"),
+            title = item.optString("title"),
+            secondaryTitle = item.optString("secondaryTitle"),
+            description = item.optString("description"),
+            releasedAt = item.optString("releasedAt"),
+            url = url,
+            seriesSlug = slug,
+            seriesTitle = item.optString("seriesTitle")
+        )
+    }
+
+    private fun homeFeedToJson(feed: HomeFeed): JSONObject = JSONObject()
+        .put("loadedAt", feed.loadedAt)
+        .put("news", JSONArray().apply {
+            feed.news.forEach { item -> put(JSONObject().put("title", item.title).put("url", item.url).put("imageUrl", item.imageUrl).put("subtitle", item.subtitle)) }
+        })
+        .put("featured", feed.featured?.let(::seriesToJson))
+        .put("popularAtAniWorld", JSONArray(feed.popularAtAniWorld.map(::seriesToJson)))
+        .put("latestEpisodes", JSONArray().apply {
+            feed.latestEpisodes.forEach { item ->
+                put(JSONObject()
+                    .put("series", seriesToJson(item.series))
+                    .put("episode", episodeToJson(item.episode))
+                    .put("releasedAt", item.releasedAt)
+                    .put("languages", JSONArray(item.languages.map(Language::token)))
+                    .put("isNew", item.isNew))
+            }
+        })
+        .put("newAnimes", JSONArray(feed.newAnimes.map(::seriesToJson)))
+        .put("currentlyPopular", JSONArray(feed.currentlyPopular.map(::seriesToJson)))
+        .put("communityWatching", JSONArray(feed.communityWatching.map(::seriesToJson)))
+        .put("mostWatched", JSONArray(feed.mostWatched.map(::seriesToJson)))
+
+    private fun homeFeedFromJson(root: JSONObject): HomeFeed? = runCatching {
+        fun seriesList(name: String): List<Series> {
+            val array = root.optJSONArray(name) ?: return emptyList()
+            return buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val series = seriesFromJson(item) ?: continue
+                    add(series)
+                }
+            }
+        }
+        val news = root.optJSONArray("news")?.let { array ->
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val title = item.optString("title")
+                    val url = item.optString("url")
+                    if (title.isNotBlank() && url.isNotBlank()) add(HomeNews(title, url, item.optString("imageUrl"), item.optString("subtitle")))
+                }
+            }
+        }.orEmpty()
+        val latest = root.optJSONArray("latestEpisodes")?.let { array ->
+            buildList {
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val series = item.optJSONObject("series")?.let(::seriesFromJson) ?: continue
+                    val episode = item.optJSONObject("episode")?.let(::episodeFromJson) ?: continue
+                    val languages = item.optJSONArray("languages")?.let { languageArray ->
+                        buildList { for (j in 0 until languageArray.length()) add(Language.fromToken(languageArray.optString(j))) }.filter { it != Language.UNKNOWN }
+                    }.orEmpty()
+                    add(HomeEpisode(series, episode, item.optString("releasedAt"), languages, item.optBoolean("isNew")))
+                }
+            }
+        }.orEmpty()
+        HomeFeed(
+            news = news,
+            featured = root.optJSONObject("featured")?.let(::seriesFromJson),
+            popularAtAniWorld = seriesList("popularAtAniWorld"),
+            latestEpisodes = latest,
+            newAnimes = seriesList("newAnimes"),
+            currentlyPopular = seriesList("currentlyPopular"),
+            communityWatching = seriesList("communityWatching"),
+            mostWatched = seriesList("mostWatched"),
+            loadedAt = root.optLong("loadedAt")
+        )
+    }.getOrNull()
 
     suspend fun moveFavorite(slug: String, delta: Int) {
         dao.moveFavorite(slug, delta)
@@ -538,6 +770,10 @@ class AppStore(
     private fun parseViewMode(raw: String?, default: LibraryViewMode): LibraryViewMode =
         runCatching { LibraryViewMode.valueOf(raw.orEmpty()) }.getOrDefault(default)
 
+    private fun parseStoredList(raw: String?): List<String> = raw.orEmpty().split(',')
+        .map(String::trim)
+        .filter(String::isNotBlank)
+
     private fun parseFilterLists(raw: String?): Set<String> = raw.orEmpty().split(',')
         .map(String::trim)
         .filter { it in WebFilterList.ALL_IDS }
@@ -606,6 +842,7 @@ class AppStore(
         private val FAVORITE_SORT = stringPreferencesKey("favorite_sort")
         private val WATCHED_SORT = stringPreferencesKey("watched_sort")
         private val PERMISSION_INTRO_SEEN = booleanPreferencesKey("permission_intro_seen")
+        private val NOTIFICATION_PERMISSION_ASKED = booleanPreferencesKey("notification_permission_asked")
         private val DYNAMIC_COLORS = booleanPreferencesKey("dynamic_colors")
         private val LAST_HOME_TAB = stringPreferencesKey("last_home_tab")
         private val INITIAL_PRELOAD_COMPLETED = booleanPreferencesKey("initial_preload_completed")
@@ -617,12 +854,16 @@ class AppStore(
         private val AUTO_PLAY_PREFERRED_HOSTER = booleanPreferencesKey("auto_play_preferred_hoster")
         private val ALLOW_EXTERNAL_PLAYER = booleanPreferencesKey("allow_external_player")
         private val STARTUP_TAB = stringPreferencesKey("startup_tab")
+        private val HOME_OFFLINE_MODE = booleanPreferencesKey("home_offline_mode")
         private val ACCENT_COLOR = stringPreferencesKey("accent_color")
         private val SETTINGS_BUTTON_X = floatPreferencesKey("settings_button_x")
         private val SETTINGS_BUTTON_Y = floatPreferencesKey("settings_button_y")
         private val CATALOG_VIEW_MODE = stringPreferencesKey("catalog_view_mode")
         private val FAVORITES_VIEW_MODE = stringPreferencesKey("favorites_view_mode")
         private val HISTORY_VIEW_MODE = stringPreferencesKey("history_view_mode")
+        private val DIAGNOSTICS_ENABLED = booleanPreferencesKey("diagnostics_enabled")
+        private val HOME_SECTION_ORDER = stringPreferencesKey("home_section_order")
+        private val HIDDEN_HOME_SECTIONS = stringPreferencesKey("hidden_home_sections")
         private val ROOM_MIGRATION_DONE = booleanPreferencesKey("room_migration_done")
 
         private val LEGACY_WATCHLIST_JSON = stringPreferencesKey("watchlist_json")
@@ -633,6 +874,7 @@ class AppStore(
         private val LEGACY_SEASON_TOTALS_JSON = stringPreferencesKey("season_totals_json")
         private val LEGACY_FAVORITE_ORDER = stringPreferencesKey("favorite_order")
         private val LEGACY_WATCHED_ORDER = stringPreferencesKey("watched_order")
+        private const val HOME_FEED_CACHE_FILE = "home_feed_offline.json"
     }
 }
 

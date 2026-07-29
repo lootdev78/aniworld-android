@@ -17,8 +17,8 @@ SRC = APP / "src" / "main"
 KOTLIN = SRC / "java" / "io" / "github" / "lootdev78" / "aniworld"
 RES = SRC / "res"
 EXPECTED_PACKAGE = "io.github.lootdev78.aniworld"
-EXPECTED_VERSION_CODE = 62
-EXPECTED_VERSION_NAME = "1.7.5-hotspot-library-ui"
+EXPECTED_VERSION_CODE = 64
+EXPECTED_VERSION_NAME = "1.7.7-settings-home-cast"
 
 errors: list[str] = []
 notes: list[str] = []
@@ -57,6 +57,11 @@ required_files = [
     KOTLIN / "AppViewModel.kt",
     KOTLIN / "CatalogMetadataWorker.kt",
     KOTLIN / "ChallengeScreen.kt",
+    KOTLIN / "DiagnosticScreen.kt",
+    KOTLIN / "IsolatedWebPageScreen.kt",
+    KOTLIN / "ChromecastController.kt",
+    KOTLIN / "FCast.kt",
+    KOTLIN / "AniWorldCastOptionsProvider.kt",
     KOTLIN / "MediaDetection.kt",
     KOTLIN / "PlaybackService.kt",
     KOTLIN / "PlayerScreen.kt",
@@ -84,6 +89,7 @@ require('android:usesCleartextTraffic="false"' in manifest_text, "Cleartext-Traf
 require('android:name=".PlaybackService"' in manifest_text, "PlaybackService fehlt im Manifest")
 require('android:supportsPictureInPicture="true"' in manifest_text, "Picture-in-Picture fehlt im Manifest")
 require('android:name=".AniWorldApplication"' in manifest_text, "Application-Klasse fehlt im Manifest")
+require("AniWorldCastOptionsProvider" in manifest_text, "Google-Cast OptionsProvider fehlt im Manifest")
 
 # XML well-formedness.
 xml_files = sorted({*RES.rglob("*.xml"), manifest_path})
@@ -180,7 +186,19 @@ feature_markers: dict[str, tuple[Path, tuple[str, ...]]] = {
     "Favoriten und Verlauf": (KOTLIN / "UiScreens.kt", ("FavoritesScreen", "HistoryScreen", "LibraryViewMode")),
     "Mehrfachauswahl": (KOTLIN / "UiScreens.kt", ("selectedSlugs", "delete_selected")),
     "Start-Tab und Akzentfarbe": (KOTLIN / "AppStore.kt", ("STARTUP_TAB", "ACCENT_COLOR")),
+    "Metadaten-Dateiimport und -export": (KOTLIN / "AppStore.kt", ("exportOfflineMetadata", "importOfflineMetadata", "aniworld-offline-metadata")),
+    "Offline-Startseite": (KOTLIN / "AppStore.kt", ("HOME_OFFLINE_MODE", "saveHomeFeed", "loadHomeFeed")),
+    "Erststart-Benachrichtigungsrecht": (KOTLIN / "MainActivity.kt", ("POST_NOTIFICATIONS", "notificationPermissionAsked", "RequestPermission")),
     "Auto-Next und bevorzugter Hoster": (KOTLIN / "AppStore.kt", ("AUTO_NEXT_ENABLED", "AUTO_PLAY_PREFERRED_HOSTER")),
+    "Globale Diagnoseumschaltung": (KOTLIN / "AppLogger.kt", ("setEnabled", "if (!enabled)", "_entries.value = emptyList()")),
+    "Diagnose-Vollbild": (KOTLIN / "DiagnosticScreen.kt", ("fun DiagnosticScreen", "diagnostics_screen_subtitle", "diagnostics_disabled_hint")),
+    "Isolierte News-WebView": (KOTLIN / "IsolatedWebPageScreen.kt", ("fun IsolatedWebPageScreen", "WebViewClient", "news_webview_load_error")),
+    "Anpassbare Startseitenbereiche": (KOTLIN / "AppStore.kt", ("HOME_SECTION_ORDER", "HIDDEN_HOME_SECTIONS", "setHomeSectionVisible", "moveHomeSection")),
+    "Favoriten auf der Startseite": (KOTLIN / "UiScreens.kt", ("HomeSection.FAVORITES", "favoriteSeries", "HomeSeriesRow")),
+    "Google Cast": (KOTLIN / "ChromecastController.kt", ("CastContext", "RemoteMediaClient", "MediaLoadRequestData")),
+    "FCast und Hotspot-Fallback": (KOTLIN / "FCast.kt", ("DEFAULT_FCAST_PORT", "discoverReceivers", "activeLocalIpv4Addresses", "readNeighborHosts", "MAX_PARALLEL_PROBES")),
+    "Miracast-Systemauswahl": (KOTLIN / "PlayerScreen.kt", ("Settings.ACTION_CAST_SETTINGS", "miracast_system_settings")),
+    "Vier parallele Metadatenjobs": (KOTLIN / "AniWorldRepository.kt", ("MAX_PARALLEL_METADATA_JOBS = 4", "queue.chunked(MAX_PARALLEL_METADATA_JOBS)")),
 }
 for feature, (path, markers) in feature_markers.items():
     text = read(path)
@@ -188,6 +206,7 @@ for feature, (path, markers) in feature_markers.items():
         if marker not in text:
             fail(f"Featuremarker fehlt ({feature}): {path.name} -> {marker}")
 notes.append(f"Featuregruppen geprüft: {len(feature_markers)}")
+require("AirPlay" not in all_kotlin and "AirServer" not in all_kotlin, "Nicht gewünschtes AirPlay/AirServer-Protokoll gefunden")
 
 # Manifest component classes must exist in source.
 for cls in re.findall(r'android:name="\.([A-Za-z0-9_]+)"', manifest_text):

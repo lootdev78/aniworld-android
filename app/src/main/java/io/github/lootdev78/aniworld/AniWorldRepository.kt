@@ -265,7 +265,7 @@ class AniWorldRepository(
         }
         var completed = total - queue.size
         onProgress(completed, total, null)
-        for (batch in queue.chunked(3)) {
+        for (batch in queue.chunked(MAX_PARALLEL_METADATA_JOBS)) {
             val results = coroutineScope {
                 batch.map { item ->
                     async {
@@ -1803,6 +1803,7 @@ class AniWorldRepository(
     companion object {
         private val CATALOG_KEYS = listOf("0-9") + ('A'..'Z').map(Char::toString)
         private const val METADATA_TTL_MS = 30L * 24L * 60L * 60L * 1_000L
+        private const val MAX_PARALLEL_METADATA_JOBS = 4
         private const val CATALOG_FETCH_CONCURRENCY = 4
         const val UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36"
 

@@ -23,6 +23,7 @@ object AppLogger {
 
     @Volatile private var appContext: Context? = null
     @Volatile private var installed = false
+    @Volatile private var loggingEnabled = true
 
     @Synchronized
     fun initialize(context: Context) {
@@ -47,6 +48,7 @@ object AppLogger {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {
+                if (!loggingEnabled) return@runCatching
                 val details = buildString {
                     append("Thread: ").append(thread.name).append('\n')
                     append(throwable.stackTraceToString())
@@ -61,6 +63,13 @@ object AppLogger {
                 }
         }
     }
+
+    fun setEnabled(enabled: Boolean) {
+        loggingEnabled = enabled
+        if (!enabled) _entries.value = emptyList()
+    }
+
+    fun isEnabled(): Boolean = loggingEnabled
 
     fun info(area: String, message: String, details: String = "") =
         add(LogLevel.INFO, area, message, details)
@@ -86,6 +95,7 @@ object AppLogger {
     fun export(): String = _entries.value.joinToString("\n\n") { it.asText() }
 
     private fun add(level: LogLevel, area: String, message: String, details: String) {
+        if (!loggingEnabled) return
         val entry = DiagnosticEntry(level = level, area = area, message = message, details = details)
         when (level) {
             LogLevel.INFO -> Log.i(TAG, entry.asText())

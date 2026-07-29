@@ -60,6 +60,11 @@ data class HomeNews(
     val subtitle: String = ""
 )
 
+data class MetadataImportResult(
+    val catalogItems: Int,
+    val homeFeedImported: Boolean
+)
+
 data class HomeFeed(
     val news: List<HomeNews> = emptyList(),
     val featured: Series? = null,
@@ -269,6 +274,27 @@ object HosterCatalog {
     }
 }
 
+enum class HomeSection(@StringRes val labelRes: Int) {
+    NEWS(R.string.anime_news),
+    FEATURED(R.string.home_section_featured),
+    FAVORITES(R.string.favorites),
+    CONTINUE_WATCHING(R.string.continue_watching),
+    POPULAR_AT_ANIWORLD(R.string.popular_at_aniworld),
+    LATEST_EPISODES(R.string.latest_episodes),
+    NEW_ANIMES(R.string.new_animes),
+    CURRENTLY_POPULAR(R.string.currently_popular),
+    COMMUNITY_WATCHING(R.string.community_watching),
+    MOST_WATCHED(R.string.most_watched_top_50);
+
+    companion object {
+        val DEFAULT_ORDER: List<HomeSection> = entries.toList()
+        fun normalizeOrder(raw: List<String>): List<HomeSection> {
+            val parsed = raw.mapNotNull { value -> entries.firstOrNull { it.name == value } }.distinct()
+            return parsed + DEFAULT_ORDER.filterNot(parsed::contains)
+        }
+    }
+}
+
 data class AppPreferences(
     val languagePriority: List<Language> = Language.DEFAULT_PRIORITY,
     val hosterPriority: List<String> = HosterCatalog.DEFAULT_PRIORITY,
@@ -284,6 +310,7 @@ data class AppPreferences(
     val favoriteSort: LibrarySort = LibrarySort.CUSTOM,
     val watchedSort: LibrarySort = LibrarySort.UPDATED,
     val permissionIntroSeen: Boolean = false,
+    val notificationPermissionAsked: Boolean = false,
     val useDynamicColors: Boolean = false,
     val lastHomeTab: String = "START",
     val initialPreloadCompleted: Boolean = false,
@@ -295,12 +322,16 @@ data class AppPreferences(
     val autoPlayPreferredHoster: Boolean = false,
     val allowExternalPlayer: Boolean = false,
     val startupTab: String = "START",
+    val homeOfflineMode: Boolean = false,
     val accentColor: AppAccent = AppAccent.RED,
     val settingsButtonX: Float = 0.92f,
     val settingsButtonY: Float = 0.72f,
     val catalogViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
     val favoritesViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
-    val historyViewMode: LibraryViewMode = LibraryViewMode.DETAILED
+    val historyViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
+    val diagnosticsEnabled: Boolean = true,
+    val homeSectionOrder: List<HomeSection> = HomeSection.DEFAULT_ORDER,
+    val hiddenHomeSections: Set<HomeSection> = emptySet()
 ) {
     fun isFavorite(slug: String): Boolean = favorites.any { it.slug == slug }
     fun episodeState(episode: Episode): EpisodeWatchState? = episodeWatchStates[episode.key]
