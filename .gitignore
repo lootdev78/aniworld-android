@@ -9,3 +9,8 @@ dist/
 *.apk
 *.aab
 *.sha256
+
+# Proprietary Samsung Smart View SDK installed locally by Gradle
+app/libs/samsung-smartview-sdk-*.jar
+app/libs/samsung-smartview-sdk-*.aar
+app/libs/samsung-smartview-sdk.install.json

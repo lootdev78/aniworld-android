@@ -330,11 +330,6 @@ data class AppPreferences(
     val favoritesViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
     val historyViewMode: LibraryViewMode = LibraryViewMode.DETAILED,
     val diagnosticsEnabled: Boolean = true,
-    val castEnabled: Boolean = true,
-    val localWebRelayEnabled: Boolean = true,
-    val localWebRelayPort: Int = 8787,
-    val highlightStartedSeasons: Boolean = true,
-    val startedSeasonHighlightAlpha: Float = 0.22f,
     val homeSectionOrder: List<HomeSection> = HomeSection.DEFAULT_ORDER,
     val hiddenHomeSections: Set<HomeSection> = emptySet()
 ) {

@@ -1,0 +1,11 @@
+WARNING PATTERN CHECK: PASSED
+- Chromecast seek: MediaSeekOptions present; deprecated seek(Long) pattern absent
+- OpenInNew: AutoMirrored icon present
+- PlayerView setAlwaysVisible: deprecated call absent
+- LocalCastRelay: reported always-true branch patterns absent
+- Search collapse: query/filter text excluded from forced-open LaunchedEffect keys
+- Diagnostic actions: responsive 1-column, 2+1 and 3-column layouts present
+- Alphabet index: 52 dp / 22 sp picker present
+- Player stream link and format information: present
+- Isolated StreamPresentation Kotlin typecheck: passed
+- Gradle build: intentionally not executed

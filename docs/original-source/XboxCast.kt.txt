@@ -40,8 +40,6 @@ import javax.net.ssl.SSLSocketFactory
  * Xbox consoles do not expose a Google Cast receiver. The interoperable path is DLNA/UPnP
  * "Play To". Discovery therefore uses SSDP and playback uses the AVTransport SOAP service.
  */
-enum class XboxDeviceProfile { XBOX_ONE, XBOX_SERIES, SAMSUNG_TIZEN, GENERIC_DLNA }
-
 data class XboxCastDevice(
     val id: String,
     val friendlyName: String,
@@ -49,10 +47,7 @@ data class XboxCastDevice(
     val manufacturer: String,
     val locationUrl: String,
     val avTransportControlUrl: String,
-    val avTransportServiceType: String,
-    val renderingControlUrl: String = "",
-    val renderingControlServiceType: String = "",
-    val profile: XboxDeviceProfile = XboxDeviceProfile.GENERIC_DLNA
+    val avTransportServiceType: String
 ) {
     val isXbox: Boolean
         get() {
@@ -81,9 +76,7 @@ data class XboxCastState(
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val error: String? = null,
-    val completionEvent: Long = 0L,
-    val volume: Int? = null,
-    val muted: Boolean = false
+    val completionEvent: Long = 0L
 )
 
 class XboxCastController(context: Context, private val relay: LocalCastRelay? = null) {
@@ -164,9 +157,10 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
             val result = runCatching {
                 val receiverHost = runCatching { URI(device.locationUrl).host }.getOrNull()
                 val castPlayback = relay?.preparePlayback(playback, receiverHost) ?: playback
-                prepareAndPlay(device, castPlayback)
+                setTransportUri(device, castPlayback)
+                sendAction(device, "Play", "<Speed>1</Speed>")
                 if (startPositionMs > 1_000L) {
-                    delay(if (device.profile == XboxDeviceProfile.SAMSUNG_TIZEN) 650L else 350L)
+                    delay(350L)
                     seekInternal(device, startPositionMs)
                 }
             }
@@ -201,19 +195,6 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
     fun seekTo(positionMs: Long) = withConnectedDevice { device ->
         seekInternal(device, positionMs)
         mutableState.value = mutableState.value.copy(positionMs = positionMs.coerceAtLeast(0L), error = null)
-    }
-
-    fun setVolume(volume: Int) = withConnectedDevice { device ->
-        if (device.renderingControlUrl.isBlank()) error("RenderingControl wird von diesem Gerät nicht angeboten")
-        val clean = volume.coerceIn(0, 100)
-        sendRenderingAction(device, "SetVolume", "<Channel>Master</Channel><DesiredVolume>$clean</DesiredVolume>")
-        mutableState.value = mutableState.value.copy(volume = clean, error = null)
-    }
-
-    fun setMuted(muted: Boolean) = withConnectedDevice { device ->
-        if (device.renderingControlUrl.isBlank()) error("RenderingControl wird von diesem Gerät nicht angeboten")
-        sendRenderingAction(device, "SetMute", "<Channel>Master</Channel><DesiredMute>${if (muted) 1 else 0}</DesiredMute>")
-        mutableState.value = mutableState.value.copy(muted = muted, error = null)
     }
 
     fun disconnect(stopRemote: Boolean = true) {
@@ -265,7 +246,6 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
     private fun startPolling(device: XboxCastDevice) {
         pollingJob?.cancel()
         pollingJob = scope.launch {
-            var pollCount = 0
             while (isActive && mutableState.value.connectedDevice?.id == device.id) {
                 runCatching { queryPosition(device) }
                     .onSuccess { snapshot ->
@@ -283,12 +263,6 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
                             error = null
                         )
                     }
-                pollCount++
-                if (pollCount % 5 == 0 && device.renderingControlUrl.isNotBlank()) {
-                    runCatching { queryRenderingState(device) }.onSuccess { rendering ->
-                        mutableState.value = mutableState.value.copy(volume = rendering.first, muted = rendering.second)
-                    }
-                }
                 delay(1_000L)
             }
         }
@@ -475,61 +449,15 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
         val modelName = device.getElementsByTag("modelName").firstOrNull()?.text().orEmpty()
         val manufacturer = device.getElementsByTag("manufacturer").firstOrNull()?.text().orEmpty()
         val udn = device.getElementsByTag("UDN").firstOrNull()?.text().orEmpty()
-        val services = device.getElementsByTag("service")
-        val service = services.firstOrNull { element ->
+        val service = device.getElementsByTag("service").firstOrNull { element ->
             element.getElementsByTag("serviceType").firstOrNull()?.text()?.contains(":service:AVTransport:", true) == true
         } ?: return null
-        val renderingService = services.firstOrNull { element ->
-            element.getElementsByTag("serviceType").firstOrNull()?.text()?.contains(":service:RenderingControl:", true) == true
-        }
         val serviceType = service.getElementsByTag("serviceType").firstOrNull()?.text().orEmpty()
         val controlPath = service.getElementsByTag("controlURL").firstOrNull()?.text().orEmpty()
         if (serviceType.isBlank() || controlPath.isBlank()) return null
         val controlUrl = URI(location).resolve(controlPath).toString()
-        val renderingType = renderingService?.getElementsByTag("serviceType")?.firstOrNull()?.text().orEmpty()
-        val renderingPath = renderingService?.getElementsByTag("controlURL")?.firstOrNull()?.text().orEmpty()
-        val renderingUrl = renderingPath.takeIf(String::isNotBlank)?.let { URI(location).resolve(it).toString() }.orEmpty()
         val id = udn.ifBlank { "$friendlyName|$modelName|$location" }
-        return XboxCastDevice(
-            id = id,
-            friendlyName = friendlyName,
-            modelName = modelName,
-            manufacturer = manufacturer,
-            locationUrl = location,
-            avTransportControlUrl = controlUrl,
-            avTransportServiceType = serviceType,
-            renderingControlUrl = renderingUrl,
-            renderingControlServiceType = renderingType,
-            profile = detectProfile(friendlyName, modelName, manufacturer)
-        )
-    }
-
-    private suspend fun prepareAndPlay(device: XboxCastDevice, playback: ResolvedPlayback) {
-        // Real UPnP/DLNA Play-To. Stop first because Xbox and Tizen frequently keep an old
-        // AVTransport state and otherwise reject SetAVTransportURI/Play with error 701.
-        runCatching { sendAction(device, "Stop") }
-        delay(when (device.profile) {
-            XboxDeviceProfile.SAMSUNG_TIZEN -> 550L
-            XboxDeviceProfile.XBOX_ONE -> 350L
-            XboxDeviceProfile.XBOX_SERIES -> 250L
-            XboxDeviceProfile.GENERIC_DLNA -> 180L
-        })
-        setTransportUri(device, playback)
-        delay(if (device.profile == XboxDeviceProfile.SAMSUNG_TIZEN) 500L else 180L)
-        runCatching { sendAction(device, "Play", "<Speed>1</Speed>") }
-            .recoverCatching { first ->
-                if (!isTransitionUnavailable(first)) throw first
-                runCatching { sendAction(device, "Stop") }
-                delay(if (device.profile == XboxDeviceProfile.SAMSUNG_TIZEN) 700L else 400L)
-                setTransportUri(device, playback)
-                delay(if (device.profile == XboxDeviceProfile.SAMSUNG_TIZEN) 700L else 350L)
-                sendAction(device, "Play", "<Speed>1</Speed>")
-            }.getOrThrow()
-    }
-
-    private fun isTransitionUnavailable(error: Throwable): Boolean {
-        val message = error.message.orEmpty().lowercase(Locale.ROOT)
-        return "transition" in message || "701" in message || "not available" in message || "transitionnotavailable" in message
+        return XboxCastDevice(id, friendlyName, modelName, manufacturer, location, controlUrl, serviceType)
     }
 
     private fun setTransportUri(device: XboxCastDevice, playback: ResolvedPlayback) {
@@ -578,63 +506,39 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
         )
     }
 
-    private fun sendAction(device: XboxCastDevice, action: String, arguments: String = ""): String =
-        sendServiceAction(device.avTransportControlUrl, device.avTransportServiceType, action, arguments)
-
-    private fun sendRenderingAction(device: XboxCastDevice, action: String, arguments: String = ""): String =
-        sendServiceAction(device.renderingControlUrl, device.renderingControlServiceType, action, arguments)
-
-    private fun sendServiceAction(controlUrl: String, serviceType: String, action: String, arguments: String = ""): String {
-        require(controlUrl.isNotBlank() && serviceType.isNotBlank()) { "UPnP-Dienst $action ist nicht verfügbar" }
+    private fun sendAction(device: XboxCastDevice, action: String, arguments: String = ""): String {
         val body = """
             <?xml version="1.0" encoding="utf-8"?>
             <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
               <s:Body>
-                <u:$action xmlns:u="${xmlEscape(serviceType)}">
+                <u:$action xmlns:u="${xmlEscape(device.avTransportServiceType)}">
                   <InstanceID>0</InstanceID>$arguments
                 </u:$action>
               </s:Body>
             </s:Envelope>
         """.trimIndent()
         val response = LocalHttp.execute(
-            controlUrl,
+            device.avTransportControlUrl,
             "POST",
             mapOf(
                 "Content-Type" to "text/xml; charset=\"utf-8\"",
-                "SOAPACTION" to "\"$serviceType#$action\""
+                "SOAPACTION" to "\"${device.avTransportServiceType}#$action\""
             ),
             body.toByteArray(StandardCharsets.UTF_8)
         )
         if (response.statusCode !in 200..299) {
-            val faultDocument = Jsoup.parse(response.bodyText(), "", Parser.xmlParser())
-            val description = faultDocument.getElementsByTag("errorDescription").firstOrNull()?.text().orEmpty()
-            val code = faultDocument.getElementsByTag("errorCode").firstOrNull()?.text().orEmpty()
-            error(listOf(code, description).filter(String::isNotBlank).joinToString(" ").ifBlank { "DLNA $action: HTTP ${response.statusCode}" })
+            val fault = Jsoup.parse(response.bodyText(), "", Parser.xmlParser())
+                .getElementsByTag("errorDescription").firstOrNull()?.text()
+                .orEmpty()
+            error(fault.ifBlank { "DLNA $action: HTTP ${response.statusCode}" })
         }
         return response.bodyText()
-    }
-
-    private fun queryRenderingState(device: XboxCastDevice): Pair<Int?, Boolean> {
-        val volumeDocument = Jsoup.parse(
-            sendRenderingAction(device, "GetVolume", "<Channel>Master</Channel>"),
-            "",
-            Parser.xmlParser()
-        )
-        val muteDocument = Jsoup.parse(
-            sendRenderingAction(device, "GetMute", "<Channel>Master</Channel>"),
-            "",
-            Parser.xmlParser()
-        )
-        val volume = volumeDocument.getElementsByTag("CurrentVolume").firstOrNull()?.text()?.toIntOrNull()?.coerceIn(0, 100)
-        val muted = muteDocument.getElementsByTag("CurrentMute").firstOrNull()?.text() in setOf("1", "true", "TRUE")
-        return volume to muted
     }
 
     private fun readableError(error: Throwable): String {
         val message = error.message.orEmpty()
         return when {
             "cleartext" in message.lowercase(Locale.ROOT) -> appContext.getString(R.string.xbox_cast_local_network_failed)
-            isTransitionUnavailable(error) -> "Wiedergabeübergang vom Fernseher abgelehnt. Der Stop/Neu-Laden-Fallback wurde ausgeführt."
             message.isNotBlank() -> message
             else -> appContext.getString(R.string.xbox_cast_failed)
         }
@@ -656,16 +560,6 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
             "ssdp:all"
         )
 
-        fun detectProfile(friendlyName: String, modelName: String, manufacturer: String): XboxDeviceProfile {
-            val value = "$friendlyName $modelName $manufacturer".lowercase(Locale.ROOT)
-            return when {
-                "samsung" in value || "tizen" in value -> XboxDeviceProfile.SAMSUNG_TIZEN
-                "xbox series" in value || "scarlett" in value -> XboxDeviceProfile.XBOX_SERIES
-                "xbox" in value || "microsoft" in value -> XboxDeviceProfile.XBOX_ONE
-                else -> XboxDeviceProfile.GENERIC_DLNA
-            }
-        }
-
         fun buildSearchRequest(target: String): String = buildString {
             append("M-SEARCH * HTTP/1.1\r\n")
             append("HOST: $SSDP_ADDRESS:$SSDP_PORT\r\n")
@@ -683,7 +577,7 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
             ?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
 
         fun buildDidlMetadata(title: String, url: String, mimeType: String): String =
-            """<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="0" restricted="1"><dc:title>${xmlEscape(title)}</dc:title><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="http-get:*:${xmlEscape(mimeType)}:DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000">${xmlEscape(url)}</res></item></DIDL-Lite>"""
+            """<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/"><item id="0" parentID="0" restricted="1"><dc:title>${xmlEscape(title)}</dc:title><upnp:class>object.item.videoItem</upnp:class><res protocolInfo="http-get:*:${xmlEscape(mimeType)}:*">${xmlEscape(url)}</res></item></DIDL-Lite>"""
 
         fun inferMimeType(url: String): String = when {
             ".m3u8" in url.lowercase(Locale.ROOT) -> "application/vnd.apple.mpegurl"

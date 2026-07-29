@@ -56,7 +56,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -306,7 +305,6 @@ fun AniWorldApp(vm: AppViewModel) {
             autoNextEnabled = st.preferences.autoNextEnabled,
             availableHosters = st.hosters,
             allowExternalPlayer = st.preferences.allowExternalPlayer,
-            castEnabled = st.preferences.castEnabled,
             onLanguageChange = { language -> vm.playEpisode(playback.episode, languageOverride = language) },
             onHosterChange = { hoster -> vm.playEpisode(playback.episode, languageOverride = hoster.lang.takeIf { it != Language.UNKNOWN }, hosterOverride = hoster) },
             onPrevious = vm::playPreviousEpisode,
@@ -348,7 +346,6 @@ fun AniWorldApp(vm: AppViewModel) {
             prefs = st.preferences,
             resolving = st.resolving,
             allowExternalPlayer = st.preferences.allowExternalPlayer,
-            castEnabled = st.preferences.castEnabled,
             watched = st.preferences.episodeWatchStates[episode.key]?.completed == true,
             onDismiss = vm::dismissEpisodeOptions,
             onToggleWatched = { vm.toggleEpisodeWatched(episode) },
@@ -448,34 +445,17 @@ private fun DraggableSettingsButton(
         val buttonPx = with(density) { buttonSize.toPx() }
         val maxXPx = with(density) { maxWidth.toPx() }.minus(buttonPx).coerceAtLeast(0f)
         val maxYPx = with(density) { maxHeight.toPx() }.minus(buttonPx).coerceAtLeast(0f)
-        var localX by remember(maxXPx) { mutableFloatStateOf(x.coerceIn(0f, 1f) * maxXPx) }
-        var localY by remember(maxYPx) { mutableFloatStateOf(y.coerceIn(0f, 1f) * maxYPx) }
-        var dragging by remember { mutableStateOf(false) }
-        var draggedSinceLastClick by remember { mutableStateOf(false) }
-
-        LaunchedEffect(x, y, maxXPx, maxYPx, dragging) {
-            if (!dragging) {
-                localX = x.coerceIn(0f, 1f) * maxXPx
-                localY = y.coerceIn(0f, 1f) * maxYPx
-            }
-        }
+        var localX by remember(maxXPx, x) { mutableFloatStateOf(x.coerceIn(0f, 1f) * maxXPx) }
+        var localY by remember(maxYPx, y) { mutableFloatStateOf(y.coerceIn(0f, 1f) * maxYPx) }
 
         androidx.compose.material3.SmallFloatingActionButton(
-            onClick = {
-                if (draggedSinceLastClick) draggedSinceLastClick = false else onOpen()
-            },
+            onClick = onOpen,
             modifier = Modifier
-                .graphicsLayer {
-                    translationX = localX
-                    translationY = localY
-                }
+                .offset { IntOffset(localX.roundToInt(), localY.roundToInt()) }
                 .size(buttonSize)
                 .pointerInput(maxXPx, maxYPx) {
                     detectDragGestures(
-                        onDragStart = { dragging = true; draggedSinceLastClick = false },
-                        onDragCancel = { dragging = false },
                         onDragEnd = {
-                            dragging = false
                             onPosition(
                                 if (maxXPx == 0f) 0f else localX / maxXPx,
                                 if (maxYPx == 0f) 0f else localY / maxYPx
@@ -483,7 +463,6 @@ private fun DraggableSettingsButton(
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            if (dragAmount.getDistance() > 0.5f) draggedSinceLastClick = true
                             localX = (localX + dragAmount.x).coerceIn(0f, maxXPx)
                             localY = (localY + dragAmount.y).coerceIn(0f, maxYPx)
                         }

@@ -1,10 +1,8 @@
 package io.github.lootdev78.aniworld
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import com.google.android.gms.cast.MediaInfo
-import com.google.android.gms.cast.MediaSeekOptions
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.MediaStatus
@@ -19,7 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /** State bridge between the Compose player and the official Google Cast framework. */
 data class ChromecastState(
-    val available: Boolean = false,
+    val available: Boolean = true,
     val connectedDeviceName: String? = null,
     val transportState: XboxTransportState = XboxTransportState.IDLE,
     val positionMs: Long = 0L,
@@ -30,7 +28,7 @@ data class ChromecastState(
 
 class ChromecastController(context: Context, private val relay: LocalCastRelay? = null) {
     private val appContext = context.applicationContext
-    private val mutableState = MutableStateFlow(ChromecastState(available = isSupported(appContext)))
+    private val mutableState = MutableStateFlow(ChromecastState())
     val state: StateFlow<ChromecastState> = mutableState.asStateFlow()
 
     private var castContext: CastContext? = null
@@ -115,11 +113,7 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
     }
 
     fun seekTo(positionMs: Long) {
-        val options = MediaSeekOptions.Builder()
-            .setPosition(positionMs.coerceAtLeast(0L))
-            .setResumeState(MediaSeekOptions.RESUME_STATE_UNCHANGED)
-            .build()
-        runClientCommand { seek(options) }
+        runClientCommand { seek(positionMs.coerceAtLeast(0L)) }
         mutableState.value = mutableState.value.copy(positionMs = positionMs.coerceAtLeast(0L))
     }
 
@@ -246,16 +240,4 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
         ".webm" in url.lowercase() -> "video/webm"
         else -> "video/mp4"
     }
-    companion object {
-        /** Cheap capability check used before rendering the Cast button or initializing CastContext. */
-        fun isSupported(context: Context): Boolean {
-            val packageManager = context.applicationContext.packageManager
-            val hasWifi = packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI)
-            val hasPlayServices = runCatching {
-                packageManager.getApplicationInfo("com.google.android.gms", 0).enabled
-            }.getOrDefault(false)
-            return hasWifi && hasPlayServices
-        }
-    }
-
 }

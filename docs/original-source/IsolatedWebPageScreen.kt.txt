@@ -86,13 +86,6 @@ fun IsolatedWebPageScreen(
             factory = { context ->
                 WebView(context).apply {
                     webView = this
-                    isLongClickable = true
-                    isFocusable = true
-                    isFocusableInTouchMode = true
-                    isVerticalScrollBarEnabled = true
-                    isHorizontalScrollBarEnabled = true
-                    isNestedScrollingEnabled = true
-                    setOnLongClickListener(null)
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
@@ -121,20 +114,6 @@ fun IsolatedWebPageScreen(
                             loading = false
                             currentUrl = url
                             pageTitle = view.title.orEmpty().ifBlank { title }
-                            view.evaluateJavascript(
-                                """(function(){
-                                    document.documentElement.style.webkitUserSelect='text';
-                                    document.documentElement.style.userSelect='text';
-                                    if(document.body){
-                                      document.body.style.webkitUserSelect='text';
-                                      document.body.style.userSelect='text';
-                                    }
-                                    document.querySelectorAll('input,textarea,[contenteditable=true]').forEach(function(e){
-                                      e.style.webkitUserSelect='text';e.style.userSelect='text';
-                                    });
-                                })();""".trimIndent(),
-                                null
-                            )
                         }
 
                         override fun onReceivedError(

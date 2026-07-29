@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -49,11 +48,6 @@ private data class SettingsSnapshot(
     val favoritesViewMode: LibraryViewMode,
     val historyViewMode: LibraryViewMode,
     val diagnosticsEnabled: Boolean,
-    val castEnabled: Boolean,
-    val localWebRelayEnabled: Boolean,
-    val localWebRelayPort: Int,
-    val highlightStartedSeasons: Boolean,
-    val startedSeasonHighlightAlpha: Float,
     val homeSectionOrder: List<HomeSection>,
     val hiddenHomeSections: Set<HomeSection>
 )
@@ -114,11 +108,6 @@ class AppStore(
                 favoritesViewMode = parseViewMode(prefs[FAVORITES_VIEW_MODE], LibraryViewMode.DETAILED),
                 historyViewMode = parseViewMode(prefs[HISTORY_VIEW_MODE], LibraryViewMode.DETAILED),
                 diagnosticsEnabled = prefs[DIAGNOSTICS_ENABLED] ?: true,
-                castEnabled = prefs[CAST_ENABLED] ?: true,
-                localWebRelayEnabled = prefs[LOCAL_WEB_RELAY_ENABLED] ?: true,
-                localWebRelayPort = (prefs[LOCAL_WEB_RELAY_PORT] ?: 8787).coerceIn(1024, 65535),
-                highlightStartedSeasons = prefs[HIGHLIGHT_STARTED_SEASONS] ?: true,
-                startedSeasonHighlightAlpha = (prefs[STARTED_SEASON_HIGHLIGHT_ALPHA] ?: 0.22f).coerceIn(0.08f, 0.60f),
                 homeSectionOrder = HomeSection.normalizeOrder(parseStoredList(prefs[HOME_SECTION_ORDER])),
                 hiddenHomeSections = parseStoredList(prefs[HIDDEN_HOME_SECTIONS]).mapNotNull { raw -> HomeSection.entries.firstOrNull { it.name == raw } }.toSet()
             )
@@ -189,11 +178,6 @@ class AppStore(
             favoritesViewMode = settings.favoritesViewMode,
             historyViewMode = settings.historyViewMode,
             diagnosticsEnabled = settings.diagnosticsEnabled,
-            castEnabled = settings.castEnabled,
-            localWebRelayEnabled = settings.localWebRelayEnabled,
-            localWebRelayPort = settings.localWebRelayPort,
-            highlightStartedSeasons = settings.highlightStartedSeasons,
-            startedSeasonHighlightAlpha = settings.startedSeasonHighlightAlpha,
             homeSectionOrder = settings.homeSectionOrder,
             hiddenHomeSections = settings.hiddenHomeSections
         )
@@ -313,21 +297,6 @@ class AppStore(
     suspend fun setDiagnosticsEnabled(enabled: Boolean) = editSafely("Diagnoseeinstellung speichern") {
         it[DIAGNOSTICS_ENABLED] = enabled
     }
-    suspend fun setCastEnabled(enabled: Boolean) = editSafely("Cast-Einstellung speichern") {
-        it[CAST_ENABLED] = enabled
-    }
-    suspend fun setLocalWebRelayEnabled(enabled: Boolean) = editSafely("Lokalen Web-Relay speichern") {
-        it[LOCAL_WEB_RELAY_ENABLED] = enabled
-    }
-    suspend fun setLocalWebRelayPort(port: Int) = editSafely("Lokalen Web-Port speichern") {
-        it[LOCAL_WEB_RELAY_PORT] = port.coerceIn(1024, 65535)
-    }
-    suspend fun setHighlightStartedSeasons(enabled: Boolean) = editSafely("Staffel-Hervorhebung speichern") {
-        it[HIGHLIGHT_STARTED_SEASONS] = enabled
-    }
-    suspend fun setStartedSeasonHighlightAlpha(alpha: Float) = editSafely("Staffel-Hervorhebungsstärke speichern") {
-        it[STARTED_SEASON_HIGHLIGHT_ALPHA] = alpha.coerceIn(0.08f, 0.60f)
-    }
     suspend fun setHomeSectionVisible(section: HomeSection, visible: Boolean) = editSafely("Startseitenbereich speichern") { prefs ->
         val hidden = parseStoredList(prefs[HIDDEN_HOME_SECTIONS]).toMutableSet()
         if (visible) hidden.remove(section.name) else hidden.add(section.name)
@@ -343,36 +312,9 @@ class AppStore(
     }
 
     suspend fun offlineMetadataCount(): Int = metadataDao.count()
-
-    suspend fun offlineMetadataInventory(expectedSlugs: Set<String>): MetadataInventory = withContext(Dispatchers.IO) {
-        val stored = metadataDao.all()
-        val bySlug = stored.associateBy(SeriesMetadataEntity::slug)
-        val normalizedExpected = expectedSlugs.filter(String::isNotBlank).toSet()
-        val missing = normalizedExpected.filterNot(bySlug::containsKey).sorted()
-        val incomplete = stored.asSequence()
-            .filter { normalizedExpected.isEmpty() || it.slug in normalizedExpected }
-            .filterNot { it.toModel().hasCompleteOfflineMetadata() }
-            .map(SeriesMetadataEntity::slug)
-            .sorted()
-            .toList()
-        val coverFiles = coverCacheDirectory().walkTopDown().filter { it.isFile }.toList()
-        MetadataInventory(
-            expectedCount = normalizedExpected.size,
-            storedCount = stored.size,
-            missingSlugs = missing,
-            incompleteSlugs = incomplete,
-            coverCacheFiles = coverFiles.size,
-            coverCacheBytes = coverFiles.sumOf { it.length() }
-        )
-    }
-
     suspend fun deleteOfflineMetadata() {
         metadataDao.clear()
         clearHomeFeedCache()
-        withContext(Dispatchers.IO) {
-            coverCacheDirectory().deleteRecursively()
-            coverCacheDirectory().mkdirs()
-        }
         editSafely("Metadatenstatus zurücksetzen") { it[INITIAL_PRELOAD_COMPLETED] = false }
     }
 
@@ -457,16 +399,11 @@ class AppStore(
         metadataDao.all().forEach { entity ->
             catalogArray.put(seriesToJson(entity.toModel()).put("updatedAt", entity.updatedAt))
         }
-        val coverFiles = coverCacheDirectory().walkTopDown().filter { it.isFile }.toList()
         JSONObject()
             .put("format", "aniworld-offline-metadata")
-            .put("version", 2)
+            .put("version", 1)
             .put("exportedAt", System.currentTimeMillis())
             .put("catalog", catalogArray)
-            .put("coverCache", JSONObject()
-                .put("files", coverFiles.size)
-                .put("bytes", coverFiles.sumOf { it.length() })
-                .put("note", "Cache-Dateien werden lokal verwaltet und nicht in JSON eingebettet."))
             .apply { readHomeFeedCache()?.let { put("homeFeed", homeFeedToJson(it)) } }
             .toString(2)
     }
@@ -494,7 +431,6 @@ class AppStore(
     }
 
     private fun homeFeedCacheFile() = context.filesDir.resolve(HOME_FEED_CACHE_FILE)
-    private fun coverCacheDirectory() = context.filesDir.resolve("anime_cover_cache")
 
     private fun readHomeFeedCache(): HomeFeed? = runCatching {
         val file = homeFeedCacheFile()
@@ -926,11 +862,6 @@ class AppStore(
         private val FAVORITES_VIEW_MODE = stringPreferencesKey("favorites_view_mode")
         private val HISTORY_VIEW_MODE = stringPreferencesKey("history_view_mode")
         private val DIAGNOSTICS_ENABLED = booleanPreferencesKey("diagnostics_enabled")
-        private val CAST_ENABLED = booleanPreferencesKey("cast_enabled")
-        private val LOCAL_WEB_RELAY_ENABLED = booleanPreferencesKey("local_web_relay_enabled")
-        private val LOCAL_WEB_RELAY_PORT = intPreferencesKey("local_web_relay_port")
-        private val HIGHLIGHT_STARTED_SEASONS = booleanPreferencesKey("highlight_started_seasons")
-        private val STARTED_SEASON_HIGHLIGHT_ALPHA = floatPreferencesKey("started_season_highlight_alpha")
         private val HOME_SECTION_ORDER = stringPreferencesKey("home_section_order")
         private val HIDDEN_HOME_SECTIONS = stringPreferencesKey("hidden_home_sections")
         private val ROOM_MIGRATION_DONE = booleanPreferencesKey("room_migration_done")

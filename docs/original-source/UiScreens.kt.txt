@@ -102,7 +102,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.OutlinedButton
@@ -112,8 +111,8 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -123,7 +122,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -131,19 +129,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 @Composable
@@ -467,46 +461,49 @@ private fun <T> SearchFieldWithSuggestions(
     }
 }
 
-private data class SwipeCollapsibleHeaderState(
-    val visible: MutableState<Boolean>,
-    val nestedScrollConnection: NestedScrollConnection
-)
-
-/**
- * Observes the user's actual swipe direction instead of deriving it from LazyList offsets.
- * This avoids feedback loops when an animated search header changes height while suggestions
- * are visible. The connection never consumes scroll, so lists and grids keep their native feel.
- */
 @Composable
-private fun rememberSwipeCollapsibleHeaderState(resetKey: Any?): SwipeCollapsibleHeaderState {
-    val visible = rememberSaveable(resetKey) { mutableStateOf(true) }
-    val thresholdPx = with(LocalDensity.current) { 30.dp.toPx() }
-    val connection = remember(resetKey, thresholdPx) {
-        object : NestedScrollConnection {
-            private var accumulatedDrag = 0f
-
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source != NestedScrollSource.UserInput || available.y == 0f) return Offset.Zero
-                val directionChanged = (accumulatedDrag > 0f && available.y < 0f) ||
-                    (accumulatedDrag < 0f && available.y > 0f)
-                if (directionChanged) accumulatedDrag = 0f
-                accumulatedDrag += available.y
-
-                when {
-                    accumulatedDrag <= -thresholdPx -> {
-                        visible.value = false
-                        accumulatedDrag = 0f
-                    }
-                    accumulatedDrag >= thresholdPx -> {
-                        visible.value = true
-                        accumulatedDrag = 0f
-                    }
+private fun rememberScrollAwareHeaderState(
+    gridState: androidx.compose.foundation.lazy.grid.LazyGridState,
+    listState: androidx.compose.foundation.lazy.LazyListState,
+    isGrid: Boolean,
+    resetKey: Any?
+): MutableState<Boolean> {
+    val visible = rememberSaveable(isGrid, resetKey) { mutableStateOf(true) }
+    LaunchedEffect(isGrid, resetKey) {
+        visible.value = true
+        var previous = if (isGrid) {
+            gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset
+        } else {
+            listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset
+        }
+        var accumulated = 0
+        snapshotFlow {
+            if (isGrid) gridState.firstVisibleItemIndex * 100_000 + gridState.firstVisibleItemScrollOffset
+            else listState.firstVisibleItemIndex * 100_000 + listState.firstVisibleItemScrollOffset
+        }.collect { current ->
+            val delta = current - previous
+            previous = current
+            if (current <= 8) {
+                accumulated = 0
+                visible.value = true
+            } else if (delta > 0) {
+                if (accumulated < 0) accumulated = 0
+                accumulated += delta.coerceAtMost(80)
+                if (accumulated >= 36) {
+                    visible.value = false
+                    accumulated = 0
                 }
-                return Offset.Zero
+            } else if (delta < 0) {
+                if (accumulated > 0) accumulated = 0
+                accumulated += delta.coerceAtLeast(-80)
+                if (accumulated <= -24) {
+                    visible.value = true
+                    accumulated = 0
+                }
             }
         }
     }
-    return remember(visible, connection) { SwipeCollapsibleHeaderState(visible, connection) }
+    return visible
 }
 
 private val FullAlphabetIndex: List<String> = listOf("#") + ('A'..'Z').map(Char::toString)
@@ -536,13 +533,14 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     }
     val isGrid = st.preferences.catalogViewMode == LibraryViewMode.GRID
 
-    val controlsState = rememberSwipeCollapsibleHeaderState(
-        resetKey = "${st.catalogGenre}|${st.preferences.catalogViewMode}"
+    val controlsState = rememberScrollAwareHeaderState(
+        gridState = gridState,
+        listState = listState,
+        isGrid = isGrid,
+        resetKey = "${st.catalogQuery}|${st.catalogGenre}|${st.preferences.catalogViewMode}"
     )
-    var controlsVisible by controlsState.visible
-    // Do not key this effect to the typed query. Re-opening the animated header for every
-    // character made upward swipe-to-hide fight with suggestion updates and list remeasurement.
-    LaunchedEffect(st.catalogGenre, st.preferences.catalogViewMode) {
+    var controlsVisible by controlsState
+    LaunchedEffect(st.catalogQuery, st.catalogGenre, st.preferences.catalogViewMode) {
         controlsVisible = true
         if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
     }
@@ -553,7 +551,7 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         onRefresh = { vm.loadCatalog(true) },
         modifier = Modifier.fillMaxSize()
     ) {
-        Column(Modifier.fillMaxSize().nestedScroll(controlsState.nestedScrollConnection)) {
+        Column(Modifier.fillMaxSize()) {
             SmoothCollapsibleHeader(visible = controlsVisible) {
                 Column {
                     SearchFieldWithSuggestions(
@@ -672,11 +670,10 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                         }
                     }
                     val firstVisible = if (isGrid) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
-                    val activeLetter = items.getOrNull(firstVisible)?.title?.let(::titleIndexLabel)
+                    val activeLetter = items.getOrNull(firstVisible)?.title?.firstOrNull()?.let { if (it.isLetter()) it.uppercase() else "#" }
                     CatalogAlphabetRail(
-                        letters = FullAlphabetIndex,
+                        letters = st.catalog.letters,
                         activeLetter = activeLetter,
-                        enabledLetters = st.catalog.letters.toSet(),
                         onLetter = { letter ->
                             val index = items.indexOfFirst { item ->
                                 val first = item.title.firstOrNull()
@@ -712,110 +709,44 @@ private fun CatalogAlphabetRail(
     modifier: Modifier = Modifier,
     enabledLetters: Set<String> = letters.toSet()
 ) {
-    var pickerOpen by rememberSaveable { mutableStateOf(false) }
     Surface(
-        modifier = modifier
-            .widthIn(min = 68.dp)
-            .clickable { pickerOpen = true },
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = .96f),
+        modifier = modifier.width(34.dp).fillMaxHeight(.94f).padding(end = 2.dp),
+        shape = RoundedCornerShape(17.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = .94f),
         contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 6.dp
     ) {
         Column(
-            Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(5.dp)
+            Modifier.fillMaxSize().padding(vertical = 5.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = "A–Z",
-                fontWeight = FontWeight.Black,
-                fontSize = 22.sp,
-                textAlign = TextAlign.Center
-            )
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Text(
-                    text = activeLetter ?: "#",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    fontWeight = FontWeight.Black,
-                    fontSize = 18.sp,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-
-    if (pickerOpen) {
-        Dialog(onDismissRequest = { pickerOpen = false }) {
-            Surface(
-                modifier = Modifier.fillMaxWidth().widthIn(max = 390.dp),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 10.dp
-            ) {
-                Column(
-                    Modifier.fillMaxWidth().padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+            letters.forEach { letter ->
+                val enabled = letter in enabledLetters
+                val selected = letter == activeLetter
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clickable(enabled = enabled) { onLetter(letter) },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                stringResource(R.string.alphabet_index_title),
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Black
-                            )
-                            Text(
-                                stringResource(R.string.alphabet_index_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { pickerOpen = false }) {
-                            Icon(Icons.Default.Close, stringResource(R.string.close))
-                        }
-                    }
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        maxItemsInEachRow = 5,
-                        horizontalArrangement = Arrangement.spacedBy(9.dp),
-                        verticalArrangement = Arrangement.spacedBy(9.dp)
+                    Surface(
+                        shape = CircleShape,
+                        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+                        contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     ) {
-                        letters.forEach { letter ->
-                            val enabled = letter in enabledLetters
-                            val selected = letter == activeLetter
-                            Surface(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clickable(enabled = enabled) {
-                                        pickerOpen = false
-                                        onLetter(letter)
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                color = when {
-                                    selected -> MaterialTheme.colorScheme.primaryContainer
-                                    enabled -> MaterialTheme.colorScheme.surfaceVariant
-                                    else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .35f)
-                                },
-                                contentColor = when {
-                                    selected -> MaterialTheme.colorScheme.onPrimaryContainer
-                                    enabled -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .35f)
-                                }
-                            ) {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        letter,
-                                        fontSize = 22.sp,
-                                        fontWeight = if (selected) FontWeight.Black else FontWeight.Bold,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
-                        }
+                        Text(
+                            text = letter,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                            color = when {
+                                selected -> MaterialTheme.colorScheme.onPrimaryContainer
+                                enabled -> MaterialTheme.colorScheme.onSurfaceVariant
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .28f)
+                            },
+                            fontWeight = if (selected) FontWeight.Black else FontWeight.SemiBold,
+                            fontSize = 10.sp,
+                            textAlign = TextAlign.Center
+                        )
                     }
                 }
             }
@@ -844,13 +775,14 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val quickTargets = libraryQuickTargets(st.preferences.favoriteSort, ordered.map { it.title }, ordered.map { it.updatedAt })
     val isGrid = st.preferences.favoritesViewMode == LibraryViewMode.GRID
     val activeIndex = if (isGrid) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
-    val controlsState = rememberSwipeCollapsibleHeaderState(
+    val controlsState = rememberScrollAwareHeaderState(
+        gridState = gridState,
+        listState = listState,
+        isGrid = isGrid,
         resetKey = "${st.preferences.favoriteSort}|${st.preferences.favoritesViewMode}"
     )
-    var controlsVisible by controlsState.visible
-    // Keep the user's explicit collapsed/expanded choice while typing. Suggestions may change
-    // the header height, but they must not force it open again during the same swipe gesture.
-    LaunchedEffect(st.preferences.favoriteSort, st.preferences.favoritesViewMode) {
+    var controlsVisible by controlsState
+    LaunchedEffect(filter, st.preferences.favoriteSort, st.preferences.favoritesViewMode) {
         controlsVisible = true
         if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
     }
@@ -859,7 +791,7 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         selectedSlugs = selectedSlugs.toMutableSet().apply { if (!add(slug)) remove(slug) }
     }
 
-    Column(Modifier.fillMaxSize().nestedScroll(controlsState.nestedScrollConnection)) {
+    Column(Modifier.fillMaxSize()) {
         if (allFavorites.isNotEmpty()) {
             SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
                 LibraryScreenControls(
@@ -1022,13 +954,14 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val quickTargets = libraryQuickTargets(st.preferences.watchedSort, ordered.map { it.title }, ordered.map { it.updatedAt })
     val isGrid = st.preferences.historyViewMode == LibraryViewMode.GRID
     val activeIndex = if (isGrid) gridState.firstVisibleItemIndex else listState.firstVisibleItemIndex
-    val controlsState = rememberSwipeCollapsibleHeaderState(
+    val controlsState = rememberScrollAwareHeaderState(
+        gridState = gridState,
+        listState = listState,
+        isGrid = isGrid,
         resetKey = "${st.preferences.watchedSort}|${st.preferences.historyViewMode}|$statusFilter"
     )
-    var controlsVisible by controlsState.visible
-    // Search text and suggestion changes are deliberately excluded. Otherwise a hidden header
-    // immediately reappears after every keystroke or suggestion recomposition.
-    LaunchedEffect(statusFilter, st.preferences.watchedSort, st.preferences.historyViewMode) {
+    var controlsVisible by controlsState
+    LaunchedEffect(filter, statusFilter, st.preferences.watchedSort, st.preferences.historyViewMode) {
         controlsVisible = true
         if (isGrid) gridState.scrollToItem(0) else listState.scrollToItem(0)
     }
@@ -1037,7 +970,7 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         selectedSlugs = selectedSlugs.toMutableSet().apply { if (!add(slug)) remove(slug) }
     }
 
-    Column(Modifier.fillMaxSize().nestedScroll(controlsState.nestedScrollConnection)) {
+    Column(Modifier.fillMaxSize()) {
         if (allWatched.isNotEmpty()) {
             SmoothCollapsibleHeader(visible = controlsVisible || selectionMode) {
                 Column {
@@ -1369,20 +1302,11 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                 SectionTitle(stringResource(R.string.seasons_and_movies), stringResource(R.string.areas_count, st.seasons.size))
             }
             items(st.seasons, key = { it }) { season ->
-                val watched = st.preferences.watchedCount(series.slug, season)
-                val total = st.preferences.seasonTotal(series.slug, season)
-                val completed = total != null && total > 0 && watched >= total
-                val started = watched > 0 && !completed
-                Card(
-                    onClick = { vm.season(season) },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (started && st.preferences.highlightStartedSeasons) {
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = st.preferences.startedSeasonHighlightAlpha)
-                        } else MaterialTheme.colorScheme.surfaceContainer
-                    )
-                ) {
+                Card(onClick = { vm.season(season) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                        val watched = st.preferences.watchedCount(series.slug, season)
+                        val total = st.preferences.seasonTotal(series.slug, season)
+                        val completed = total != null && total > 0 && watched >= total
                         Icon(
                             if (completed) Icons.Default.CheckCircle else if (season == 0) Icons.Default.Movie else Icons.Default.PlayArrow,
                             null,
@@ -1397,14 +1321,6 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                                     else stringResource(R.string.watched_count, watched),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (started) {
-                                Text(
-                                    stringResource(R.string.season_started),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
@@ -1454,28 +1370,12 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                     Text(" " + stringResource(if ((st.preferences.episodeWatchStates[quickEpisode.key]?.positionMs ?: 0L) > 0L) R.string.continue_playback else R.string.play_now))
                 }
             }
-            val hasOwnSeasonDescription = st.seasonDescription.isNotBlank()
-            val usesSeriesFallback = !hasOwnSeasonDescription && series.description.isNotBlank()
-            val displayedSeasonDescription = st.seasonDescription
-                .ifBlank { series.description }
-                .ifBlank { stringResource(R.string.season_description_unavailable) }
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        stringResource(if (st.season == 0) R.string.movie_description else R.string.season_description),
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (usesSeriesFallback && st.season != 0) {
-                        Text(
-                            stringResource(R.string.season_description_fallback),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
+            if (st.seasonDescription.isNotBlank()) {
+                Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(stringResource(if (st.season == 0) R.string.movie_description else R.string.season_description), fontWeight = FontWeight.Bold)
+                        Text(st.seasonDescription, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    ExpandableDescriptionText(
-                        displayedSeasonDescription,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1563,7 +1463,7 @@ private fun NetflixDetailHeader(series: Series, st: UiState, vm: AppViewModel, e
                 val meta = listOf(series.year, series.ageRating).filter(String::isNotBlank)
                 if (meta.isNotEmpty()) Text(meta.joinToString("  •  "), color = Color.White.copy(alpha = .82f), fontWeight = FontWeight.SemiBold)
                 if (series.genres.isNotEmpty()) Text(series.genres.take(5).joinToString("  •  "), color = MaterialTheme.colorScheme.secondary, maxLines = 2)
-                ExpandableDescriptionText(series.description.ifBlank { stringResource(R.string.no_description) }, collapsedLines = if (expanded) 5 else 3, color = Color.White.copy(alpha = .88f))
+                Text(series.description.ifBlank { stringResource(R.string.no_description) }, color = Color.White.copy(alpha = .88f), maxLines = if (expanded) 5 else 3, overflow = TextOverflow.Ellipsis)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = vm::resumeSelected) { Icon(Icons.Default.PlayArrow, null); Text(" " + stringResource(if (st.preferences.progress.containsKey(series.slug)) R.string.continue_playback else R.string.play_now)) }
                     OutlinedButton(onClick = { vm.toggleFavorite(series) }) {
@@ -1624,31 +1524,6 @@ private fun CatalogListCard(
             }
             IconButton(onClick = onFavorite) {
                 Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, stringResource(R.string.favorite))
-            }
-        }
-    }
-}
-
-@Composable
-private fun ExpandableDescriptionText(
-    text: String,
-    modifier: Modifier = Modifier,
-    collapsedLines: Int = 4,
-    color: Color = MaterialTheme.colorScheme.onSurfaceVariant
-) {
-    var expanded by rememberSaveable(text) { mutableStateOf(false) }
-    var hasOverflow by remember(text) { mutableStateOf(false) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Text(
-            text = text,
-            color = color,
-            maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
-            overflow = TextOverflow.Ellipsis,
-            onTextLayout = { result -> if (!expanded) hasOverflow = result.hasVisualOverflow }
-        )
-        if (hasOverflow || expanded) {
-            TextButton(onClick = { expanded = !expanded }, contentPadding = PaddingValues(0.dp)) {
-                Text(stringResource(if (expanded) R.string.collapse_text else R.string.show_full_text))
             }
         }
     }
@@ -2393,7 +2268,7 @@ fun AnimeInfoScreen(
                             Text(itemEpisode.localizedDisplayTitle(), style = MaterialTheme.typography.titleMedium)
                             if (itemEpisode.secondaryTitle.isNotBlank()) Text(itemEpisode.secondaryTitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (itemEpisode.releasedAt.isNotBlank()) Text(itemEpisode.releasedAt, color = MaterialTheme.colorScheme.secondary)
-                            ExpandableDescriptionText(itemEpisode.description.ifBlank { stringResource(R.string.no_description) })
+                            Text(itemEpisode.description.ifBlank { stringResource(R.string.no_description) })
                         }
                     }
                 }
@@ -2408,7 +2283,7 @@ fun AnimeInfoScreen(
                     )
                 }
                 if (episode == null) {
-                    ExpandableDescriptionText(series.description.ifBlank { stringResource(R.string.no_description) })
+                    Text(series.description.ifBlank { stringResource(R.string.no_description) })
                 }
             }
             if (series.genres.isNotEmpty()) item { InfoValue(stringResource(R.string.genres), series.genres.joinToString(" · ")) }
@@ -2444,11 +2319,6 @@ fun SettingsScreen(
 ) {
     val prefs = st.preferences
     val context = LocalContext.current
-    val smartViewSdkAvailable = remember(context.applicationContext) {
-        SamsungSmartViewController.isSdkAvailable(context.applicationContext)
-    }
-    val webRelayStatus by RemotePlaybackRuntime.status.collectAsState()
-    var relayPortText by rememberSaveable(prefs.localWebRelayPort) { mutableStateOf(prefs.localWebRelayPort.toString()) }
     var confirmMetadataDelete by rememberSaveable { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         vm.refreshCatalogMetadata()
@@ -2524,79 +2394,6 @@ fun SettingsScreen(
                         SettingSwitch(stringResource(R.string.auto_next), stringResource(R.string.auto_next_desc), prefs.autoNextEnabled, vm::setAutoNextEnabled)
                         SettingSwitch(stringResource(R.string.external_player), stringResource(R.string.external_player_desc), prefs.allowExternalPlayer, vm::setAllowExternalPlayer)
                         SettingSwitch(stringResource(R.string.auto_play_preferred_hoster), stringResource(R.string.auto_play_preferred_hoster_desc), prefs.autoPlayPreferredHoster, vm::setAutoPlayPreferredHoster)
-                    }
-                }
-
-                item {
-                    SettingsSectionCard(
-                        title = stringResource(R.string.cast_remote_settings),
-                        subtitle = stringResource(R.string.cast_remote_settings_desc)
-                    ) {
-                        SettingSwitch(
-                            stringResource(R.string.cast_enabled),
-                            stringResource(R.string.cast_enabled_desc),
-                            prefs.castEnabled,
-                            vm::setCastEnabled
-                        )
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .52f)
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    if (smartViewSdkAvailable) Icons.Default.CheckCircle else Icons.Default.Info,
-                                    null,
-                                    tint = if (smartViewSdkAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        stringResource(if (smartViewSdkAvailable) R.string.smartview_sdk_ready else R.string.smartview_sdk_title),
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        stringResource(if (smartViewSdkAvailable) R.string.smartview_sdk_ready_desc else R.string.smartview_sdk_missing),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                        SettingSwitch(
-                            stringResource(R.string.local_web_relay_enabled),
-                            stringResource(R.string.local_web_relay_enabled_desc),
-                            prefs.localWebRelayEnabled,
-                            vm::setLocalWebRelayEnabled
-                        )
-                        OutlinedTextField(
-                            value = relayPortText,
-                            onValueChange = { relayPortText = it.filter(Char::isDigit).take(5) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = prefs.localWebRelayEnabled,
-                            singleLine = true,
-                            label = { Text(stringResource(R.string.local_web_relay_port)) },
-                            supportingText = { Text("1024–65535") }
-                        )
-                        OutlinedButton(
-                            onClick = { relayPortText.toIntOrNull()?.let(vm::setLocalWebRelayPort) },
-                            enabled = prefs.localWebRelayEnabled && relayPortText.toIntOrNull() in 1024..65535,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(stringResource(R.string.local_web_relay_apply_port)) }
-                        val relayText = when {
-                            webRelayStatus.lastError != null -> stringResource(R.string.local_web_relay_error, webRelayStatus.lastError.orEmpty())
-                            webRelayStatus.running -> stringResource(
-                                R.string.local_web_relay_running,
-                                webRelayStatus.pageUrl,
-                                webRelayStatus.pin,
-                                webRelayStatus.connectedClients
-                            )
-                            else -> stringResource(R.string.local_web_relay_waiting)
-                        }
-                        Text(relayText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
@@ -2706,28 +2503,6 @@ fun SettingsScreen(
                             )
                             Text(inventoryText, style = MaterialTheme.typography.bodyMedium)
                         }
-                        if (!st.metadataInventoryChecking) {
-                            Text(
-                                stringResource(
-                                    R.string.metadata_inventory_detail,
-                                    st.offlineMetadataCount,
-                                    st.offlineMetadataExpectedCount,
-                                    st.offlineMetadataMissingCount,
-                                    st.offlineMetadataIncompleteCount
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                stringResource(
-                                    R.string.metadata_cover_cache_detail,
-                                    st.coverCacheFiles,
-                                    android.text.format.Formatter.formatFileSize(context, st.coverCacheBytes)
-                                ),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
                         if (st.catalogMetadataUpdating) {
                             val total = st.catalogMetadataTotal
                             val completed = st.catalogMetadataCompleted
@@ -2783,20 +2558,6 @@ fun SettingsScreen(
                         subtitle = stringResource(R.string.display_settings_desc)
                     ) {
                         SettingSwitch(stringResource(R.string.dynamic_colors), stringResource(R.string.dynamic_colors_desc), prefs.useDynamicColors, vm::setDynamicColors)
-                        SettingSwitch(
-                            stringResource(R.string.highlight_started_seasons),
-                            stringResource(R.string.highlight_started_seasons_desc),
-                            prefs.highlightStartedSeasons,
-                            vm::setHighlightStartedSeasons
-                        )
-                        if (prefs.highlightStartedSeasons) {
-                            Text(stringResource(R.string.highlight_strength), fontWeight = FontWeight.Bold)
-                            Slider(
-                                value = prefs.startedSeasonHighlightAlpha,
-                                onValueChange = vm::setStartedSeasonHighlightAlpha,
-                                valueRange = 0.08f..0.60f
-                            )
-                        }
                         Text(stringResource(R.string.accent_color), fontWeight = FontWeight.Bold)
                         Text(stringResource(R.string.accent_color_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

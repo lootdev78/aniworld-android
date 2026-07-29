@@ -246,7 +246,6 @@ class AniWorldRepository(
     suspend fun preloadCatalogMetadata(
         items: List<Series>,
         force: Boolean = false,
-        alreadyCompletedSlugs: Set<String> = emptySet(),
         onProgress: suspend (completed: Int, total: Int, series: Series?) -> Unit
     ) = withContext(Dispatchers.IO) {
         val existing = metadataDao?.all().orEmpty().associateBy { it.slug }
@@ -255,8 +254,10 @@ class AniWorldRepository(
             SeriesMetadataEntity.from(previous?.let { mergeSeriesMetadata(item, it) } ?: item)
         })
         val total = items.size
-        val queue = items.filterNot { it.slug in alreadyCompletedSlugs }.filter { item ->
-            if (force) true else {
+        val queue = if (force) {
+            items
+        } else {
+            items.filter { item ->
                 val cached = existing[item.slug]
                 cached == null || !cached.toModel().hasCatalogMetadata() ||
                     System.currentTimeMillis() - cached.updatedAt >= METADATA_TTL_MS
@@ -268,13 +269,13 @@ class AniWorldRepository(
             val results = coroutineScope {
                 batch.map { item ->
                     async {
-                        item to runCatching { enrichSeries(item, forceRefresh = true, cacheCatalogMetadata = true) }
+                        runCatching { enrichSeries(item, forceRefresh = true, cacheCatalogMetadata = true) }
                             .onFailure { AppLogger.warn("Metadaten", "${item.title} konnte nicht vorgeladen werden", it.message.orEmpty()) }
-                            .getOrNull()
+                            .getOrDefault(item)
                     }
                 }.awaitAll()
             }
-            for ((_, result) in results) {
+            for (result in results) {
                 completed++
                 onProgress(completed, total, result)
             }
@@ -295,8 +296,6 @@ class AniWorldRepository(
         SeasonPage(
             season = season,
             title = if (season == 0) context.getString(R.string.movies) else context.getString(R.string.season_number, season),
-            // Keep an empty result empty here. The UI owns the visible series-description
-            // fallback so it can label it correctly instead of presenting it as season metadata.
             description = parseSeasonDescription(markup, series, season),
             episodes = parseEpisodes(markup, series, season)
         )

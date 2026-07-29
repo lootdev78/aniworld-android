@@ -9,8 +9,6 @@ import androidx.annotation.OptIn
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -22,14 +20,6 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import org.json.JSONObject
 import java.time.Duration
@@ -39,9 +29,6 @@ class PlaybackService : MediaSessionService() {
     private lateinit var player: ExoPlayer
     private lateinit var session: MediaSession
     private lateinit var dataSourceFactory: OkHttpDataSource.Factory
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var statePump: Job? = null
-    private var volumeBeforeMute = 1f
 
     private val previousCommand = SessionCommand(COMMAND_PREVIOUS, Bundle.EMPTY)
     private val nextCommand = SessionCommand(COMMAND_NEXT, Bundle.EMPTY)
@@ -59,60 +46,6 @@ class PlaybackService : MediaSessionService() {
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSourceFactory))
             .build()
-
-        player.addListener(object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) {
-                publishRuntimeState()
-                if (player.playbackState == Player.STATE_ENDED) {
-                    RemotePlaybackRuntime.clearPlayback()
-                }
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                RemotePlaybackRuntime.publishPlayerState(
-                    playing = false,
-                    positionMs = player.currentPosition,
-                    durationMs = player.duration.takeIf { it > 0L } ?: 0L,
-                    volume = player.volume,
-                    muted = player.volume <= 0.001f,
-                    playerState = player.playbackState,
-                    error = error.message
-                )
-            }
-        })
-        statePump = serviceScope.launch {
-            while (isActive) {
-                publishRuntimeState()
-                delay(if (player.hasMediaItem()) 500L else 1_500L)
-            }
-        }
-        serviceScope.launch {
-            RemotePlaybackRuntime.commands.collect { command ->
-                when (command) {
-                    RemotePlaybackCommand.Play -> player.play()
-                    RemotePlaybackCommand.Pause -> player.pause()
-                    RemotePlaybackCommand.Toggle -> if (player.isPlaying) player.pause() else player.play()
-                    RemotePlaybackCommand.Previous -> sendAppAction(ACTION_PREVIOUS)
-                    RemotePlaybackCommand.Next -> sendAppAction(ACTION_NEXT)
-                    RemotePlaybackCommand.Stop -> stopPlaybackAndService(notifyApp = true)
-                    is RemotePlaybackCommand.Seek -> player.seekTo(command.positionMs.coerceAtLeast(0L))
-                    is RemotePlaybackCommand.Volume -> {
-                        val value = command.value.coerceIn(0f, 1f)
-                        if (value > 0f) volumeBeforeMute = value
-                        player.volume = value
-                    }
-                    is RemotePlaybackCommand.Mute -> {
-                        if (command.muted) {
-                            if (player.volume > 0f) volumeBeforeMute = player.volume
-                            player.volume = 0f
-                        } else {
-                            player.volume = volumeBeforeMute.coerceIn(0.05f, 1f)
-                        }
-                    }
-                }
-                publishRuntimeState()
-            }
-        }
 
         val callback = object : MediaSession.Callback {
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
@@ -133,7 +66,12 @@ class PlaybackService : MediaSessionService() {
                 when (customCommand.customAction) {
                     COMMAND_PREVIOUS -> sendAppAction(ACTION_PREVIOUS)
                     COMMAND_NEXT -> sendAppAction(ACTION_NEXT)
-                    COMMAND_STOP -> stopPlaybackAndService(notifyApp = true)
+                    COMMAND_STOP -> {
+                        player.stop()
+                        player.clearMediaItems()
+                        sendAppAction(ACTION_STOPPED)
+                        stopSelf()
+                    }
                     else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
                 }
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -175,10 +113,13 @@ class PlaybackService : MediaSessionService() {
             ACTION_SEEK -> player.seekTo(intent.getLongExtra(EXTRA_SEEK_POSITION, player.currentPosition).coerceAtLeast(0L))
             ACTION_PLAY -> player.play()
             ACTION_PAUSE -> player.pause()
-            ACTION_STOP -> stopPlaybackAndService(notifyApp = false)
+            ACTION_STOP -> {
+                player.stop()
+                player.clearMediaItems()
+                stopSelf()
+            }
         }
-        publishRuntimeState()
-        return START_NOT_STICKY
+        return super.onStartCommand(intent, flags, startId)
     }
 
     private fun prepare(intent: Intent) {
@@ -210,39 +151,6 @@ class PlaybackService : MediaSessionService() {
         if (start > 0L) player.seekTo(start)
         player.prepare()
         player.playWhenReady = true
-        publishRuntimeState()
-    }
-
-    private fun Player.hasMediaItem(): Boolean = mediaItemCount > 0
-
-    private fun publishRuntimeState() {
-        if (!::player.isInitialized) return
-        val duration = player.duration.takeIf { it > 0L && it != Long.MAX_VALUE } ?: 0L
-        RemotePlaybackRuntime.publishPlayerState(
-            playing = player.isPlaying,
-            positionMs = player.currentPosition.coerceAtLeast(0L),
-            durationMs = duration,
-            volume = player.volume,
-            muted = player.volume <= 0.001f,
-            playerState = player.playbackState
-        )
-    }
-
-    private fun stopPlaybackAndService(notifyApp: Boolean) {
-        if (::player.isInitialized) {
-            player.stop()
-            player.clearMediaItems()
-        }
-        RemotePlaybackRuntime.clearPlayback()
-        if (notifyApp) sendAppAction(ACTION_STOPPED)
-        stopSelf()
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        // Workaround for vendor builds that otherwise keep a stale media notification after
-        // the task is swiped away. A deliberate remote cast has its own controller/service.
-        stopPlaybackAndService(notifyApp = false)
-        super.onTaskRemoved(rootIntent)
     }
 
     private fun sendAppAction(action: String) {
@@ -250,11 +158,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        statePump?.cancel()
-        serviceScope.cancel()
-        if (::session.isInitialized) session.release()
-        if (::player.isInitialized) player.release()
-        RemotePlaybackRuntime.clearPlayback()
+        session.release()
+        player.release()
         super.onDestroy()
     }
 
@@ -282,7 +187,6 @@ class PlaybackService : MediaSessionService() {
         private const val EXTRA_SEEK_POSITION = "seek_position"
 
         fun prepare(context: Context, playback: ResolvedPlayback) {
-            RemotePlaybackRuntime.onPlaybackPrepared(playback)
             val episodeTitle = playback.episode.localizedDisplayTitle(context)
             val title = "${playback.seriesTitle} · ${playback.episode.localizedLabel(context)}"
             val headersJson = JSONObject().apply { playback.stream.headers.forEach { (key, value) -> put(key, value) } }.toString()

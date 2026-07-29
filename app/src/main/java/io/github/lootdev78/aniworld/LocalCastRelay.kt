@@ -171,7 +171,7 @@ class LocalCastRelay(context: Context) {
                     ?.takeIf(::isSafeAuthority)
                     ?: "${formatHost(connection.localAddress.hostAddress.orEmpty())}:$relayPort"
 
-                if (method == "GET" && body != null && (isHls || isDash)) {
+                if (method == "GET" && (isHls || isDash)) {
                     val original = body.bytes().toString(StandardCharsets.UTF_8)
                     val rewritten = if (isHls) {
                         rewriteHls(original, finalUrl, localAuthority, token)
@@ -194,7 +194,7 @@ class LocalCastRelay(context: Context) {
                         output.flush()
                     }
                 } else {
-                    val length = body?.contentLength()?.takeIf { it >= 0L }
+                    val length = body.contentLength().takeIf { it >= 0L }
                     writeResponseHeaders(
                         connection = connection,
                         statusCode = response.code,
@@ -203,7 +203,7 @@ class LocalCastRelay(context: Context) {
                         contentLength = length,
                         contentType = contentType
                     )
-                    if (method == "GET" && body != null) {
+                    if (method == "GET") {
                         body.byteStream().use { upstreamInput ->
                             connection.getOutputStream().use { output ->
                                 upstreamInput.copyTo(output, STREAM_BUFFER_SIZE)

@@ -59,11 +59,6 @@ data class UiState(
     val diagnostics: List<DiagnosticEntry> = emptyList(),
     val metadataInventoryChecking: Boolean = false,
     val offlineMetadataCount: Int = 0,
-    val offlineMetadataExpectedCount: Int = 0,
-    val offlineMetadataMissingCount: Int = 0,
-    val offlineMetadataIncompleteCount: Int = 0,
-    val coverCacheFiles: Int = 0,
-    val coverCacheBytes: Long = 0L,
     val newsPage: HomeNews? = null,
     val challenge: ChallengeRequest? = null,
     val challengeChecking: Boolean = false,
@@ -118,7 +113,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         viewModelScope.launch {
             store.preferences.collect { prefs ->
                 AppLogger.setEnabled(prefs.diagnosticsEnabled)
-                RemotePlaybackRuntime.configure(app, prefs)
                 _state.update { it.copy(preferences = prefs, preferencesReady = true) }
                 if (!libraryMetadataBackfillTriggered) {
                     libraryMetadataBackfillTriggered = true
@@ -763,11 +757,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         AppLogger.setEnabled(enabled)
         viewModelScope.launch { store.setDiagnosticsEnabled(enabled) }
     }
-    fun setCastEnabled(enabled: Boolean) = viewModelScope.launch { store.setCastEnabled(enabled) }.let { Unit }
-    fun setLocalWebRelayEnabled(enabled: Boolean) = viewModelScope.launch { store.setLocalWebRelayEnabled(enabled) }.let { Unit }
-    fun setLocalWebRelayPort(port: Int) = viewModelScope.launch { store.setLocalWebRelayPort(port) }.let { Unit }
-    fun setHighlightStartedSeasons(enabled: Boolean) = viewModelScope.launch { store.setHighlightStartedSeasons(enabled) }.let { Unit }
-    fun setStartedSeasonHighlightAlpha(alpha: Float) = viewModelScope.launch { store.setStartedSeasonHighlightAlpha(alpha) }.let { Unit }
     fun setHomeSectionVisible(section: HomeSection, visible: Boolean) =
         viewModelScope.launch { store.setHomeSectionVisible(section, visible) }.let { Unit }
     fun moveHomeSection(section: HomeSection, delta: Int) =
@@ -776,21 +765,10 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun checkOfflineMetadata() {
         viewModelScope.launch {
             _state.update { it.copy(metadataInventoryChecking = true) }
-            val expectedSlugs = _state.value.catalog.items.map(Series::slug).filter(String::isNotBlank).toSet()
-            val inventory = runCatching { withContext(Dispatchers.IO) { store.offlineMetadataInventory(expectedSlugs) } }
+            val count = runCatching { withContext(Dispatchers.IO) { store.offlineMetadataCount() } }
                 .onFailure { AppLogger.error("Metadaten", "Metadatenbestand konnte nicht geprüft werden", it) }
-                .getOrDefault(MetadataInventory(expectedSlugs.size, 0, expectedSlugs.sorted(), emptyList(), 0, 0L))
-            _state.update {
-                it.copy(
-                    metadataInventoryChecking = false,
-                    offlineMetadataCount = inventory.storedCount,
-                    offlineMetadataExpectedCount = inventory.expectedCount,
-                    offlineMetadataMissingCount = inventory.missingSlugs.size,
-                    offlineMetadataIncompleteCount = inventory.incompleteSlugs.size,
-                    coverCacheFiles = inventory.coverCacheFiles,
-                    coverCacheBytes = inventory.coverCacheBytes
-                )
-            }
+                .getOrDefault(0)
+            _state.update { it.copy(metadataInventoryChecking = false, offlineMetadataCount = count) }
         }
     }
 
@@ -798,7 +776,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { store.deleteOfflineMetadata() } }
                 .onSuccess {
-                    _state.update { state -> state.copy(offlineMetadataCount = 0, offlineMetadataExpectedCount = 0, offlineMetadataMissingCount = 0, offlineMetadataIncompleteCount = 0, coverCacheFiles = 0, coverCacheBytes = 0L, catalog = CatalogData(), homeFeed = HomeFeed(), status = text(R.string.metadata_delete_complete)) }
+                    _state.update { state -> state.copy(offlineMetadataCount = 0, catalog = CatalogData(), homeFeed = HomeFeed(), status = text(R.string.metadata_delete_complete)) }
                 }
                 .onFailure { error ->
                     AppLogger.error("Metadaten", text(R.string.metadata_delete_failed), error)

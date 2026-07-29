@@ -3,9 +3,6 @@ package io.github.lootdev78.aniworld
 import android.Manifest
 import android.app.Activity
 import android.app.PictureInPictureParams
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -15,7 +12,6 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,29 +20,21 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.CastConnected
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Replay
@@ -66,7 +54,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -105,7 +92,6 @@ fun PlayerScreen(
     autoNextEnabled: Boolean,
     availableHosters: List<Hoster>,
     allowExternalPlayer: Boolean,
-    castEnabled: Boolean,
     onLanguageChange: (Language) -> Unit,
     onHosterChange: (Hoster) -> Unit,
     onPrevious: () -> Unit,
@@ -133,11 +119,7 @@ fun PlayerScreen(
     var manualCastDialogOpen by remember(playback.id) { mutableStateOf(false) }
     var chromecastDialogOpen by remember(playback.id) { mutableStateOf(false) }
     var manualCastAddress by remember(playback.id) { mutableStateOf("") }
-    var streamInfoOpen by remember(playback.id) { mutableStateOf(false) }
     var internalPausedForCast by remember(playback.id) { mutableStateOf(false) }
-    val streamInfo = remember(playback.stream.url, playback.stream.mimeType) {
-        StreamPresentation.from(playback.stream)
-    }
     val castRelay = remember(context.applicationContext) { LocalCastRelay(context.applicationContext) }
     val dlnaController = remember(context.applicationContext, castRelay) { XboxCastController(context.applicationContext, castRelay) }
     val dlnaState by dlnaController.state.collectAsState()
@@ -145,33 +127,26 @@ fun PlayerScreen(
     val fcastState by fcastController.state.collectAsState()
     val chromecastController = remember(context.applicationContext, castRelay) { ChromecastController(context.applicationContext, castRelay) }
     val chromecastState by chromecastController.state.collectAsState()
-    val smartViewController = remember(context.applicationContext, castRelay) { SamsungSmartViewController(context.applicationContext, castRelay) }
-    val smartViewState by smartViewController.state.collectAsState()
     val dlnaActive = dlnaState.connectedDevice != null
     val fcastActive = fcastState.connectedDevice != null
     val chromecastActive = chromecastState.connectedDeviceName != null
-    val smartViewActive = smartViewState.connectedDevice != null
-    val castActive = castEnabled && (smartViewActive || dlnaActive || fcastActive || chromecastActive)
+    val castActive = dlnaActive || fcastActive || chromecastActive
     val remoteTransportState = when {
-        smartViewActive -> smartViewState.transportState
         chromecastActive -> chromecastState.transportState
         fcastActive -> fcastState.transportState
         else -> dlnaState.transportState
     }
     val remotePositionMs = when {
-        smartViewActive -> smartViewState.positionMs
         chromecastActive -> chromecastState.positionMs
         fcastActive -> fcastState.positionMs
         else -> dlnaState.positionMs
     }
     val remoteDurationMs = when {
-        smartViewActive -> smartViewState.durationMs
         chromecastActive -> chromecastState.durationMs
         fcastActive -> fcastState.durationMs
         else -> dlnaState.durationMs
     }
     val remoteDeviceName = when {
-        smartViewActive -> smartViewState.connectedDevice?.displayName.orEmpty()
         chromecastActive -> chromecastState.connectedDeviceName.orEmpty()
         fcastActive -> fcastState.connectedDevice?.displayName.orEmpty()
         else -> dlnaState.connectedDevice?.displayName.orEmpty()
@@ -188,7 +163,6 @@ fun PlayerScreen(
             castMenuOpen = true
             dlnaController.discover()
             fcastController.discover()
-            smartViewController.discover()
         } else {
             playerError = context.getString(R.string.xbox_cast_permission_denied)
             controlsVisible = true
@@ -205,18 +179,6 @@ fun PlayerScreen(
         } else {
             playerError = context.getString(R.string.xbox_cast_permission_denied)
             controlsVisible = true
-        }
-    }
-
-    LaunchedEffect(castEnabled) {
-        if (!castEnabled) {
-            castMenuOpen = false
-            chromecastDialogOpen = false
-            manualCastDialogOpen = false
-            if (smartViewActive) smartViewController.disconnect()
-            if (chromecastActive) chromecastController.disconnect()
-            if (fcastActive) fcastController.disconnect()
-            if (dlnaActive) dlnaController.disconnect()
         }
     }
 
@@ -240,7 +202,6 @@ fun PlayerScreen(
         if (autoNextSeconds <= 0) {
             autoNextVisible = false
             onProgress(position, duration, true)
-            if (smartViewActive) smartViewController.disconnect()
             if (dlnaActive) dlnaController.disconnect()
             if (fcastActive) fcastController.disconnect()
             if (chromecastActive) chromecastController.disconnect()
@@ -268,11 +229,6 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(chromecastActive) {
-        if (chromecastActive) {
-            if (smartViewActive) smartViewController.disconnect()
-            if (fcastActive) fcastController.disconnect()
-            if (dlnaActive) dlnaController.disconnect()
-        }
         while (chromecastActive) {
             chromecastController.refreshProgress()
             delay(1_000L)
@@ -288,8 +244,8 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(dlnaState.completionEvent, fcastState.completionEvent, chromecastState.completionEvent, smartViewState.completionEvent) {
-        val completion = maxOf(dlnaState.completionEvent, fcastState.completionEvent, chromecastState.completionEvent, smartViewState.completionEvent)
+    LaunchedEffect(dlnaState.completionEvent, fcastState.completionEvent, chromecastState.completionEvent) {
+        val completion = maxOf(dlnaState.completionEvent, fcastState.completionEvent, chromecastState.completionEvent)
         if (completion != 0L) {
             onEnded(remotePositionMs, remoteDurationMs)
             if (autoNextEnabled && hasNext) {
@@ -299,8 +255,8 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(dlnaState.error, fcastState.error, chromecastState.error, smartViewState.error) {
-        val message = smartViewState.error ?: chromecastState.error ?: fcastState.error ?: dlnaState.error
+    LaunchedEffect(dlnaState.error, fcastState.error, chromecastState.error) {
+        val message = chromecastState.error ?: fcastState.error ?: dlnaState.error
         message?.let {
             playerError = it
             controlsVisible = true
@@ -308,9 +264,8 @@ fun PlayerScreen(
         }
     }
 
-    DisposableEffect(dlnaController, fcastController, chromecastController, smartViewController, castRelay) {
+    DisposableEffect(dlnaController, fcastController, chromecastController, castRelay) {
         onDispose {
-            smartViewController.close()
             dlnaController.close()
             fcastController.close()
             chromecastController.close()
@@ -359,7 +314,6 @@ fun PlayerScreen(
         dlnaState.error?.let { dlnaController.clearError() }
         fcastState.error?.let { fcastController.clearError() }
         chromecastState.error?.let { chromecastController.clearError() }
-        smartViewState.error?.let { smartViewController.clearError() }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -368,14 +322,12 @@ fun PlayerScreen(
             castMenuOpen = true
             dlnaController.discover()
             fcastController.discover()
-            smartViewController.discover()
         }
     }
 
     fun seekPlayback(targetMs: Long) {
         val target = targetMs.coerceAtLeast(0L)
         when {
-            smartViewActive -> smartViewController.seekTo(target)
             chromecastActive -> chromecastController.seekTo(target)
             fcastActive -> fcastController.seekTo(target)
             dlnaActive -> dlnaController.seekTo(target)
@@ -389,7 +341,6 @@ fun PlayerScreen(
 
     fun disconnectCastAndResume() {
         val resumePosition = remotePositionMs.takeIf { it > 0L } ?: position
-        if (smartViewActive) smartViewController.disconnect()
         if (chromecastActive) chromecastController.disconnect()
         if (fcastActive) fcastController.disconnect()
         if (dlnaActive) dlnaController.disconnect()
@@ -402,7 +353,6 @@ fun PlayerScreen(
     }
 
     fun stopCastForNavigation() {
-        if (smartViewActive) smartViewController.disconnect()
         if (chromecastActive) chromecastController.disconnect()
         if (fcastActive) fcastController.disconnect()
         if (dlnaActive) dlnaController.disconnect()
@@ -411,25 +361,11 @@ fun PlayerScreen(
 
     fun closePlayer() {
         autoNextVisible = false
-        if (smartViewActive) smartViewController.disconnect()
         if (chromecastActive) chromecastController.disconnect()
         if (fcastActive) fcastController.disconnect()
         if (dlnaActive) dlnaController.disconnect()
         PlaybackService.stop(context)
         onClose(position, duration)
-    }
-
-    fun copyStreamLink() {
-        runCatching {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(
-                ClipData.newPlainText(context.getString(R.string.player_stream_link_clip_label), playback.stream.url)
-            )
-            Toast.makeText(context, context.getString(R.string.player_stream_link_copied), Toast.LENGTH_SHORT).show()
-        }.onFailure { error ->
-            playerError = error.message ?: context.getString(R.string.player_stream_link_copy_failed)
-            controlsVisible = true
-        }
     }
 
     BackHandler { closePlayer() }
@@ -481,7 +417,6 @@ fun PlayerScreen(
                     .background(Color.Black.copy(alpha = .88f))
                     .clickable {
                         when {
-                            smartViewActive -> smartViewController.togglePlayPause()
                             chromecastActive -> chromecastController.togglePlayPause()
                             fcastActive -> fcastController.togglePlayPause()
                             else -> dlnaController.togglePlayPause()
@@ -531,7 +466,7 @@ fun PlayerScreen(
                     IconButton(onClick = { controlsVisible = true; languageMenuOpen = true }) {
                         Icon(Icons.Default.Language, stringResource(R.string.change_language), tint = Color.White)
                     }
-                    DropdownMenu(expanded = false, onDismissRequest = { languageMenuOpen = false }) {
+                    DropdownMenu(expanded = languageMenuOpen, onDismissRequest = { languageMenuOpen = false }) {
                         playerLanguages.forEach { language ->
                             DropdownMenuItem(
                                 text = { Text(language.localizedLabel()) },
@@ -554,7 +489,7 @@ fun PlayerScreen(
                     IconButton(onClick = { controlsVisible = true; hosterMenuOpen = true }) {
                         Icon(Icons.Default.Tune, stringResource(R.string.change_hoster), tint = Color.White)
                     }
-                    DropdownMenu(expanded = false, onDismissRequest = { hosterMenuOpen = false }) {
+                    DropdownMenu(expanded = hosterMenuOpen, onDismissRequest = { hosterMenuOpen = false }) {
                         orderedHosters.forEach { hoster ->
                             DropdownMenuItem(
                                 text = { Text("${localizedHosterName(hoster.name)} · ${hoster.lang.localizedLabel()}") },
@@ -574,7 +509,7 @@ fun PlayerScreen(
                     }
                 }
             }
-            if (castEnabled && chromecastState.available) {
+            if (chromecastState.available) {
                 IconButton(
                     onClick = {
                         controlsVisible = true
@@ -599,13 +534,12 @@ fun PlayerScreen(
                     )
                 }
             }
-            if (castEnabled) {
             Box {
                 IconButton(onClick = ::openCastPicker) {
                     Icon(
-                        if (smartViewActive || dlnaActive || fcastActive) Icons.Default.CastConnected else Icons.Default.Cast,
+                        if (dlnaActive || fcastActive) Icons.Default.CastConnected else Icons.Default.Cast,
                         stringResource(R.string.local_cast),
-                        tint = if (smartViewActive || dlnaActive || fcastActive) MaterialTheme.colorScheme.primary else Color.White
+                        tint = if (dlnaActive || fcastActive) MaterialTheme.colorScheme.primary else Color.White
                     )
                 }
                 DropdownMenu(expanded = castMenuOpen, onDismissRequest = { castMenuOpen = false }) {
@@ -624,36 +558,6 @@ fun PlayerScreen(
                             }
                         )
                     }
-                    if (smartViewActive) {
-                        DropdownMenuItem(
-                            text = {
-                                Column(Modifier.width(260.dp)) {
-                                    Text(stringResource(R.string.cast_volume), fontWeight = FontWeight.Bold)
-                                    Slider(
-                                        value = (smartViewState.volume ?: 50).toFloat(),
-                                        onValueChange = { smartViewController.setVolume(it.toInt()) },
-                                        valueRange = 0f..100f
-                                    )
-                                }
-                            },
-                            onClick = { controlsVisible = true }
-                        )
-                    }
-                    if (dlnaActive && dlnaState.connectedDevice?.renderingControlUrl?.isNotBlank() == true) {
-                        DropdownMenuItem(
-                            text = {
-                                Column(Modifier.width(260.dp)) {
-                                    Text(stringResource(R.string.cast_volume), fontWeight = FontWeight.Bold)
-                                    Slider(
-                                        value = (dlnaState.volume ?: 50).toFloat(),
-                                        onValueChange = { dlnaController.setVolume(it.toInt()) },
-                                        valueRange = 0f..100f
-                                    )
-                                }
-                            },
-                            onClick = { controlsVisible = true }
-                        )
-                    }
                     if (playback.stream.headers.keys.any { !it.equals("User-Agent", true) }) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.cast_header_warning), style = MaterialTheme.typography.labelSmall) },
@@ -661,49 +565,12 @@ fun PlayerScreen(
                             onClick = { castMenuOpen = false }
                         )
                     }
-                    if (smartViewState.discovering || dlnaState.discovering || fcastState.discovering) {
+                    if (dlnaState.discovering || fcastState.discovering) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.cast_searching)) },
                             leadingIcon = { Icon(Icons.Default.Refresh, null) },
                             enabled = false,
                             onClick = { castMenuOpen = false }
-                        )
-                    }
-                    if (!smartViewState.sdkAvailable) {
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(stringResource(R.string.smartview_sdk_title))
-                                    Text(stringResource(R.string.smartview_sdk_missing_short), style = MaterialTheme.typography.labelSmall)
-                                }
-                            },
-                            enabled = false,
-                            onClick = { castMenuOpen = false }
-                        )
-                    }
-                    smartViewState.devices.filter { it.id != smartViewState.connectedDevice?.id && it.dmpSupported != false }.forEach { device ->
-                        DropdownMenuItem(
-                            text = {
-                                Column {
-                                    Text(device.displayName)
-                                    Text(
-                                        if (device.standby) stringResource(R.string.smartview_device_standby)
-                                        else stringResource(R.string.smartview_device_native),
-                                        style = MaterialTheme.typography.labelSmall
-                                    )
-                                }
-                            },
-                            leadingIcon = { Icon(Icons.Default.Cast, null) },
-                            onClick = {
-                                castMenuOpen = false
-                                playerError = null
-                                if (chromecastActive) chromecastController.disconnect()
-                                if (fcastActive) fcastController.disconnect()
-                                if (dlnaActive) dlnaController.disconnect()
-                                PlaybackService.pause(context)
-                                internalPausedForCast = true
-                                smartViewController.cast(device, playback, position)
-                            }
                         )
                     }
                     dlnaState.devices.filter { it.id != dlnaState.connectedDevice?.id }.forEach { device ->
@@ -712,14 +579,8 @@ fun PlayerScreen(
                                 Column {
                                     Text(device.displayName)
                                     Text(
-                                        stringResource(
-                                            when (device.profile) {
-                                                XboxDeviceProfile.XBOX_ONE -> R.string.xbox_profile_one
-                                                XboxDeviceProfile.XBOX_SERIES -> R.string.xbox_profile_series
-                                                XboxDeviceProfile.SAMSUNG_TIZEN -> R.string.xbox_profile_tizen
-                                                XboxDeviceProfile.GENERIC_DLNA -> R.string.xbox_profile_generic
-                                            }
-                                        ),
+                                        if (device.isXbox) stringResource(R.string.cast_xbox_dlna_device)
+                                        else stringResource(R.string.cast_dlna_device),
                                         style = MaterialTheme.typography.labelSmall
                                     )
                                 }
@@ -728,7 +589,6 @@ fun PlayerScreen(
                             onClick = {
                                 castMenuOpen = false
                                 playerError = null
-                                if (smartViewActive) smartViewController.disconnect()
                                 if (chromecastActive) chromecastController.disconnect()
                                 if (fcastActive) fcastController.disconnect()
                                 PlaybackService.pause(context)
@@ -749,7 +609,6 @@ fun PlayerScreen(
                             onClick = {
                                 castMenuOpen = false
                                 playerError = null
-                                if (smartViewActive) smartViewController.disconnect()
                                 if (chromecastActive) chromecastController.disconnect()
                                 if (dlnaActive) dlnaController.disconnect()
                                 PlaybackService.pause(context)
@@ -758,13 +617,12 @@ fun PlayerScreen(
                             }
                         )
                     }
-                    if (!smartViewState.discovering && !dlnaState.discovering && !fcastState.discovering && smartViewState.devices.isEmpty() && dlnaState.devices.isEmpty() && fcastState.devices.isEmpty()) {
+                    if (!dlnaState.discovering && !fcastState.discovering && dlnaState.devices.isEmpty() && fcastState.devices.isEmpty()) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.cast_no_local_devices)) },
                             onClick = {
                                 dlnaController.discover()
                                 fcastController.discover()
-                                smartViewController.discover()
                             }
                         )
                     }
@@ -774,7 +632,6 @@ fun PlayerScreen(
                         onClick = {
                             dlnaController.discover()
                             fcastController.discover()
-                            smartViewController.discover()
                         }
                     )
                     DropdownMenuItem(
@@ -809,7 +666,6 @@ fun PlayerScreen(
                     )
                 }
             }
-            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 IconButton(onClick = ::enterPictureInPicture) {
                     Icon(Icons.Default.PictureInPictureAlt, stringResource(R.string.picture_in_picture), tint = Color.White)
@@ -832,7 +688,7 @@ fun PlayerScreen(
                             }
                     }
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, stringResource(R.string.open_external_player), tint = Color.White)
+                    Icon(Icons.Default.OpenInNew, stringResource(R.string.open_external_player), tint = Color.White)
                 }
             }
             IconButton(
@@ -860,110 +716,6 @@ fun PlayerScreen(
             }
         }
 
-        if (languageMenuOpen) {
-            AlertDialog(
-                onDismissRequest = { languageMenuOpen = false },
-                title = { Text(stringResource(R.string.change_language)) },
-                text = {
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                        items(playerLanguages, key = Language::token) { language ->
-                            TextButton(
-                                onClick = {
-                                    languageMenuOpen = false
-                                    onProgress(position, duration, true)
-                                    stopCastForNavigation()
-                                    onLanguageChange(language)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                if (playback.stream.language == language) Icon(Icons.Default.Check, null)
-                                Text(language.localizedLabel(), modifier = Modifier.padding(start = 8.dp).weight(1f))
-                            }
-                        }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { languageMenuOpen = false }) { Text(stringResource(R.string.close)) } }
-            )
-        }
-
-        if (hosterMenuOpen) {
-            AlertDialog(
-                onDismissRequest = { hosterMenuOpen = false },
-                title = { Text(stringResource(R.string.change_hoster)) },
-                text = {
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                        items(orderedHosters, key = { "${it.name}:${it.lang.token}" }) { hoster ->
-                            TextButton(
-                                onClick = {
-                                    hosterMenuOpen = false
-                                    onProgress(position, duration, true)
-                                    stopCastForNavigation()
-                                    onHosterChange(hoster)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                if (HosterCatalog.normalize(playback.stream.hoster) == HosterCatalog.normalize(hoster.name) && playback.stream.language == hoster.lang) {
-                                    Icon(Icons.Default.Check, null)
-                                }
-                                Text(
-                                    "${localizedHosterName(hoster.name)} · ${hoster.lang.localizedLabel()}",
-                                    modifier = Modifier.padding(start = 8.dp).weight(1f)
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = { TextButton(onClick = { hosterMenuOpen = false }) { Text(stringResource(R.string.close)) } }
-            )
-        }
-
-        if (streamInfoOpen) {
-            AlertDialog(
-                onDismissRequest = { streamInfoOpen = false },
-                title = { Text(stringResource(R.string.player_stream_info)) },
-                text = {
-                    Column(
-                        Modifier.fillMaxWidth(),
-                        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)
-                    ) {
-                        PlayerStreamInfoRow(stringResource(R.string.player_stream_format), streamInfo.formatLabel)
-                        PlayerStreamInfoRow(stringResource(R.string.player_stream_mime), streamInfo.mimeType)
-                        if (streamInfo.host.isNotBlank()) {
-                            PlayerStreamInfoRow(stringResource(R.string.player_stream_host), streamInfo.host)
-                        }
-                        PlayerStreamInfoRow(
-                            stringResource(R.string.player_stream_type),
-                            stringResource(if (streamInfo.adaptive) R.string.player_stream_adaptive else R.string.player_stream_progressive)
-                        )
-                        HorizontalDivider()
-                        Text(
-                            stringResource(R.string.player_stream_link),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        SelectionContainer {
-                            Text(
-                                playback.stream.url,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = ::copyStreamLink) {
-                        Icon(Icons.Default.ContentCopy, null)
-                        Text(" " + stringResource(R.string.copy))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { streamInfoOpen = false }) {
-                        Text(stringResource(R.string.close))
-                    }
-                }
-            )
-        }
-
         if (chromecastDialogOpen) {
             AlertDialog(
                 onDismissRequest = { chromecastDialogOpen = false },
@@ -978,6 +730,7 @@ fun PlayerScreen(
                                         contentDescription = routeContext.getString(R.string.chromecast_button)
                                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                                         CastButtonFactory.setUpMediaRouteButton(routeContext, this)
+                                        setAlwaysVisible(true)
                                     }
                                 }.getOrElse {
                                     TextView(routeContext).apply {
@@ -1116,140 +869,6 @@ fun PlayerScreen(
                         style = MaterialTheme.typography.labelMedium
                     )
                 }
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 5.dp)
-                        .clickable {
-                            controlsVisible = true
-                            streamInfoOpen = true
-                        },
-                    color = Color.White.copy(alpha = .10f),
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Info, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                        Text(
-                            streamInfo.compactLabel,
-                            modifier = Modifier.padding(start = 8.dp).weight(1f),
-                            color = Color.White.copy(alpha = .90f),
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)
-                ) {
-                    item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.Default.ContentCopy, null, tint = Color.White) },
-                            label = stringResource(R.string.player_copy_stream_link),
-                            onClick = ::copyStreamLink
-                        )
-                    }
-                    item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.Default.Info, null, tint = Color.White) },
-                            label = stringResource(R.string.player_stream_info),
-                            onClick = {
-                                controlsVisible = true
-                                streamInfoOpen = true
-                            }
-                        )
-                    }
-                    if (playerLanguages.isNotEmpty()) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.Default.Language, null, tint = Color.White) },
-                            label = stringResource(R.string.change_language),
-                            onClick = { controlsVisible = true; languageMenuOpen = true }
-                        )
-                    }
-                    if (orderedHosters.isNotEmpty()) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.Default.Tune, null, tint = Color.White) },
-                            label = stringResource(R.string.change_hoster),
-                            onClick = { controlsVisible = true; hosterMenuOpen = true }
-                        )
-                    }
-                    if (castEnabled && chromecastState.available) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(if (chromecastActive) Icons.Default.CastConnected else Icons.Default.Cast, null, tint = if (chromecastActive) MaterialTheme.colorScheme.primary else Color.White) },
-                            label = stringResource(R.string.chromecast_button),
-                            onClick = {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                                    ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
-                                ) chromecastPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
-                                else {
-                                    chromecastController.prepare(playback, position)
-                                    if (chromecastController.initialize()) chromecastDialogOpen = true
-                                    else playerError = context.getString(R.string.chromecast_unavailable)
-                                }
-                            }
-                        )
-                    }
-                    if (castEnabled) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(if (smartViewActive || dlnaActive || fcastActive) Icons.Default.CastConnected else Icons.Default.Cast, null, tint = if (smartViewActive || dlnaActive || fcastActive) MaterialTheme.colorScheme.primary else Color.White) },
-                            label = stringResource(R.string.local_cast),
-                            onClick = ::openCastPicker
-                        )
-                    }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.Default.PictureInPictureAlt, null, tint = Color.White) },
-                            label = stringResource(R.string.picture_in_picture),
-                            onClick = ::enterPictureInPicture
-                        )
-                    }
-                    if (allowExternalPlayer) item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null, tint = Color.White) },
-                            label = stringResource(R.string.open_external_player),
-                            onClick = {
-                                onProgress(position, duration, true)
-                                stopCastForNavigation()
-                                launchExternalPlayback(context, playback)
-                                    .onSuccess { closePlayer() }
-                                    .onFailure { error ->
-                                        playerError = if (error is android.content.ActivityNotFoundException) context.getString(R.string.external_player_not_found)
-                                        else error.message ?: context.getString(R.string.external_player_failed)
-                                    }
-                            }
-                        )
-                    }
-                    item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.Default.SkipPrevious, null, tint = if (hasPrevious) Color.White else Color.White.copy(alpha = .32f)) },
-                            label = stringResource(R.string.player_previous_episode),
-                            enabled = hasPrevious,
-                            onClick = {
-                                autoNextVisible = false
-                                onProgress(position, duration, true)
-                                stopCastForNavigation()
-                                onPrevious()
-                            }
-                        )
-                    }
-                    item {
-                        PlayerNavigationAction(
-                            icon = { Icon(Icons.Default.SkipNext, null, tint = if (hasNext) Color.White else Color.White.copy(alpha = .32f)) },
-                            label = stringResource(R.string.player_next_episode),
-                            enabled = hasNext,
-                            onClick = {
-                                autoNextVisible = false
-                                onProgress(position, duration, true)
-                                stopCastForNavigation()
-                                onNext()
-                            }
-                        )
-                    }
-                }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                     horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
@@ -1278,52 +897,6 @@ fun PlayerScreen(
                 playerError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
             }
-        }
-    }
-}
-
-@Composable
-private fun PlayerStreamInfoRow(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            label,
-            modifier = Modifier.weight(.42f),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        SelectionContainer(Modifier.weight(.58f)) {
-            Text(
-                value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
-
-@Composable
-private fun PlayerNavigationAction(
-    icon: @Composable () -> Unit,
-    label: String,
-    enabled: Boolean = true,
-    onClick: () -> Unit
-) {
-    TextButton(
-        onClick = onClick,
-        enabled = enabled,
-        modifier = Modifier.width(104.dp)
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            icon()
-            Text(
-                label,
-                color = if (enabled) Color.White else Color.White.copy(alpha = .32f),
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1
-            )
         }
     }
 }

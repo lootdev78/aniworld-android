@@ -1,0 +1,434 @@
+/*
+ * Optional Samsung Smart View SDK bootstrap for AniWorld Android.
+ *
+ * The SDK remains a vendor binary. This script never accepts Samsung terms on behalf of a user,
+ * never scrapes the Samsung Developer Portal, and never downloads from an untrusted mirror.
+ * After one explicit local acceptance, it can automatically install an already downloaded package
+ * or download a direct official Samsung URL supplied through a Gradle property/environment variable.
+ */
+
+import groovy.json.JsonOutput
+import java.awt.Desktop
+import java.net.HttpURLConnection
+import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
+import java.time.Instant
+import java.util.Properties
+import java.util.zip.ZipFile
+
+final String smartViewVersion = '2.5.34'
+final String officialDownloadPage = 'https://developer.samsung.com/smarttv/develop/extension-libraries/smart-view-sdk/download.html'
+final String officialTermsPage = 'https://developer.samsung.com/terms'
+final String acceptancePhrase = 'I_ACCEPT'
+final String acceptanceTermsEffectiveDate = '2026-01-29'
+final File smartViewLibsDir = project.file('libs')
+final File smartViewWorkDir = project.layout.buildDirectory.dir('vendor/samsung-smartview').get().asFile
+final File acceptanceMarker = new File(gradle.gradleUserHomeDir, 'aniworld/samsung-smartview-license.properties')
+final File installMetadata = new File(smartViewLibsDir, 'samsung-smartview-sdk.install.json')
+final List<String> requiredJarEntries = [
+    'com/samsung/multiscreen/Service.class',
+    'com/samsung/multiscreen/Search.class',
+    'com/samsung/multiscreen/VideoPlayer.class'
+]
+
+Closure<String> gradlePropertyOrEnv = { String propertyName, String envName ->
+    String fromProperty = providers.gradleProperty(propertyName).orNull
+    if (fromProperty != null && !fromProperty.trim().isEmpty()) return fromProperty.trim()
+    String fromEnvironment = System.getenv(envName)
+    return fromEnvironment == null ? null : fromEnvironment.trim()
+}
+
+Closure<Boolean> booleanPropertyOrEnv = { String propertyName, String envName, boolean defaultValue ->
+    String raw = gradlePropertyOrEnv(propertyName, envName)
+    if (raw == null || raw.isEmpty()) return defaultValue
+    return raw.equalsIgnoreCase('true') || raw == '1' || raw.equalsIgnoreCase('yes') || raw.equalsIgnoreCase('on')
+}
+
+Closure<Boolean> acceptanceRequestedNow = {
+    String raw = gradlePropertyOrEnv('samsungSmartViewLicenseAccepted', 'SAMSUNG_SMARTVIEW_LICENSE_ACCEPTED')
+    return raw == acceptancePhrase
+}
+
+Closure<Boolean> acceptanceAlreadyRecorded = {
+    if (!acceptanceMarker.isFile()) return false
+    Properties properties = new Properties()
+    acceptanceMarker.withInputStream { properties.load(it) }
+    return properties.getProperty('accepted') == 'true' &&
+        properties.getProperty('termsEffectiveDate') == acceptanceTermsEffectiveDate
+}
+
+Closure<Boolean> isAccepted = {
+    return acceptanceRequestedNow() || acceptanceAlreadyRecorded()
+}
+
+Closure<String> sha256 = { File file ->
+    MessageDigest digest = MessageDigest.getInstance('SHA-256')
+    file.withInputStream { input ->
+        byte[] buffer = new byte[128 * 1024]
+        int count
+        while ((count = input.read(buffer)) >= 0) {
+            if (count > 0) digest.update(buffer, 0, count)
+        }
+    }
+    return digest.digest().collect { String.format('%02x', it) }.join()
+}
+
+Closure<Boolean> jarContainsSdk = { File jarFile ->
+    if (!jarFile.isFile()) return false
+    try {
+        ZipFile zip = new ZipFile(jarFile)
+        try {
+            return requiredJarEntries.every { zip.getEntry(it) != null }
+        } finally {
+            zip.close()
+        }
+    } catch (Exception ignored) {
+        return false
+    }
+}
+
+Closure<Boolean> aarContainsSdk = { File aarFile ->
+    if (!aarFile.isFile()) return false
+    File classesJar = new File(smartViewWorkDir, "inspect-${aarFile.name.replaceFirst(/\.[^.]+$/, '')}-classes.jar")
+    classesJar.parentFile.mkdirs()
+    try {
+        ZipFile zip = new ZipFile(aarFile)
+        try {
+            def entry = zip.getEntry('classes.jar')
+            if (entry == null) return false
+            zip.getInputStream(entry).withCloseable { input ->
+                Files.copy(input, classesJar.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+        } finally {
+            zip.close()
+        }
+        return jarContainsSdk(classesJar)
+    } catch (Exception ignored) {
+        return false
+    } finally {
+        classesJar.delete()
+    }
+}
+
+Closure<Boolean> isSdkBinary = { File file ->
+    String lower = file.name.toLowerCase(Locale.ROOT)
+    if (lower.endsWith('.jar')) return jarContainsSdk(file)
+    if (lower.endsWith('.aar')) return aarContainsSdk(file)
+    return false
+}
+
+Closure<File> findInstalledSdk = {
+    if (!smartViewLibsDir.isDirectory()) return null
+    return smartViewLibsDir.listFiles()
+        ?.findAll { it.isFile() && (it.name.endsWith('.jar') || it.name.endsWith('.aar')) }
+        ?.sort { a, b -> a.name <=> b.name }
+        ?.find { isSdkBinary(it) }
+}
+
+Closure<Void> unzipSafely = { File archive, File destination ->
+    destination.mkdirs()
+    String destinationCanonical = destination.canonicalPath + File.separator
+    ZipFile zip = new ZipFile(archive)
+    try {
+        zip.entries().each { entry ->
+            File output = new File(destination, entry.name)
+            if (!output.canonicalPath.startsWith(destinationCanonical)) {
+                throw new GradleException("Unsicherer ZIP-Eintrag im Samsung-Paket: ${entry.name}")
+            }
+            if (entry.isDirectory()) {
+                output.mkdirs()
+            } else {
+                output.parentFile.mkdirs()
+                zip.getInputStream(entry).withCloseable { input ->
+                    Files.copy(input, output.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+            }
+        }
+    } finally {
+        zip.close()
+    }
+    return null
+}
+
+Closure<File> locateSdkBinaryInPackage
+locateSdkBinaryInPackage = { File packageFile ->
+    if (!packageFile?.isFile()) return null
+    if (isSdkBinary(packageFile)) return packageFile
+
+    String lower = packageFile.name.toLowerCase(Locale.ROOT)
+    if (!lower.endsWith('.zip')) return null
+
+    File extractDir = new File(smartViewWorkDir, "extract-${sha256(packageFile).substring(0, 12)}")
+    project.delete(extractDir)
+    unzipSafely(packageFile, extractDir)
+    return project.fileTree(extractDir) {
+        include '**/*.jar', '**/*.aar'
+    }.files.sort { a, b -> a.absolutePath <=> b.absolutePath }.find { isSdkBinary(it) }
+}
+
+Closure<File> findPackageInDownloads = {
+    List<File> downloadDirectories = []
+    String configuredDownloads = gradlePropertyOrEnv('samsungSmartViewDownloadsDir', 'SAMSUNG_SMARTVIEW_DOWNLOADS_DIR')
+    if (configuredDownloads) downloadDirectories << project.file(configuredDownloads)
+    downloadDirectories << new File(System.getProperty('user.home'), 'Downloads')
+    downloadDirectories << new File(System.getProperty('user.home'), 'Download')
+
+    List<File> candidates = []
+    downloadDirectories.unique().findAll { it.isDirectory() }.each { dir ->
+        dir.listFiles()?.findAll { file ->
+            if (!file.isFile()) return false
+            String name = file.name.toLowerCase(Locale.ROOT)
+            return (name.endsWith('.zip') || name.endsWith('.jar') || name.endsWith('.aar')) &&
+                (name.contains('smartview') || name.contains('smart-view') || name.contains('multiscreen') || name.contains('2.5.34'))
+        }?.each { candidates << it }
+    }
+
+    return candidates.sort { a, b -> b.lastModified() <=> a.lastModified() }.find { locateSdkBinaryInPackage(it) != null }
+}
+
+Closure<Boolean> isOfficialSamsungHost = { URI uri ->
+    String host = uri?.host?.toLowerCase(Locale.ROOT)
+    return host != null && (host == 'samsung.com' || host.endsWith('.samsung.com'))
+}
+
+Closure<File> downloadDirectPackage = { String sourceUrl ->
+    URI uri
+    try {
+        uri = URI.create(sourceUrl)
+    } catch (Exception error) {
+        throw new GradleException('samsungSmartViewSdkUrl ist keine gültige URL.', error)
+    }
+
+    boolean allowOtherHost = booleanPropertyOrEnv(
+        'samsungSmartViewAllowNonSamsungHost',
+        'SAMSUNG_SMARTVIEW_ALLOW_NON_SAMSUNG_HOST',
+        false
+    )
+    if (!isOfficialSamsungHost(uri) && !allowOtherHost) {
+        throw new GradleException(
+            "Die SDK-URL muss standardmäßig von einer offiziellen Samsung-Domain stammen. " +
+            "Für einen intern geprüften Spiegel kann ausdrücklich -PsamsungSmartViewAllowNonSamsungHost=true gesetzt werden."
+        )
+    }
+    if (!uri.scheme?.equalsIgnoreCase('https')) {
+        throw new GradleException('Die Samsung-SDK-URL muss HTTPS verwenden.')
+    }
+
+    smartViewWorkDir.mkdirs()
+    String pathName = new File(uri.path ?: '').name
+    if (!pathName) pathName = "samsung-smartview-sdk-${smartViewVersion}.download"
+    File destination = new File(smartViewWorkDir, pathName)
+
+    logger.lifecycle("Samsung Smart View SDK: Download von ${uri.host} …")
+    HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection()
+    connection.instanceFollowRedirects = true
+    connection.connectTimeout = 30_000
+    connection.readTimeout = 120_000
+    connection.setRequestProperty('User-Agent', 'AniWorldAndroid-Gradle-SmartViewInstaller/1.0')
+    connection.setRequestProperty('Accept', 'application/zip, application/java-archive, application/octet-stream, */*')
+
+    String authorization = gradlePropertyOrEnv('samsungSmartViewAuthorization', 'SAMSUNG_SMARTVIEW_AUTHORIZATION')
+    if (authorization) connection.setRequestProperty('Authorization', authorization)
+
+    int status = connection.responseCode
+    if (status < 200 || status >= 300) {
+        throw new GradleException("Samsung-SDK-Download fehlgeschlagen: HTTP ${status} ${connection.responseMessage}")
+    }
+
+    connection.inputStream.withCloseable { input ->
+        Files.copy(input, destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    }
+    connection.disconnect()
+
+    String expectedHash = gradlePropertyOrEnv('samsungSmartViewSdkSha256', 'SAMSUNG_SMARTVIEW_SDK_SHA256')
+    String actualHash = sha256(destination)
+    if (expectedHash && !actualHash.equalsIgnoreCase(expectedHash)) {
+        destination.delete()
+        throw new GradleException("SHA-256 stimmt nicht. Erwartet ${expectedHash}, erhalten ${actualHash}.")
+    }
+    logger.lifecycle("Samsung Smart View SDK: Download abgeschlossen (SHA-256 ${actualHash}).")
+    return destination
+}
+
+Closure<File> resolveSourcePackage = {
+    String explicitFile = gradlePropertyOrEnv('samsungSmartViewSdkFile', 'SAMSUNG_SMARTVIEW_SDK_FILE')
+    if (explicitFile) {
+        File file = project.file(explicitFile)
+        if (!file.isFile()) throw new GradleException("Samsung-SDK-Datei nicht gefunden: ${file}")
+        return file
+    }
+
+    String directUrl = gradlePropertyOrEnv('samsungSmartViewSdkUrl', 'SAMSUNG_SMARTVIEW_SDK_URL')
+    if (directUrl) return downloadDirectPackage(directUrl)
+
+    return findPackageInDownloads()
+}
+
+Closure<File> installBinary = { File sourcePackage ->
+    File binary = locateSdkBinaryInPackage(sourcePackage)
+    if (binary == null) {
+        throw new GradleException(
+            "Im Paket ${sourcePackage.name} wurden die Klassen Service, Search und VideoPlayer des Samsung Smart View SDK nicht gefunden."
+        )
+    }
+
+    smartViewLibsDir.mkdirs()
+    String extension = binary.name.toLowerCase(Locale.ROOT).endsWith('.aar') ? 'aar' : 'jar'
+    File target = new File(smartViewLibsDir, "samsung-smartview-sdk-${smartViewVersion}.${extension}")
+    Files.copy(binary.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+
+    String installedHash = sha256(target)
+    Map<String, Object> metadata = [
+        managedBy: 'gradle/samsung-smartview-sdk.gradle',
+        sdkVersion: smartViewVersion,
+        installedAtUtc: Instant.now().toString(),
+        targetFile: target.name,
+        sha256: installedHash,
+        sourceFile: sourcePackage.absolutePath,
+        officialDownloadPage: officialDownloadPage,
+        termsEffectiveDate: acceptanceTermsEffectiveDate
+    ]
+    installMetadata.text = JsonOutput.prettyPrint(JsonOutput.toJson(metadata)) + System.lineSeparator()
+    logger.lifecycle("Samsung Smart View SDK installiert: ${target} (SHA-256 ${installedHash})")
+    return target
+}
+
+Closure<Boolean> directlyRequested = { String taskName ->
+    return gradle.startParameter.taskNames.any { requested ->
+        requested.tokenize(':').last() == taskName
+    }
+}
+
+tasks.register('showSamsungSmartViewSdkInfo') {
+    group = 'vendor sdk'
+    description = 'Zeigt Status, offizielle Downloadseite und Konfigurationsmöglichkeiten des Samsung Smart View SDK.'
+    doLast {
+        File installed = findInstalledSdk()
+        logger.lifecycle('Samsung Smart View SDK')
+        logger.lifecycle("  Installiert: ${installed != null ? installed.absolutePath : 'nein'}")
+        logger.lifecycle("  Lizenz lokal bestätigt: ${acceptanceAlreadyRecorded()}")
+        logger.lifecycle("  Offizielle Downloadseite: ${officialDownloadPage}")
+        logger.lifecycle("  Samsung-Bedingungen: ${officialTermsPage}")
+        logger.lifecycle('  Direkte URL: -PsamsungSmartViewSdkUrl=https://…')
+        logger.lifecycle('  Lokale Datei: -PsamsungSmartViewSdkFile=/pfad/zum/paket.zip')
+    }
+}
+
+tasks.register('openSamsungSmartViewDownloadPage') {
+    group = 'vendor sdk'
+    description = 'Öffnet die offizielle Samsung-Smart-View-Downloadseite im Standardbrowser.'
+    doLast {
+        boolean opened = false
+        try {
+            if (Desktop.isDesktopSupported() && Desktop.desktop.isSupported(Desktop.Action.BROWSE)) {
+                Desktop.desktop.browse(URI.create(officialDownloadPage))
+                opened = true
+            }
+        } catch (Exception error) {
+            logger.info('Browser konnte nicht automatisch geöffnet werden.', error)
+        }
+        if (!opened) logger.lifecycle("Offizielle Downloadseite: ${officialDownloadPage}")
+    }
+}
+
+def acceptSamsungSmartViewLicense = tasks.register('acceptSamsungSmartViewLicense') {
+    group = 'vendor sdk'
+    description = 'Speichert eine ausdrücklich vom Benutzer bestätigte lokale Samsung-SDK-Lizenzannahme.'
+    doLast {
+        if (!acceptanceRequestedNow()) {
+            throw new GradleException(
+                "Die Annahme darf nicht automatisch erfolgen. Lies ${officialTermsPage} und starte danach bewusst mit " +
+                "-PsamsungSmartViewLicenseAccepted=${acceptancePhrase}."
+            )
+        }
+        acceptanceMarker.parentFile.mkdirs()
+        Properties properties = new Properties()
+        properties.setProperty('accepted', 'true')
+        properties.setProperty('acceptedAtUtc', Instant.now().toString())
+        properties.setProperty('termsEffectiveDate', acceptanceTermsEffectiveDate)
+        properties.setProperty('termsUrl', officialTermsPage)
+        properties.setProperty('sdkDownloadPage', officialDownloadPage)
+        acceptanceMarker.withOutputStream { properties.store(it, 'AniWorld local Samsung Smart View SDK acceptance') }
+        logger.lifecycle("Samsung-SDK-Lizenzannahme wurde nur lokal gespeichert: ${acceptanceMarker}")
+    }
+}
+
+def installSamsungSmartViewSdk = tasks.register('installSamsungSmartViewSdk') {
+    mustRunAfter(acceptSamsungSmartViewLicense)
+    group = 'vendor sdk'
+    description = 'Installiert das Samsung Smart View SDK aus einer direkten Samsung-URL, einer Datei oder dem Downloads-Ordner.'
+
+    doLast {
+        if (!booleanPropertyOrEnv('samsungSmartViewAutoInstall', 'SAMSUNG_SMARTVIEW_AUTO_INSTALL', true)) {
+            logger.lifecycle('Samsung Smart View SDK: automatische Installation ist deaktiviert.')
+            return
+        }
+
+        File existing = findInstalledSdk()
+        if (existing != null) {
+            logger.lifecycle("Samsung Smart View SDK bereits vorhanden und validiert: ${existing.name}")
+            return
+        }
+
+        if (!isAccepted()) {
+            String message =
+                "Samsung Smart View SDK nicht automatisch installiert: lokale Lizenzbestätigung fehlt. " +
+                "Einmalig ausführen: ./gradlew acceptSamsungSmartViewLicense installSamsungSmartViewSdk " +
+                "-PsamsungSmartViewLicenseAccepted=${acceptancePhrase} " +
+                "-PsamsungSmartViewSdkFile=/pfad/zum/offiziellen-paket.zip"
+            if (directlyRequested('installSamsungSmartViewSdk')) throw new GradleException(message)
+            logger.lifecycle(message)
+            return
+        }
+
+        File sourcePackage = resolveSourcePackage()
+        if (sourcePackage == null) {
+            String message =
+                "Kein offizielles Samsung-SDK-Paket gefunden. Lege das heruntergeladene Paket in ~/Downloads, " +
+                "setze -PsamsungSmartViewSdkFile=… oder hinterlege eine direkte offizielle URL mit " +
+                "-PsamsungSmartViewSdkUrl=…. Die Portal-Seite wird aus Lizenz- und Nutzungsgründen nicht automatisiert ausgespäht."
+            if (directlyRequested('installSamsungSmartViewSdk')) throw new GradleException(message)
+            logger.lifecycle(message)
+            return
+        }
+
+        installBinary(sourcePackage)
+    }
+}
+
+tasks.register('verifySamsungSmartViewSdk') {
+    group = 'verification'
+    description = 'Prüft, ob eine gültige Samsung-Smart-View-JAR/AAR in app/libs vorhanden ist.'
+    doLast {
+        File installed = findInstalledSdk()
+        if (installed == null) throw new GradleException('Keine gültige Samsung Smart View SDK JAR/AAR in app/libs gefunden.')
+        logger.lifecycle("Samsung Smart View SDK gültig: ${installed.name}, SHA-256 ${sha256(installed)}")
+    }
+}
+
+tasks.register('removeManagedSamsungSmartViewSdk') {
+    group = 'vendor sdk'
+    description = 'Entfernt nur die von diesem Gradle-Installer verwaltete Samsung-SDK-Datei.'
+    doLast {
+        if (!installMetadata.isFile()) {
+            logger.lifecycle('Keine verwaltete Samsung-SDK-Installation registriert.')
+            return
+        }
+        def metadata = new groovy.json.JsonSlurper().parse(installMetadata)
+        String targetName = metadata.targetFile as String
+        File target = new File(smartViewLibsDir, targetName)
+        if (target.isFile()) {
+            target.delete()
+            logger.lifecycle("Entfernt: ${target}")
+        }
+        installMetadata.delete()
+    }
+}
+
+// Android build tasks consume app/libs. Running the installer before preBuild makes the SDK
+// available without changing the existing reflective Samsung integration or the app source code.
+tasks.configureEach { task ->
+    if (task.name == 'preBuild') task.dependsOn(installSamsungSmartViewSdk)
+}

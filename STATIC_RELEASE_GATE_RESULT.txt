@@ -1,0 +1,5 @@
+STATIC RELEASE GATE: PASSED
+  - XML-Dateien: 12
+  - Stringschlüssel: 464
+  - Kotlin-Dateien: 32; verwendete Strings: 403
+  - Featuregruppen geprüft: 41

@@ -418,4 +418,57 @@
     <string name="miracast_system_settings">Miracast / wireless display</string>
     <string name="miracast_system_settings_desc">Open Android system Cast settings</string>
     <string name="miracast_settings_failed">Android Cast settings could not be opened.</string>
+
+    <string name="cast_remote_settings">Cast &amp; remote control</string>
+    <string name="cast_remote_settings_desc">Manage device casting and the local web relay separately.</string>
+    <string name="cast_enabled">Show Cast in player</string>
+    <string name="cast_enabled_desc">Enable Chromecast, Xbox/DLNA and FCast in the player.</string>
+    <string name="local_web_relay_enabled">Local remote-control website</string>
+    <string name="local_web_relay_enabled_desc">Starts a PIN-protected local website during playback.</string>
+    <string name="local_web_relay_port">Preferred port</string>
+    <string name="local_web_relay_apply_port">Apply port</string>
+    <string name="local_web_relay_running">Running at %1$s · PIN %2$s · %3$d clients</string>
+    <string name="local_web_relay_waiting">Starts automatically with the next playback.</string>
+    <string name="local_web_relay_error">Relay error: %1$s</string>
+    <string name="metadata_inventory_detail">Stored: %1$d/%2$d · Missing: %3$d · Incomplete: %4$d</string>
+    <string name="metadata_cover_cache_detail">Cover cache: %1$d files · %2$s</string>
+    <string name="show_full_text">Show more</string>
+    <string name="collapse_text">Show less</string>
+    <string name="season_started">Started</string>
+    <string name="highlight_started_seasons">Highlight started seasons</string>
+    <string name="highlight_started_seasons_desc">Dynamically mark seasons with progress but not completed.</string>
+    <string name="highlight_strength">Highlight strength</string>
+    <string name="xbox_profile_one">Xbox One</string>
+    <string name="xbox_profile_series">Xbox Series S/X</string>
+    <string name="xbox_profile_tizen">Samsung Tizen</string>
+    <string name="xbox_profile_generic">DLNA/UPnP</string>
+    <string name="cast_volume">Device volume</string>
+
+    <string name="smartview_sdk_title">Samsung Smart View (native)</string>
+    <string name="smartview_sdk_missing_short">Optional Samsung SDK is missing from app/libs</string>
+    <string name="smartview_sdk_missing">Samsung Smart View SDK is not bundled. Put the officially licensed Android JAR/AAR in app/libs; the app detects it automatically.</string>
+    <string name="smartview_sdk_ready">Samsung Smart View is ready</string>
+    <string name="smartview_sdk_ready_desc">Samsung TVs can be discovered and controlled through the native Default Media Player.</string>
+    <string name="smartview_device_lost">The Samsung TV is no longer reachable. Search for devices again.</string>
+    <string name="smartview_cast_failed">Samsung Smart View: %1$s</string>
+    <string name="smartview_device_standby">Samsung Smart View · standby device</string>
+    <string name="smartview_device_native">Samsung Smart View · native TV player</string>
+    <string name="season_description_fallback">No separate description is available for this season. The anime description is shown instead.</string>
+    <string name="alphabet_index_short"># A–Z</string>
+    <string name="alphabet_index_title">Alphabet index</string>
+    <string name="alphabet_index_hint">Select a large letter to jump directly to that section.</string>
+    <string name="season_description_unavailable">No description is currently available for this season.</string>
+
+    <string name="player_copy_stream_link">Copy video link</string>
+    <string name="player_stream_info">Stream info</string>
+    <string name="player_stream_format">Format</string>
+    <string name="player_stream_mime">MIME type</string>
+    <string name="player_stream_host">Host</string>
+    <string name="player_stream_type">Delivery</string>
+    <string name="player_stream_adaptive">Adaptive stream</string>
+    <string name="player_stream_progressive">Direct video file</string>
+    <string name="player_stream_link">Video/stream link</string>
+    <string name="player_stream_link_clip_label">AniWorld video link</string>
+    <string name="player_stream_link_copied">Video link copied</string>
+    <string name="player_stream_link_copy_failed">Video link could not be copied</string>
 </resources>
