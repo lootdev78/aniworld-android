@@ -1,6 +1,9 @@
 package io.github.lootdev78.aniworld
 
 import android.content.Context
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -9,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,7 +56,7 @@ data class FCastState(
     val completionEvent: Long = 0L
 )
 
-class FCastController(context: Context) {
+class FCastController(context: Context, private val relay: LocalCastRelay? = null) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableState = MutableStateFlow(FCastState())
@@ -122,6 +126,7 @@ class FCastController(context: Context) {
                 error = null
             )
             runCatching {
+                val castPlayback = relay?.preparePlayback(playback, device.host) ?: playback
                 val connection = Socket().apply {
                     tcpNoDelay = true
                     keepAlive = true
@@ -132,17 +137,17 @@ class FCastController(context: Context) {
                 output = BufferedOutputStream(connection.getOutputStream())
                 startReader(connection)
                 val playMessage = JSONObject()
-                    .put("container", playback.stream.mimeType ?: inferMimeType(playback.stream.url))
-                    .put("url", playback.stream.url)
+                    .put("container", castPlayback.stream.mimeType ?: inferMimeType(castPlayback.stream.url))
+                    .put("url", castPlayback.stream.url)
                     .put("time", startPositionMs.coerceAtLeast(0L) / 1000.0)
                     .put(
                         "metadata",
                         JSONObject()
-                            .put("title", playback.episode.localizedDisplayTitle(appContext))
-                            .put("seriesName", playback.seriesTitle)
+                            .put("title", castPlayback.episode.localizedDisplayTitle(appContext))
+                            .put("seriesName", castPlayback.seriesTitle)
                     )
-                if (playback.stream.headers.isNotEmpty()) {
-                    playMessage.put("headers", JSONObject(playback.stream.headers))
+                if (castPlayback.stream.headers.isNotEmpty()) {
+                    playMessage.put("headers", JSONObject(castPlayback.stream.headers))
                 }
                 sendPacket(OPCODE_PLAY, playMessage)
                 previousState = XboxTransportState.PLAYING
@@ -302,25 +307,72 @@ class FCastController(context: Context) {
      * works. Only private active /24 networks and already known neighbor addresses are probed.
      */
     private suspend fun discoverReceivers(): List<FCastDevice> = coroutineScope {
-        val localAddresses = activeLocalIpv4Addresses()
-        val candidates = linkedSetOf<String>()
-        localAddresses.forEach { address ->
-            val bytes = address.address
-            if (bytes.size == 4) {
-                val prefix = "${bytes[0].toInt() and 0xFF}.${bytes[1].toInt() and 0xFF}.${bytes[2].toInt() and 0xFF}."
-                for (last in 1..254) {
-                    val host = prefix + last
-                    if (host != address.hostAddress) candidates += host
+        // Standard FCast discovery is mDNS. Run it together with a direct private-subnet probe,
+        // because many Android tethering implementations drop multicast between hotspot clients.
+        val mdns = async { discoverWithNsd() }
+        val unicast = async {
+            val localAddresses = activeLocalIpv4Addresses()
+            val candidates = linkedSetOf<String>()
+            localAddresses.forEach { address ->
+                val bytes = address.address
+                if (bytes.size == 4) {
+                    val prefix = "${bytes[0].toInt() and 0xFF}.${bytes[1].toInt() and 0xFF}.${bytes[2].toInt() and 0xFF}."
+                    for (last in 1..254) {
+                        val host = prefix + last
+                        if (host != address.hostAddress) candidates += host
+                    }
+                }
+            }
+            readNeighborHosts().forEach { address -> address.hostAddress?.let(candidates::add) }
+            val gate = Semaphore(MAX_PARALLEL_PROBES)
+            candidates.map { host ->
+                async(Dispatchers.IO) { gate.withPermit { probe(host) } }
+            }.awaitAll().filterNotNull()
+        }
+        (mdns.await() + unicast.await()).distinctBy(FCastDevice::id)
+    }
+
+    @Suppress("DEPRECATION")
+    private suspend fun discoverWithNsd(): List<FCastDevice> {
+        val nsd = appContext.getSystemService(Context.NSD_SERVICE) as? NsdManager ?: return emptyList()
+        val wifi = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val multicastLock = wifi?.createMulticastLock("aniworld-fcast-mdns")?.apply {
+            setReferenceCounted(false)
+            runCatching { acquire() }
+        }
+        val found = Collections.synchronizedMap(linkedMapOf<String, FCastDevice>())
+        val listener = object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(serviceType: String) = Unit
+            override fun onDiscoveryStopped(serviceType: String) = Unit
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
+            override fun onServiceLost(serviceInfo: NsdServiceInfo) = Unit
+
+            override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                if (!serviceInfo.serviceType.contains("_fcast._tcp", ignoreCase = true)) return
+                runCatching {
+                    nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                        override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
+                        override fun onServiceResolved(resolved: NsdServiceInfo) {
+                            val host = resolved.host?.hostAddress ?: return
+                            val port = resolved.port.takeIf { it > 0 } ?: DEFAULT_FCAST_PORT
+                            val name = resolved.serviceName.orEmpty().ifBlank { "FCast" }
+                            found["$host:$port"] = FCastDevice(host = host, port = port, name = name)
+                        }
+                    })
                 }
             }
         }
-        readNeighborHosts().forEach { address ->
-            address.hostAddress?.let(candidates::add)
+        return try {
+            nsd.discoverServices(FCAST_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, listener)
+            delay(MDNS_DISCOVERY_WINDOW_MS)
+            synchronized(found) { found.values.toList() }
+        } catch (_: Exception) {
+            emptyList()
+        } finally {
+            runCatching { nsd.stopServiceDiscovery(listener) }
+            if (multicastLock?.isHeld == true) runCatching { multicastLock.release() }
         }
-        val gate = Semaphore(MAX_PARALLEL_PROBES)
-        candidates.map { host ->
-            async(Dispatchers.IO) { gate.withPermit { probe(host) } }
-        }.awaitAll().filterNotNull().distinctBy(FCastDevice::id)
     }
 
     private fun probe(host: String): FCastDevice? = runCatching {
@@ -369,6 +421,8 @@ class FCastController(context: Context) {
         const val CONNECT_TIMEOUT_MS = 3_500
         const val PROBE_TIMEOUT_MS = 150
         const val MAX_PARALLEL_PROBES = 32
+        const val MDNS_DISCOVERY_WINDOW_MS = 3_200L
+        const val FCAST_SERVICE_TYPE = "_fcast._tcp."
         const val MAX_PACKET_SIZE = 2 * 1024 * 1024
         const val OPCODE_PLAY = 1
         const val OPCODE_PAUSE = 2

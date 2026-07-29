@@ -1,6 +1,7 @@
 package io.github.lootdev78.aniworld
 
 import android.content.Context
+import android.net.wifi.WifiManager
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
@@ -25,7 +26,7 @@ data class ChromecastState(
     val completionEvent: Long = 0L
 )
 
-class ChromecastController(context: Context) {
+class ChromecastController(context: Context, private val relay: LocalCastRelay? = null) {
     private val appContext = context.applicationContext
     private val mutableState = MutableStateFlow(ChromecastState())
     val state: StateFlow<ChromecastState> = mutableState.asStateFlow()
@@ -33,10 +34,13 @@ class ChromecastController(context: Context) {
     private var castContext: CastContext? = null
     private var sessionManager: SessionManager? = null
     private var attachedClient: RemoteMediaClient? = null
+    private var attachedReceiverHost: String? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
     private var pendingPlayback: ResolvedPlayback? = null
     private var pendingPositionMs: Long = 0L
     private var loadedPlaybackId: String? = null
     private var previousPlayerState: Int = MediaStatus.PLAYER_STATE_UNKNOWN
+    private var initialized = false
 
     private val mediaCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() = updateFromClient()
@@ -64,20 +68,34 @@ class ChromecastController(context: Context) {
         override fun onSessionEnded(session: CastSession, error: Int) = clearSession()
     }
 
-    init {
-        runCatching {
+    /**
+     * Initializes Google Cast only after the user explicitly opens the Chromecast picker.
+     * Local hoster playback must never depend on Play Services or MediaRouter setup.
+     */
+    fun initialize(): Boolean {
+        if (initialized) return mutableState.value.available
+        initialized = true
+        return runCatching {
             @Suppress("DEPRECATION")
-            CastContext.getSharedInstance(appContext)
-        }.onSuccess { contextInstance ->
+            val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            multicastLock = wifiManager?.createMulticastLock("aniworld-google-cast")?.apply {
+                setReferenceCounted(false)
+                runCatching { acquire() }
+            }
+            val contextInstance = CastContext.getSharedInstance(appContext)
             castContext = contextInstance
             sessionManager = contextInstance.sessionManager.apply {
                 addSessionManagerListener(sessionListener, CastSession::class.java)
             }
+            mutableState.value = mutableState.value.copy(available = true, error = null)
             sessionManager?.currentCastSession?.let { attachSession(it, loadPending = false) }
-        }.onFailure {
-            // Devices without a usable Cast framework simply hide the Cast button. This is not a
-            // playback error and must not interrupt normal local playback.
-            mutableState.value = ChromecastState(available = false)
+            true
+        }.getOrElse {
+            mutableState.value = ChromecastState(
+                available = false,
+                error = appContext.getString(R.string.chromecast_unavailable)
+            )
+            false
         }
     }
 
@@ -122,12 +140,16 @@ class ChromecastController(context: Context) {
     fun close() {
         attachedClient?.unregisterCallback(mediaCallback)
         attachedClient = null
+        attachedReceiverHost = null
         sessionManager?.removeSessionManagerListener(sessionListener, CastSession::class.java)
+        if (multicastLock?.isHeld == true) runCatching { multicastLock?.release() }
+        multicastLock = null
     }
 
     private fun attachSession(session: CastSession, loadPending: Boolean) {
         attachedClient?.unregisterCallback(mediaCallback)
         attachedClient = session.remoteMediaClient?.also { it.registerCallback(mediaCallback) }
+        attachedReceiverHost = runCatching { session.castDevice?.inetAddress?.hostAddress }.getOrNull()
         mutableState.value = mutableState.value.copy(
             connectedDeviceName = session.castDevice?.friendlyName ?: appContext.getString(R.string.chromecast_device),
             transportState = XboxTransportState.CONNECTING,
@@ -140,14 +162,15 @@ class ChromecastController(context: Context) {
         val playback = pendingPlayback ?: return
         val client = attachedClient ?: return
         runCatching {
+            val castPlayback = relay?.preparePlayback(playback, attachedReceiverHost) ?: playback
             val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_TV_SHOW).apply {
-                putString(MediaMetadata.KEY_TITLE, playback.episode.localizedDisplayTitle(appContext))
-                putString(MediaMetadata.KEY_SUBTITLE, playback.seriesTitle)
-                putString(MediaMetadata.KEY_SERIES_TITLE, playback.seriesTitle)
+                putString(MediaMetadata.KEY_TITLE, castPlayback.episode.localizedDisplayTitle(appContext))
+                putString(MediaMetadata.KEY_SUBTITLE, castPlayback.seriesTitle)
+                putString(MediaMetadata.KEY_SERIES_TITLE, castPlayback.seriesTitle)
             }
-            val mediaInfo = MediaInfo.Builder(playback.stream.url)
+            val mediaInfo = MediaInfo.Builder(castPlayback.stream.url)
                 .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
-                .setContentType(playback.stream.mimeType ?: inferMimeType(playback.stream.url))
+                .setContentType(castPlayback.stream.mimeType ?: inferMimeType(castPlayback.stream.url))
                 .setMetadata(metadata)
                 .build()
             val request = MediaLoadRequestData.Builder()
@@ -205,6 +228,7 @@ class ChromecastController(context: Context) {
     private fun clearSession() {
         attachedClient?.unregisterCallback(mediaCallback)
         attachedClient = null
+        attachedReceiverHost = null
         loadedPlaybackId = null
         previousPlayerState = MediaStatus.PLAYER_STATE_UNKNOWN
         mutableState.value = ChromecastState(available = mutableState.value.available)

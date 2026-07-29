@@ -18,3 +18,20 @@ fun launchExternalPlayback(context: Context, playback: ResolvedPlayback): Result
     }
     context.startActivity(chooser)
 }
+
+/**
+ * Miracast/Wi-Fi Display has no public third-party sender API on modern Android. Open the best OEM
+ * system picker available, with fallbacks for devices that expose the older Wi-Fi Display action.
+ */
+fun launchMiracastPicker(context: Context): Result<Unit> = runCatching {
+    val candidates = listOf(
+        Intent(android.provider.Settings.ACTION_CAST_SETTINGS),
+        Intent("android.settings.WIFI_DISPLAY_SETTINGS"),
+        Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS)
+    )
+    val intent = candidates.firstOrNull { candidate ->
+        candidate.resolveActivity(context.packageManager) != null
+    } ?: error(context.getString(R.string.miracast_settings_failed))
+    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    context.startActivity(intent)
+}

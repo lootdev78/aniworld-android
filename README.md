@@ -3,6 +3,25 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
+## 1.7.9 Cast-/Hotspot-Erweiterung
+
+- ergänzt einen lokalen, nur im LAN erreichbaren Cast-Stream-Relay für Hoster-Streams mit Referer-, Cookie-, User-Agent- und weiteren Request-Headern
+- leitet Byte-Range-Anfragen weiter und schreibt HLS-Varianten, Segmente, Schlüssel sowie Untertitel-URIs auf den Relay um; DASH-BaseURLs und URL-Attribute werden ebenfalls angepasst
+- verwendet für Chromecast weiterhin das offizielle Google-Cast-Framework und bindet AndroidX MediaRouter 1.8.1 explizit ein
+- ermittelt die ausgewählte Chromecast-Empfängeradresse und stellt den Relay über die passende WLAN- oder Hotspot-Gateway-Adresse bereit
+- erweitert FCast um die Standard-mDNS-Erkennung über Android NSD sowie parallele TCP-, /24-Subnetz- und Nachbartabellen-Fallbacks
+- behält die mehrstufige DLNA-/UPnP-Erkennung per SSDP-Multicast, schnittstellengebundener Suche, Broadcast, Unicast-Subnetzscan, Nachbartabelle und manueller IP bei
+- fordert die Android-Berechtigung „Geräte in der Nähe“ vor lokalen Cast-Sockets und der Chromecast-Auswahl an
+- startet Miracast ausschließlich über die geschützte Android-/Hersteller-Systemauswahl; AirPlay und AirServer bleiben ausgeschlossen
+- startet Relay, Google Cast und Discovery ausschließlich nach einer Cast-Aktion, sodass die normale Hoster-Wiedergabe nicht davon abhängt
+
+## 1.7.8 Wiedergabe-Hotfix
+
+- Lokale Hoster-Wiedergabe startet wieder ohne Google-Cast-Initialisierung.
+- Chromecast wird erst nach einem bewussten Klick auf das Chromecast-Symbol geladen.
+- Fehler beim Play-Services-/MediaRouter-Setup werden abgefangen und beenden den Player nicht mehr.
+- Die wiederholte Chromecast-Vorbereitung bei jeder Positionsaktualisierung wurde entfernt.
+
 ## 1.7.7 Einstellungen, Startseite und erweitertes Casting
 
 - strukturiert die Einstellungen in klar getrennte Material-3-Bereiche mit überarbeiteten Bezeichnungen und Hilfetexten
@@ -54,7 +73,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.7.7-settings-home-cast`
+`1.7.9-cast-hotspot`
 
 ## Paket und Projekt
 

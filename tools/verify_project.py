@@ -17,8 +17,8 @@ SRC = APP / "src" / "main"
 KOTLIN = SRC / "java" / "io" / "github" / "lootdev78" / "aniworld"
 RES = SRC / "res"
 EXPECTED_PACKAGE = "io.github.lootdev78.aniworld"
-EXPECTED_VERSION_CODE = 64
-EXPECTED_VERSION_NAME = "1.7.7-settings-home-cast"
+EXPECTED_VERSION_CODE = 66
+EXPECTED_VERSION_NAME = "1.7.9-cast-hotspot"
 
 errors: list[str] = []
 notes: list[str] = []
@@ -61,6 +61,7 @@ required_files = [
     KOTLIN / "IsolatedWebPageScreen.kt",
     KOTLIN / "ChromecastController.kt",
     KOTLIN / "FCast.kt",
+    KOTLIN / "LocalCastRelay.kt",
     KOTLIN / "AniWorldCastOptionsProvider.kt",
     KOTLIN / "MediaDetection.kt",
     KOTLIN / "PlaybackService.kt",
@@ -196,8 +197,9 @@ feature_markers: dict[str, tuple[Path, tuple[str, ...]]] = {
     "Anpassbare Startseitenbereiche": (KOTLIN / "AppStore.kt", ("HOME_SECTION_ORDER", "HIDDEN_HOME_SECTIONS", "setHomeSectionVisible", "moveHomeSection")),
     "Favoriten auf der Startseite": (KOTLIN / "UiScreens.kt", ("HomeSection.FAVORITES", "favoriteSeries", "HomeSeriesRow")),
     "Google Cast": (KOTLIN / "ChromecastController.kt", ("CastContext", "RemoteMediaClient", "MediaLoadRequestData")),
-    "FCast und Hotspot-Fallback": (KOTLIN / "FCast.kt", ("DEFAULT_FCAST_PORT", "discoverReceivers", "activeLocalIpv4Addresses", "readNeighborHosts", "MAX_PARALLEL_PROBES")),
-    "Miracast-Systemauswahl": (KOTLIN / "PlayerScreen.kt", ("Settings.ACTION_CAST_SETTINGS", "miracast_system_settings")),
+    "FCast und Hotspot-Fallback": (KOTLIN / "FCast.kt", ("DEFAULT_FCAST_PORT", "discoverWithNsd", "activeLocalIpv4Addresses", "readNeighborHosts", "MAX_PARALLEL_PROBES")),
+    "Lokaler Cast-Header-Relay": (KOTLIN / "LocalCastRelay.kt", ("preparePlayback", "rewriteHls", "Range", "ServerSocket")),
+    "Miracast-Systemauswahl": (KOTLIN / "ExternalPlayback.kt", ("ACTION_CAST_SETTINGS", "WIFI_DISPLAY_SETTINGS")),
     "Vier parallele Metadatenjobs": (KOTLIN / "AniWorldRepository.kt", ("MAX_PARALLEL_METADATA_JOBS = 4", "queue.chunked(MAX_PARALLEL_METADATA_JOBS)")),
 }
 for feature, (path, markers) in feature_markers.items():
@@ -207,6 +209,15 @@ for feature, (path, markers) in feature_markers.items():
             fail(f"Featuremarker fehlt ({feature}): {path.name} -> {marker}")
 notes.append(f"Featuregruppen geprüft: {len(feature_markers)}")
 require("AirPlay" not in all_kotlin and "AirServer" not in all_kotlin, "Nicht gewünschtes AirPlay/AirServer-Protokoll gefunden")
+
+# Playback hotfix: Google Cast must not initialize during ordinary hoster playback.
+player_text = read(KOTLIN / "PlayerScreen.kt")
+chromecast_text = read(KOTLIN / "ChromecastController.kt")
+require("fun initialize(): Boolean" in chromecast_text, "Lazy Google-Cast-Initialisierung fehlt")
+require("init {" not in chromecast_text, "Google Cast wird weiterhin beim Controller-Bau initialisiert")
+require("chromecastController.initialize()" in player_text, "Expliziter Chromecast-Start fehlt")
+require("LaunchedEffect(playback.id, position)" not in player_text, "Chromecast wird weiterhin bei jedem Player-Fortschritt vorbereitet")
+require("chromecastPermission" in player_text and "chromecastController.initialize()" in player_text, "Chromecast muss durch eine Nutzeraktion initialisiert werden")
 
 # Manifest component classes must exist in source.
 for cls in re.findall(r'android:name="\.([A-Za-z0-9_]+)"', manifest_text):

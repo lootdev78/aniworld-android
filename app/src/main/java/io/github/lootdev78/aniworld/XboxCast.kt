@@ -79,7 +79,7 @@ data class XboxCastState(
     val completionEvent: Long = 0L
 )
 
-class XboxCastController(context: Context) {
+class XboxCastController(context: Context, private val relay: LocalCastRelay? = null) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableState = MutableStateFlow(XboxCastState())
@@ -155,7 +155,9 @@ class XboxCastController(context: Context) {
                 error = null
             )
             val result = runCatching {
-                setTransportUri(device, playback)
+                val receiverHost = runCatching { URI(device.locationUrl).host }.getOrNull()
+                val castPlayback = relay?.preparePlayback(playback, receiverHost) ?: playback
+                setTransportUri(device, castPlayback)
                 sendAction(device, "Play", "<Speed>1</Speed>")
                 if (startPositionMs > 1_000L) {
                     delay(350L)

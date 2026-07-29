@@ -393,7 +393,7 @@
     <string name="cast_playing_on">Playing on %1$s</string>
     <string name="local_cast">Local Cast (DLNA / FCast)</string>
     <string name="cast_disconnect_and_resume">Disconnect and continue on this device</string>
-    <string name="cast_header_warning">Protected streams that require special app headers may fail on external receivers. Try another hoster if playback fails.</string>
+    <string name="cast_header_warning">Protected streams are relayed through the phone so Referer, cookies and range requests also work on external receivers.</string>
     <string name="cast_searching">Searching the local network and phone hotspot…</string>
     <string name="cast_xbox_dlna_device">Xbox / UPnP-DLNA renderer</string>
     <string name="cast_dlna_device">UPnP / DLNA renderer</string>
@@ -401,7 +401,7 @@
     <string name="cast_no_local_devices">No local DLNA or FCast receiver found</string>
     <string name="cast_refresh_local">Search DLNA and FCast again</string>
     <string name="cast_manual_address">Search a receiver by IP address</string>
-    <string name="cast_hotspot_hint">Phone hotspot: DLNA uses multicast, broadcast and direct subnet probes; FCast additionally scans the hotspot clients on TCP port 46899.</string>
+    <string name="cast_hotspot_hint">Phone hotspot: DLNA uses SSDP, broadcast and direct subnet probes; FCast uses mDNS plus a TCP fallback. Streams are relayed through the phone hotspot gateway when required.</string>
     <string name="chromecast_button">Google Cast / Chromecast</string>
     <string name="chromecast_device">Chromecast device</string>
     <string name="chromecast_unavailable">Google Cast is unavailable on this device.</string>

@@ -3,13 +3,15 @@ package io.github.lootdev78.aniworld
 import android.Manifest
 import android.app.Activity
 import android.app.PictureInPictureParams
-import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
-import android.provider.Settings
 import android.util.Rational
+import android.view.Gravity
+import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -115,13 +117,15 @@ fun PlayerScreen(
     var hosterMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var castMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var manualCastDialogOpen by remember(playback.id) { mutableStateOf(false) }
+    var chromecastDialogOpen by remember(playback.id) { mutableStateOf(false) }
     var manualCastAddress by remember(playback.id) { mutableStateOf("") }
     var internalPausedForCast by remember(playback.id) { mutableStateOf(false) }
-    val dlnaController = remember(context.applicationContext) { XboxCastController(context.applicationContext) }
+    val castRelay = remember(context.applicationContext) { LocalCastRelay(context.applicationContext) }
+    val dlnaController = remember(context.applicationContext, castRelay) { XboxCastController(context.applicationContext, castRelay) }
     val dlnaState by dlnaController.state.collectAsState()
-    val fcastController = remember(context.applicationContext) { FCastController(context.applicationContext) }
+    val fcastController = remember(context.applicationContext, castRelay) { FCastController(context.applicationContext, castRelay) }
     val fcastState by fcastController.state.collectAsState()
-    val chromecastController = remember(context.applicationContext) { ChromecastController(context.applicationContext) }
+    val chromecastController = remember(context.applicationContext, castRelay) { ChromecastController(context.applicationContext, castRelay) }
     val chromecastState by chromecastController.state.collectAsState()
     val dlnaActive = dlnaState.connectedDevice != null
     val fcastActive = fcastState.connectedDevice != null
@@ -164,6 +168,19 @@ fun PlayerScreen(
             controlsVisible = true
         }
     }
+    val chromecastPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            chromecastController.prepare(playback, position)
+            if (chromecastController.initialize()) {
+                chromecastDialogOpen = true
+            } else {
+                playerError = context.getString(R.string.chromecast_unavailable)
+            }
+        } else {
+            playerError = context.getString(R.string.xbox_cast_permission_denied)
+            controlsVisible = true
+        }
+    }
 
     LaunchedEffect(playback.id) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -178,10 +195,6 @@ fun PlayerScreen(
             delay(3_000L)
             controlsVisible = false
         }
-    }
-
-    LaunchedEffect(playback.id, position) {
-        chromecastController.prepare(playback, position)
     }
 
     LaunchedEffect(autoNextVisible, autoNextSeconds) {
@@ -251,11 +264,12 @@ fun PlayerScreen(
         }
     }
 
-    DisposableEffect(dlnaController, fcastController, chromecastController) {
+    DisposableEffect(dlnaController, fcastController, chromecastController, castRelay) {
         onDispose {
             dlnaController.close()
             fcastController.close()
             chromecastController.close()
+            castRelay.close()
         }
     }
 
@@ -496,17 +510,29 @@ fun PlayerScreen(
                 }
             }
             if (chromecastState.available) {
-                AndroidView(
-                    modifier = Modifier.size(48.dp),
-                    factory = { routeContext ->
-                        MediaRouteButton(routeContext).apply {
-                            contentDescription = routeContext.getString(R.string.chromecast_button)
-                            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                            CastButtonFactory.setUpMediaRouteButton(routeContext, this)
+                IconButton(
+                    onClick = {
+                        controlsVisible = true
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            chromecastPermission.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+                        } else {
+                            chromecastController.prepare(playback, position)
+                            if (chromecastController.initialize()) {
+                                chromecastDialogOpen = true
+                            } else {
+                                playerError = context.getString(R.string.chromecast_unavailable)
+                            }
                         }
-                    },
-                    update = { chromecastController.prepare(playback, position) }
-                )
+                    }
+                ) {
+                    Icon(
+                        if (chromecastActive) Icons.Default.CastConnected else Icons.Default.Cast,
+                        stringResource(R.string.chromecast_button),
+                        tint = if (chromecastActive) MaterialTheme.colorScheme.primary else Color.White
+                    )
+                }
             }
             Box {
                 IconButton(onClick = ::openCastPicker) {
@@ -626,7 +652,7 @@ fun PlayerScreen(
                         leadingIcon = { Icon(Icons.Default.Cast, null) },
                         onClick = {
                             castMenuOpen = false
-                            runCatching { context.startActivity(Intent(Settings.ACTION_CAST_SETTINGS)) }
+                            launchMiracastPicker(context)
                                 .onFailure { error ->
                                     playerError = error.message ?: context.getString(R.string.miracast_settings_failed)
                                     controlsVisible = true
@@ -688,6 +714,49 @@ fun PlayerScreen(
                 Icon(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), tint = if (hasNext) Color.White else Color.White.copy(alpha = .32f))
             }
             }
+        }
+
+        if (chromecastDialogOpen) {
+            AlertDialog(
+                onDismissRequest = { chromecastDialogOpen = false },
+                title = { Text(stringResource(R.string.chromecast_button)) },
+                text = {
+                    AndroidView(
+                        modifier = Modifier.size(72.dp),
+                        factory = { routeContext ->
+                            FrameLayout(routeContext).apply {
+                                val routeView = runCatching {
+                                    MediaRouteButton(routeContext).apply {
+                                        contentDescription = routeContext.getString(R.string.chromecast_button)
+                                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                        CastButtonFactory.setUpMediaRouteButton(routeContext, this)
+                                        setAlwaysVisible(true)
+                                    }
+                                }.getOrElse {
+                                    TextView(routeContext).apply {
+                                        text = routeContext.getString(R.string.chromecast_unavailable)
+                                        gravity = Gravity.CENTER
+                                    }
+                                }
+                                addView(
+                                    routeView,
+                                    FrameLayout.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        Gravity.CENTER
+                                    )
+                                )
+                            }
+                        },
+                        update = { chromecastController.prepare(playback, position) }
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { chromecastDialogOpen = false }) {
+                        Text(stringResource(R.string.close))
+                    }
+                }
+            )
         }
 
         if (manualCastDialogOpen) {
