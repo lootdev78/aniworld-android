@@ -279,7 +279,7 @@
     <string name="language_japanese_sub">Japanese Sub</string>
     <string name="language_japanese_original">Japanese Original</string>
     <string name="catalog_metadata_required">Catalog metadata missing</string>
-    <string name="catalog_metadata_required_hint">Update catalog metadata in Settings. Search, filters, and entries stay disabled until then.</string>
+    <string name="catalog_metadata_required_hint">Import an existing metadata file with Android’s document provider or download the metadata directly.</string>
     <string name="catalog_metadata_progress">%1$d of %2$d titles stored</string>
     <string name="about_and_credits">About &amp; Credits</string>
     <string name="credits_created_by">Development and repository: lootdev78</string>
@@ -372,6 +372,7 @@
     <string name="metadata_action_delete">Delete existing metadata</string>
     <string name="metadata_action_export">Export metadata</string>
     <string name="metadata_action_import">Import metadata</string>
+    <string name="metadata_action_download">Download</string>
     <string name="display_settings_desc">Theme, colors and interface appearance</string>
     <string name="diagnostics_and_logs">Diagnostics &amp; app logs</string>
     <string name="diagnostics_and_logs_desc">Global logging switch and diagnostic viewer</string>

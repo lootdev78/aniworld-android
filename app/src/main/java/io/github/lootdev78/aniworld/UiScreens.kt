@@ -527,6 +527,19 @@ private fun SmoothCollapsibleHeader(visible: Boolean, content: @Composable () ->
 
 @Composable
 fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
+    val context = LocalContext.current
+    val importMetadataLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(vm::importOfflineMetadata) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { vm.refreshCatalogMetadata() }
+    val downloadMetadata = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        else vm.refreshCatalogMetadata()
+    }
     val gridState = rememberLazyGridState()
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -622,6 +635,22 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (st.catalogMetadataError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            if (!st.catalogMetadataUpdating) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { importMetadataLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
+                                    ) {
+                                        Icon(Icons.Default.FileUpload, null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.metadata_action_import))
+                                    }
+                                    Button(onClick = downloadMetadata) {
+                                        Icon(Icons.Default.CloudDownload, null)
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(stringResource(R.string.metadata_action_download))
+                                    }
+                                }
+                            }
                         }
                     }
                 }

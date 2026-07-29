@@ -5,9 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.kapt)
 }
 
-// Optional vendor bootstrap; application source remains unchanged.
-apply(from = rootProject.file("gradle/samsung-smartview-sdk.gradle"))
-
 android {
     namespace = "io.github.lootdev78.aniworld"
     compileSdk = 36
@@ -72,8 +69,8 @@ kapt {
 }
 
 dependencies {
-    // Optional vendor SDKs placed in app/libs (for example Samsung Smart View).
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    // Locally bundled Samsung Smart View SDK. No Gradle installer or runtime download.
+    implementation(files("libs/android-smartview-sdk-2.5.34.aar"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
