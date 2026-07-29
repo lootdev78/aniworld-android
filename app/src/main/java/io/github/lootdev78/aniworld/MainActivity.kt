@@ -348,7 +348,6 @@ fun AniWorldApp(vm: AppViewModel) {
             prefs = st.preferences,
             resolving = st.resolving,
             allowExternalPlayer = st.preferences.allowExternalPlayer,
-            castEnabled = st.preferences.castEnabled,
             watched = st.preferences.episodeWatchStates[episode.key]?.completed == true,
             onDismiss = vm::dismissEpisodeOptions,
             onToggleWatched = { vm.toggleEpisodeWatched(episode) },
