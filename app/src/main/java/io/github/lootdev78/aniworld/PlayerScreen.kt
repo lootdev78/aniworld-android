@@ -33,9 +33,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.horizontalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -818,11 +817,15 @@ fun PlayerScreen(
         }
 
         if (castMenuOpen) {
+            val googleCastProtocolLabel = stringResource(R.string.cast_protocol_google)
+            val smartViewProtocolLabel = stringResource(R.string.cast_protocol_smartview)
+            val dlnaProtocolLabel = stringResource(R.string.cast_protocol_dlna)
+            val fcastProtocolLabel = stringResource(R.string.cast_protocol_fcast)
             fun protocolLabel(protocol: PlayerCastProtocol): String = when (protocol) {
-                PlayerCastProtocol.GOOGLE_CAST -> stringResource(R.string.cast_protocol_google)
-                PlayerCastProtocol.SMART_VIEW -> stringResource(R.string.cast_protocol_smartview)
-                PlayerCastProtocol.DLNA -> stringResource(R.string.cast_protocol_dlna)
-                PlayerCastProtocol.FCAST -> stringResource(R.string.cast_protocol_fcast)
+                PlayerCastProtocol.GOOGLE_CAST -> googleCastProtocolLabel
+                PlayerCastProtocol.SMART_VIEW -> smartViewProtocolLabel
+                PlayerCastProtocol.DLNA -> dlnaProtocolLabel
+                PlayerCastProtocol.FCAST -> fcastProtocolLabel
             }
 
             val protocolMap = linkedMapOf<String, Pair<String, MutableList<PlayerCastChoice>>>()

@@ -165,6 +165,8 @@ for pattern, description in {
     r"librarySeries\.forEach\(store::ensureOfflineMetadata\)": "Suspend-Metadatenfunktion in nicht-suspendierender forEach-Referenz",
     r"item\.episode\.localizedDisplayTitle\(\)\.contains": "Composable Texthelfer innerhalb von remember",
     r"val\s+suggestions\s*=\s*remember\(page\.items,\s*query\)": "Problematische Suggestions-Typinferenz in Collection-Views",
+    r"import\s+androidx\.compose\.foundation\.layout\.horizontalScroll": "horizontalScroll aus falschem Compose-Paket importiert",
+    r"import\s+androidx\.compose\.foundation\.layout\.weight": "Interne weight-Property statt RowScope-/ColumnScope-Erweiterung importiert",
 }.items():
     if re.search(pattern, all_kotlin):
         fail(f"Regression gefunden: {description}")
