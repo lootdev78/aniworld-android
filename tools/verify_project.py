@@ -62,8 +62,6 @@ required_files = [
     KOTLIN / "ChromecastController.kt",
     KOTLIN / "FCast.kt",
     KOTLIN / "LocalCastRelay.kt",
-    KOTLIN / "LocalPlaybackWebServer.kt",
-    KOTLIN / "RemotePlaybackBridge.kt",
     KOTLIN / "MetadataInventory.kt",
     KOTLIN / "SamsungSmartViewCast.kt",
     KOTLIN / "AniWorldCastOptionsProvider.kt",
@@ -203,8 +201,6 @@ feature_markers: dict[str, tuple[Path, tuple[str, ...]]] = {
     "Google Cast": (KOTLIN / "ChromecastController.kt", ("CastContext", "RemoteMediaClient", "MediaLoadRequestData")),
     "FCast und Hotspot-Fallback": (KOTLIN / "FCast.kt", ("DEFAULT_FCAST_PORT", "discoverWithNsd", "activeLocalIpv4Addresses", "readNeighborHosts", "MAX_PARALLEL_PROBES")),
     "Lokaler Cast-Header-Relay": (KOTLIN / "LocalCastRelay.kt", ("preparePlayback", "rewriteHls", "Range", "ServerSocket")),
-    "Lokale Receiver-Webseite": (KOTLIN / "LocalPlaybackWebServer.kt", ("/api/state", "/api/control", "text/event-stream", "serveWebSocket", "startPolling", "navigator.mediaSession")),
-    "Zentrale Fernsteuerungsbrücke": (KOTLIN / "RemotePlaybackBridge.kt", ("sealed interface RemotePlaybackCommand", "revision", "MutableSharedFlow", "Volume", "Mute")),
     "Fortsetzbare Metadaten-Inventur": (KOTLIN / "MetadataInventory.kt", ("data class MetadataInventory", "missingSlugs", "incompleteSlugs", "isComplete")),
     "Samsung Smart View DMP": (KOTLIN / "SamsungSmartViewCast.kt", ("OnServiceFoundListener", "createVideoPlayer", "playContent", "isDMPSupported", "setVolume", "seekTo")),
     "Responsive Diagnoseaktionen": (KOTLIN / "DiagnosticScreen.kt", ("BoxWithConstraints", "DiagnosticActionButton", "maxWidth < 330.dp", "maxWidth < 600.dp", "modifier = Modifier.fillMaxWidth()")),
@@ -223,15 +219,17 @@ for feature, (path, markers) in feature_markers.items():
             fail(f"Featuremarker fehlt ({feature}): {path.name} -> {marker}")
 notes.append(f"Featuregruppen geprüft: {len(feature_markers)}")
 require("AirPlay" not in all_kotlin and "AirServer" not in all_kotlin, "Nicht gewünschtes AirPlay/AirServer-Protokoll gefunden")
+require("LocalPlaybackWebServer" not in all_kotlin, "Entfernter lokaler Webplayer ist noch referenziert")
+require("RemotePlaybackRuntime" not in all_kotlin, "Entfernte Pair-Code-Fernsteuerung ist noch referenziert")
 
 # Playback hotfix: Google Cast must not initialize during ordinary hoster playback.
 player_text = read(KOTLIN / "PlayerScreen.kt")
 chromecast_text = read(KOTLIN / "ChromecastController.kt")
 require("fun initialize(): Boolean" in chromecast_text, "Lazy Google-Cast-Initialisierung fehlt")
 require("init {" not in chromecast_text, "Google Cast wird weiterhin beim Controller-Bau initialisiert")
-require("chromecastController.initialize()" in player_text, "Expliziter Chromecast-Start fehlt")
+require("chromecastController.discover()" in player_text, "Nutzergesteuerte Chromecast-Suche fehlt")
 require("LaunchedEffect(playback.id, position)" not in player_text, "Chromecast wird weiterhin bei jedem Player-Fortschritt vorbereitet")
-require("chromecastPermission" in player_text and "chromecastController.initialize()" in player_text, "Chromecast muss durch eine Nutzeraktion initialisiert werden")
+require("openCastPicker" in player_text and "chromecastController.discover()" in player_text, "Chromecast muss durch die Cast-Nutzeraktion initialisiert werden")
 
 # Manifest component classes must exist in source.
 for cls in re.findall(r'android:name="\.([A-Za-z0-9_]+)"', manifest_text):

@@ -2476,8 +2476,6 @@ fun SettingsScreen(
     val smartViewSdkAvailable = remember(context.applicationContext) {
         SamsungSmartViewController.isSdkAvailable(context.applicationContext)
     }
-    val webRelayStatus by RemotePlaybackRuntime.status.collectAsState()
-    var relayPortText by rememberSaveable(prefs.localWebRelayPort) { mutableStateOf(prefs.localWebRelayPort.toString()) }
     var confirmMetadataDelete by rememberSaveable { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         vm.refreshCatalogMetadata()
@@ -2567,6 +2565,12 @@ fun SettingsScreen(
                             prefs.castEnabled,
                             vm::setCastEnabled
                         )
+                        SettingSwitch(
+                            stringResource(R.string.pip_enabled),
+                            stringResource(R.string.pip_enabled_desc),
+                            prefs.pipEnabled,
+                            vm::setPipEnabled
+                        )
                         Surface(
                             modifier = Modifier.fillMaxWidth(),
                             shape = MaterialTheme.shapes.medium,
@@ -2595,37 +2599,6 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                        SettingSwitch(
-                            stringResource(R.string.local_web_relay_enabled),
-                            stringResource(R.string.local_web_relay_enabled_desc),
-                            prefs.localWebRelayEnabled,
-                            vm::setLocalWebRelayEnabled
-                        )
-                        OutlinedTextField(
-                            value = relayPortText,
-                            onValueChange = { relayPortText = it.filter(Char::isDigit).take(5) },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = prefs.localWebRelayEnabled,
-                            singleLine = true,
-                            label = { Text(stringResource(R.string.local_web_relay_port)) },
-                            supportingText = { Text("1024–65535") }
-                        )
-                        OutlinedButton(
-                            onClick = { relayPortText.toIntOrNull()?.let(vm::setLocalWebRelayPort) },
-                            enabled = prefs.localWebRelayEnabled && relayPortText.toIntOrNull() in 1024..65535,
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(stringResource(R.string.local_web_relay_apply_port)) }
-                        val relayText = when {
-                            webRelayStatus.lastError != null -> stringResource(R.string.local_web_relay_error, webRelayStatus.lastError.orEmpty())
-                            webRelayStatus.running -> stringResource(
-                                R.string.local_web_relay_running,
-                                webRelayStatus.pageUrl,
-                                webRelayStatus.pin,
-                                webRelayStatus.connectedClients
-                            )
-                            else -> stringResource(R.string.local_web_relay_waiting)
-                        }
-                        Text(relayText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 

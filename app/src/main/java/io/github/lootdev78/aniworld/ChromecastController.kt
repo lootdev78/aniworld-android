@@ -3,7 +3,12 @@ package io.github.lootdev78.aniworld
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
+import android.os.Handler
+import android.os.Looper
 import com.google.android.gms.cast.MediaInfo
+import com.google.android.gms.cast.CastMediaControlIntent
+import androidx.mediarouter.media.MediaRouteSelector
+import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.MediaSeekOptions
 import com.google.android.gms.cast.MediaLoadRequestData
 import com.google.android.gms.cast.MediaMetadata
@@ -18,12 +23,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** State bridge between the Compose player and the official Google Cast framework. */
+data class ChromecastRoute(val id: String, val name: String)
+
 data class ChromecastState(
     val available: Boolean = false,
+    val devices: List<ChromecastRoute> = emptyList(),
+    val discovering: Boolean = false,
     val connectedDeviceName: String? = null,
     val transportState: XboxTransportState = XboxTransportState.IDLE,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
+    val volumePercent: Int? = null,
     val error: String? = null,
     val completionEvent: Long = 0L
 )
@@ -43,6 +53,19 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
     private var loadedPlaybackId: String? = null
     private var previousPlayerState: Int = MediaStatus.PLAYER_STATE_UNKNOWN
     private var initialized = false
+    private var mediaRouter: MediaRouter? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val finishDiscovery = Runnable {
+        mutableState.value = mutableState.value.copy(discovering = false)
+    }
+    private var routeSelector: MediaRouteSelector? = null
+    private val routeCallback = object : MediaRouter.Callback() {
+        override fun onRouteAdded(router: MediaRouter, route: MediaRouter.RouteInfo) = updateRoutes()
+        override fun onRouteRemoved(router: MediaRouter, route: MediaRouter.RouteInfo) = updateRoutes()
+        override fun onRouteChanged(router: MediaRouter, route: MediaRouter.RouteInfo) = updateRoutes()
+        override fun onRouteSelected(router: MediaRouter, route: MediaRouter.RouteInfo, reason: Int) = updateRoutes()
+        override fun onRouteUnselected(router: MediaRouter, route: MediaRouter.RouteInfo, reason: Int) = updateRoutes()
+    }
 
     private val mediaCallback = object : RemoteMediaClient.Callback() {
         override fun onStatusUpdated() = updateFromClient()
@@ -85,11 +108,18 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
                 runCatching { acquire() }
             }
             val contextInstance = CastContext.getSharedInstance(appContext)
+            routeSelector = MediaRouteSelector.Builder()
+                .addControlCategory(CastMediaControlIntent.categoryForCast(CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID))
+                .build()
+            mediaRouter = MediaRouter.getInstance(appContext).also { router ->
+                router.addCallback(routeSelector!!, routeCallback, MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY)
+            }
             castContext = contextInstance
             sessionManager = contextInstance.sessionManager.apply {
                 addSessionManagerListener(sessionListener, CastSession::class.java)
             }
-            mutableState.value = mutableState.value.copy(available = true, error = null)
+            mutableState.value = mutableState.value.copy(available = true, discovering = true, error = null)
+            updateRoutes()
             sessionManager?.currentCastSession?.let { attachSession(it, loadPending = false) }
             true
         }.getOrElse {
@@ -106,6 +136,28 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
         pendingPlayback = playback
         pendingPositionMs = positionMs.coerceAtLeast(0L)
         if (attachedClient != null && loadedPlaybackId != playback.id) loadPending()
+    }
+
+    fun discover() {
+        if (!initialize()) return
+        mainHandler.removeCallbacks(finishDiscovery)
+        mutableState.value = mutableState.value.copy(discovering = true, error = null)
+        updateRoutes()
+        mainHandler.postDelayed(finishDiscovery, 4_000L)
+    }
+
+    fun selectDevice(deviceId: String) {
+        val router = mediaRouter ?: return
+        val route = router.routes.firstOrNull { it.id == deviceId } ?: return
+        runCatching { router.selectRoute(route) }
+            .onFailure { fail(it.message ?: appContext.getString(R.string.chromecast_session_failed, -1)) }
+    }
+
+    fun syncVolumeFromAndroid(volumeFraction: Float) {
+        val session = sessionManager?.currentCastSession ?: return
+        val safe = volumeFraction.coerceIn(0f, 1f)
+        runCatching { session.setVolume(safe.toDouble()) }
+            .onSuccess { mutableState.value = mutableState.value.copy(volumePercent = (safe * 100f).toInt()) }
     }
 
     fun play() = runClientCommand { play() }
@@ -148,6 +200,10 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
         attachedClient = null
         attachedReceiverHost = null
         sessionManager?.removeSessionManagerListener(sessionListener, CastSession::class.java)
+        routeSelector?.let { selector -> runCatching { mediaRouter?.removeCallback(routeCallback) } }
+        mediaRouter = null
+        routeSelector = null
+        mainHandler.removeCallbacks(finishDiscovery)
         if (multicastLock?.isHeld == true) runCatching { multicastLock?.release() }
         multicastLock = null
     }
@@ -159,6 +215,7 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
         mutableState.value = mutableState.value.copy(
             connectedDeviceName = session.castDevice?.friendlyName ?: appContext.getString(R.string.chromecast_device),
             transportState = XboxTransportState.CONNECTING,
+            volumePercent = (session.volume * 100.0).toInt().coerceIn(0, 100),
             error = null
         )
         if (loadPending) loadPending() else updateFromClient()
@@ -215,6 +272,7 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
             transportState = transport,
             positionMs = client.approximateStreamPosition.coerceAtLeast(0L),
             durationMs = client.streamDuration.coerceAtLeast(0L),
+            volumePercent = sessionManager?.currentCastSession?.volume?.let { (it * 100.0).toInt().coerceIn(0, 100) },
             completionEvent = if (completed) System.nanoTime() else mutableState.value.completionEvent,
             error = null
         )
@@ -237,7 +295,20 @@ class ChromecastController(context: Context, private val relay: LocalCastRelay? 
         attachedReceiverHost = null
         loadedPlaybackId = null
         previousPlayerState = MediaStatus.PLAYER_STATE_UNKNOWN
-        mutableState.value = ChromecastState(available = mutableState.value.available)
+        mutableState.value = ChromecastState(available = mutableState.value.available, devices = mutableState.value.devices)
+    }
+
+    private fun updateRoutes() {
+        val selector = routeSelector ?: return
+        val routes = mediaRouter?.routes.orEmpty()
+            .filter { route -> !route.isDefault && route.matchesSelector(selector) && route.isEnabled }
+            .map { ChromecastRoute(it.id, it.name.toString()) }
+            .distinctBy { it.id }
+            .sortedBy { it.name.lowercase() }
+        mutableState.value = mutableState.value.copy(
+            devices = routes,
+            discovering = if (routes.isNotEmpty()) false else mutableState.value.discovering
+        )
     }
 
     private fun inferMimeType(url: String): String = when {

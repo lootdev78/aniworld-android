@@ -307,6 +307,7 @@ fun AniWorldApp(vm: AppViewModel) {
             availableHosters = st.hosters,
             allowExternalPlayer = st.preferences.allowExternalPlayer,
             castEnabled = st.preferences.castEnabled,
+            pipEnabled = st.preferences.pipEnabled,
             onLanguageChange = { language -> vm.playEpisode(playback.episode, languageOverride = language) },
             onHosterChange = { hoster -> vm.playEpisode(playback.episode, languageOverride = hoster.lang.takeIf { it != Language.UNKNOWN }, hosterOverride = hoster) },
             onPrevious = vm::playPreviousEpisode,

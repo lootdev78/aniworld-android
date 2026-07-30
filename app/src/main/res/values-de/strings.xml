@@ -399,7 +399,7 @@
     <string name="cast_xbox_dlna_device">Xbox / UPnP-DLNA-Renderer</string>
     <string name="cast_dlna_device">UPnP-/DLNA-Renderer</string>
     <string name="cast_fcast_device">Quelloffener FCast-Empfänger</string>
-    <string name="cast_no_local_devices">Kein lokaler DLNA- oder FCast-Empfänger gefunden</string>
+    <string name="cast_no_local_devices">Keine kompatiblen Cast-Geräte gefunden.</string>
     <string name="cast_refresh_local">DLNA und FCast erneut suchen</string>
     <string name="cast_manual_address">Empfänger über IP-Adresse suchen</string>
     <string name="cast_hotspot_hint">Handy-Hotspot: DLNA nutzt SSDP, Broadcast und direkte Subnetz-Suche; FCast nutzt mDNS plus TCP-Fallback. Streams werden bei Bedarf über die Hotspot-Gateway-IP des Handys weitergeleitet.</string>
@@ -420,17 +420,10 @@
     <string name="miracast_system_settings_desc">Android-Systemeinstellungen für Cast öffnen</string>
     <string name="miracast_settings_failed">Die Android-Cast-Einstellungen konnten nicht geöffnet werden.</string>
 
-    <string name="cast_remote_settings">Cast &amp; Fernsteuerung</string>
-    <string name="cast_remote_settings_desc">Geräte-Cast und den lokalen Web-Relay getrennt verwalten.</string>
+    <string name="cast_remote_settings">Cast &amp; Wiedergabe</string>
+    <string name="cast_remote_settings_desc">Cast- und Picture-in-Picture-Funktionen für den Player verwalten.</string>
     <string name="cast_enabled">Cast im Player anzeigen</string>
     <string name="cast_enabled_desc">Chromecast, Xbox/DLNA und FCast im Player aktivieren.</string>
-    <string name="local_web_relay_enabled">Lokale Fernsteuerungs-Webseite</string>
-    <string name="local_web_relay_enabled_desc">Startet bei Wiedergabe eine PIN-geschützte Webseite im lokalen Netzwerk.</string>
-    <string name="local_web_relay_port">Bevorzugter Port</string>
-    <string name="local_web_relay_apply_port">Port übernehmen</string>
-    <string name="local_web_relay_running">Läuft auf %1$s · PIN %2$s · %3$d Clients</string>
-    <string name="local_web_relay_waiting">Startet automatisch mit der nächsten Wiedergabe.</string>
-    <string name="local_web_relay_error">Relay-Fehler: %1$s</string>
     <string name="metadata_inventory_detail">Gespeichert: %1$d/%2$d · Fehlend: %3$d · Unvollständig: %4$d</string>
     <string name="metadata_cover_cache_detail">Cover-Cache: %1$d Dateien · %2$s</string>
     <string name="show_full_text">Mehr anzeigen</string>
@@ -472,4 +465,16 @@
     <string name="player_stream_link_clip_label">AniWorld Video-Link</string>
     <string name="player_stream_link_copied">Video-Link kopiert</string>
     <string name="player_stream_link_copy_failed">Video-Link konnte nicht kopiert werden</string>
+    <string name="pip_enabled">Bild-in-Bild im Player</string>
+    <string name="pip_enabled_desc">Zeigt die Bild-in-Bild-Funktion in der Wiedergabesteuerung an.</string>
+    <string name="player_more_options">Weitere Optionen</string>
+    <string name="player_season_badge">S%1$d</string>
+    <string name="player_episode_badge">E%1$d</string>
+    <string name="cast_protocol_google">Google Cast</string>
+    <string name="cast_protocol_smartview">Samsung Smart View</string>
+    <string name="cast_protocol_dlna">DLNA / UPnP</string>
+    <string name="cast_protocol_fcast">FCast</string>
+    <string name="cast_unified_subtitle">Alle unterstützten Protokolle in einer Geräteliste</string>
+    <string name="cast_connected_via">Verbunden über %1$s · Tippen zum Trennen</string>
+    <string name="cast_volume_sync_desc">Android- und Gerätelautstärke werden synchronisiert, sofern das Ziel dies unterstützt.</string>
 </resources>

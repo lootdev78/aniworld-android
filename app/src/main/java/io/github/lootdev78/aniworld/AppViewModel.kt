@@ -118,7 +118,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         viewModelScope.launch {
             store.preferences.collect { prefs ->
                 AppLogger.setEnabled(prefs.diagnosticsEnabled)
-                RemotePlaybackRuntime.configure(app, prefs)
                 _state.update { it.copy(preferences = prefs, preferencesReady = true) }
                 if (!libraryMetadataBackfillTriggered) {
                     libraryMetadataBackfillTriggered = true
@@ -764,8 +763,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         viewModelScope.launch { store.setDiagnosticsEnabled(enabled) }
     }
     fun setCastEnabled(enabled: Boolean) = viewModelScope.launch { store.setCastEnabled(enabled) }.let { Unit }
-    fun setLocalWebRelayEnabled(enabled: Boolean) = viewModelScope.launch { store.setLocalWebRelayEnabled(enabled) }.let { Unit }
-    fun setLocalWebRelayPort(port: Int) = viewModelScope.launch { store.setLocalWebRelayPort(port) }.let { Unit }
+    fun setPipEnabled(enabled: Boolean) = viewModelScope.launch { store.setPipEnabled(enabled) }.let { Unit }
     fun setHighlightStartedSeasons(enabled: Boolean) = viewModelScope.launch { store.setHighlightStartedSeasons(enabled) }.let { Unit }
     fun setStartedSeasonHighlightAlpha(alpha: Float) = viewModelScope.launch { store.setStartedSeasonHighlightAlpha(alpha) }.let { Unit }
     fun setHomeSectionVisible(section: HomeSection, visible: Boolean) =

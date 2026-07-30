@@ -168,7 +168,7 @@ Die App löst Web-Challenges nicht automatisch und umgeht keine Schutzprüfung. 
 
 Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist bewusst reduziert:
 
-- Tippen: Pause oder Weiter
+- erster Tipp bei ausgeblendeter Oberfläche: Steuerung einblenden; weiterer Tipp: Pause oder Weiter
 - vertikale Geste links: Bildschirmhelligkeit
 - vertikale Geste rechts: Medienlautstärke
 - HLS-, DASH-, SmoothStreaming- und progressive Media3-Wiedergabe
@@ -179,10 +179,13 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - vorherige/nächste Folge innerhalb der geöffneten Staffel
 - Wechsel von Sprache und Hoster direkt in der eingeblendeten Player-Steuerung
 - dauerhaft sichtbare Wiedergabezeitleiste bei eingeblendeten Steuerelementen mit aktuellem Zeitpunkt, Videolänge und verschiebbarem Positionspunkt
-- Doppeltipp links/rechts sowie Icon-Aktionen für zehn Sekunden zurück/vor
-- Icon zum Starten von Anfang und Picture-in-Picture-Schaltfläche
+- zentrale Icon-Aktionen für zehn Sekunden zurück/vor; kein konkurrierender Doppeltipp-Seek
+- reine Icon-Aktionsleiste; langes Gedrückthalten zeigt die jeweilige Funktion bis zum Loslassen
+- Icon zum Starten von Anfang und optional einblendbare Picture-in-Picture-Schaltfläche
 - DLNA/UPnP-Casting einschließlich Xbox mit Gerätesuche, Wiedergabe/Pause, Remote-Suche und Trennen/Fortsetzen
-- offizielles Google Cast für Chromecast über die Android MediaRoute-Auswahl
+- gemeinsamer dynamischer Cast-Dialog für Google Cast, Samsung Smart View, DLNA/UPnP, Xbox und FCast
+- gleichnamige Geräte werden gruppiert; bei mehreren Protokollen kann die Verbindungsmethode gewählt werden
+- Android- und Empfängerlautstärke werden bei unterstützten Protokollen bestmöglich bidirektional synchronisiert
 - FCast-Wiedergabe als offenes Cast-Protokoll sowie Miracast-Einstieg über die Android-Systemauswahl
 - lokaler Subnetz- und Nachbartabellen-Fallback für DLNA/FCast-Geräte am Handy-Hotspot
 - optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
@@ -190,7 +193,7 @@ Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist b
 - automatisch ausblendende Player-Oberfläche während laufender Wiedergabe; Interaktion oder Pause blendet sie wieder ein
 - Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
 
-Es gibt weiterhin keine Qualitäts- oder Geschwindigkeitsmenüs. Picture-in-Picture ist über das Player-Icon verfügbar. Unterstützt werden DLNA/UPnP-Renderer einschließlich Xbox, Chromecast über Google Cast, FCast sowie Miracast über die Android-Systemauswahl. Lokale Renderer können sich im selben WLAN oder als Clients am vom Android-Gerät bereitgestellten Hotspot befinden. AirPlay und AirServer sind nicht enthalten.
+Der frühere Pair-Code-/Webplayer-Host wurde vollständig aus Quellcode und Einstellungen entfernt. Es gibt weiterhin keine Qualitäts- oder Geschwindigkeitsmenüs. Picture-in-Picture ist über das Player-Icon verfügbar. Unterstützt werden DLNA/UPnP-Renderer einschließlich Xbox, Chromecast über Google Cast, FCast sowie Miracast über die Android-Systemauswahl. Lokale Renderer können sich im selben WLAN oder als Clients am vom Android-Gerät bereitgestellten Hotspot befinden. AirPlay und AirServer sind nicht enthalten.
 
 ## Navigation
 

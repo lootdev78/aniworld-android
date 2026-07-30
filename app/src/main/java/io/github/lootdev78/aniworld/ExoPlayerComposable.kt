@@ -75,7 +75,6 @@ fun EmbeddedExoPlayer(
     var gestureValue by remember { mutableFloatStateOf(0f) }
     var gestureVisible by remember { mutableStateOf(false) }
     var playStateVisible by remember { mutableStateOf(false) }
-    var seekFeedback by remember(playback.id) { mutableStateOf<Int?>(null) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
 
     val controllerFuture = remember {
@@ -165,27 +164,12 @@ fun EmbeddedExoPlayer(
             playStateVisible = false
         }
     }
-    LaunchedEffect(seekFeedback) {
-        if (seekFeedback != null) {
-            delay(750L)
-            seekFeedback = null
-        }
-    }
 
     Box(
         modifier = modifier
             .background(Color.Black)
             .pointerInput(playback.id, player) {
                 detectTapGestures(
-                    onDoubleTap = { offset ->
-                        onInteraction()
-                        player?.let { controller ->
-                            val delta = if (offset.x < size.width / 2f) -10_000L else 10_000L
-                            val maxPosition = controller.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
-                            controller.seekTo((controller.currentPosition + delta).coerceIn(0L, maxPosition))
-                            seekFeedback = if (delta < 0L) -10 else 10
-                        }
-                    },
                     onTap = {
                         val consumed = onSingleTap()
                         onInteraction()
@@ -275,15 +259,6 @@ fun EmbeddedExoPlayer(
                     if (isPlaying) stringResource(R.string.playback_running) else stringResource(R.string.playback_paused),
                     tint = Color.White,
                     modifier = Modifier.padding(22.dp)
-                )
-            }
-        }
-        seekFeedback?.let { seconds ->
-            Surface(color = Color.Black.copy(alpha = 0.68f), shape = androidx.compose.foundation.shape.CircleShape) {
-                Text(
-                    if (seconds < 0) stringResource(R.string.seek_back_seconds) else stringResource(R.string.seek_forward_seconds),
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp)
                 )
             }
         }

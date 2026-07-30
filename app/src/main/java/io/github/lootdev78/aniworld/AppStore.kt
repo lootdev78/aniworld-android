@@ -50,8 +50,7 @@ private data class SettingsSnapshot(
     val historyViewMode: LibraryViewMode,
     val diagnosticsEnabled: Boolean,
     val castEnabled: Boolean,
-    val localWebRelayEnabled: Boolean,
-    val localWebRelayPort: Int,
+    val pipEnabled: Boolean,
     val highlightStartedSeasons: Boolean,
     val startedSeasonHighlightAlpha: Float,
     val homeSectionOrder: List<HomeSection>,
@@ -115,8 +114,7 @@ class AppStore(
                 historyViewMode = parseViewMode(prefs[HISTORY_VIEW_MODE], LibraryViewMode.DETAILED),
                 diagnosticsEnabled = prefs[DIAGNOSTICS_ENABLED] ?: true,
                 castEnabled = prefs[CAST_ENABLED] ?: true,
-                localWebRelayEnabled = prefs[LOCAL_WEB_RELAY_ENABLED] ?: true,
-                localWebRelayPort = (prefs[LOCAL_WEB_RELAY_PORT] ?: 8787).coerceIn(1024, 65535),
+                pipEnabled = prefs[PIP_ENABLED] ?: true,
                 highlightStartedSeasons = prefs[HIGHLIGHT_STARTED_SEASONS] ?: true,
                 startedSeasonHighlightAlpha = (prefs[STARTED_SEASON_HIGHLIGHT_ALPHA] ?: 0.22f).coerceIn(0.08f, 0.60f),
                 homeSectionOrder = HomeSection.normalizeOrder(parseStoredList(prefs[HOME_SECTION_ORDER])),
@@ -190,8 +188,7 @@ class AppStore(
             historyViewMode = settings.historyViewMode,
             diagnosticsEnabled = settings.diagnosticsEnabled,
             castEnabled = settings.castEnabled,
-            localWebRelayEnabled = settings.localWebRelayEnabled,
-            localWebRelayPort = settings.localWebRelayPort,
+            pipEnabled = settings.pipEnabled,
             highlightStartedSeasons = settings.highlightStartedSeasons,
             startedSeasonHighlightAlpha = settings.startedSeasonHighlightAlpha,
             homeSectionOrder = settings.homeSectionOrder,
@@ -316,11 +313,8 @@ class AppStore(
     suspend fun setCastEnabled(enabled: Boolean) = editSafely("Cast-Einstellung speichern") {
         it[CAST_ENABLED] = enabled
     }
-    suspend fun setLocalWebRelayEnabled(enabled: Boolean) = editSafely("Lokalen Web-Relay speichern") {
-        it[LOCAL_WEB_RELAY_ENABLED] = enabled
-    }
-    suspend fun setLocalWebRelayPort(port: Int) = editSafely("Lokalen Web-Port speichern") {
-        it[LOCAL_WEB_RELAY_PORT] = port.coerceIn(1024, 65535)
+    suspend fun setPipEnabled(enabled: Boolean) = editSafely("PiP-Einstellung speichern") {
+        it[PIP_ENABLED] = enabled
     }
     suspend fun setHighlightStartedSeasons(enabled: Boolean) = editSafely("Staffel-Hervorhebung speichern") {
         it[HIGHLIGHT_STARTED_SEASONS] = enabled
@@ -927,8 +921,7 @@ class AppStore(
         private val HISTORY_VIEW_MODE = stringPreferencesKey("history_view_mode")
         private val DIAGNOSTICS_ENABLED = booleanPreferencesKey("diagnostics_enabled")
         private val CAST_ENABLED = booleanPreferencesKey("cast_enabled")
-        private val LOCAL_WEB_RELAY_ENABLED = booleanPreferencesKey("local_web_relay_enabled")
-        private val LOCAL_WEB_RELAY_PORT = intPreferencesKey("local_web_relay_port")
+        private val PIP_ENABLED = booleanPreferencesKey("pip_enabled")
         private val HIGHLIGHT_STARTED_SEASONS = booleanPreferencesKey("highlight_started_seasons")
         private val STARTED_SEASON_HIGHLIGHT_ALPHA = floatPreferencesKey("started_season_highlight_alpha")
         private val HOME_SECTION_ORDER = stringPreferencesKey("home_section_order")
