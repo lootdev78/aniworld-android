@@ -1,4 +1,3 @@
-
 name: Android Production-Debug Candidate
 
 on:
@@ -7,6 +6,16 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch zum Bauen"
+        required: true
+        type: choice
+        default: main
+        options:
+          - main
+          - feat/aniskip-skip-intro-outro
+          - release
 
 permissions:
   contents: read
@@ -25,6 +34,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
           persist-credentials: false
 
       - name: Make Gradle wrapper executable
@@ -47,6 +57,7 @@ jobs:
           set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
       - name: Clean and assemble debug APK
         run: ./gradlew --no-daemon --stacktrace --warning-mode all clean :app:assembleDebug
 
@@ -55,22 +66,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           VERSION_NAME="$(sed -nE 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' app/build.gradle.kts | head -n 1)"
           VERSION_CODE="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*/\1/p' app/build.gradle.kts | head -n 1)"
           APK_PATH="$(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' -print -quit)"
+
           test -n "$VERSION_NAME"
           test -n "$VERSION_CODE"
           test -n "$APK_PATH"
+
           SHORT_SHA="${GITHUB_SHA::7}"
           OUTPUT_DIR="dist"
           OUTPUT_NAME="AniWorldAndroid-${VERSION_NAME}-${VERSION_CODE}-debug-${SHORT_SHA}.apk"
+
           mkdir -p "$OUTPUT_DIR"
           cp "$APK_PATH" "$OUTPUT_DIR/$OUTPUT_NAME"
+
           sha256sum "$OUTPUT_DIR/$OUTPUT_NAME" > "$OUTPUT_DIR/$OUTPUT_NAME.sha256"
+
           echo "artifact_name=AniWorldAndroid-debug-${VERSION_NAME}-${VERSION_CODE}" >> "$GITHUB_OUTPUT"
           echo "apk_path=$OUTPUT_DIR/$OUTPUT_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Upload debug APK
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.apk.outputs.artifact_name }}
           path: |
@@ -82,7 +100,7 @@ jobs:
 
       - name: Upload reports on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: android-build-reports-${{ github.run_id }}
           path: |
