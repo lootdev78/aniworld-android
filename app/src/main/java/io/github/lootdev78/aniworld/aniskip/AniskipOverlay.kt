@@ -58,17 +58,17 @@ fun AniskipOverlay(
 
     if (!visible || !aniskipEnabled) return
 
-    val nextIntro = segments.filter { it.type.equals("intro", true) && it.start_ms >= positionMs }.minByOrNull { it.start_ms }
-    val nextOutro = segments.filter { it.type.equals("outro", true) && it.start_ms >= positionMs }.minByOrNull { it.start_ms }
+    val nextIntro = segments.filter { it.type.equals("intro", true) && it.startMs() >= positionMs }.minByOrNull { it.startMs() }
+    val nextOutro = segments.filter { it.type.equals("outro", true) && it.startMs() >= positionMs }.minByOrNull { it.startMs() }
 
     Row(Modifier.padding(8.dp)) {
         if (nextIntro != null) {
-            IconButton(onClick = { onSeekTo(nextIntro.end_ms) }) {
+            IconButton(onClick = { onSeekTo(nextIntro.endMs()) }) {
                 Icon(imageVector = Icons.Default.Replay10, contentDescription = "Skip Intro")
             }
         }
         if (nextOutro != null) {
-            IconButton(onClick = { onSeekTo(nextOutro.end_ms) }) {
+            IconButton(onClick = { onSeekTo(nextOutro.endMs()) }) {
                 Icon(imageVector = Icons.Default.SkipNext, contentDescription = "Skip Outro")
             }
         }

@@ -8,9 +8,17 @@ import retrofit2.http.Body
 import retrofit2.http.Headers
 import retrofit2.http.POST
 
-// DTOs — keep flexible for API differences
+// DTOs — Aniskip API returns times in seconds (floating). Convert to ms helpers for playback.
 data class AniskipRequest(val video_url: String)
-data class AniskipSegment(val start_ms: Long, val end_ms: Long, val type: String)
+
+data class AniskipSegment(
+    val startTime: Double,
+    val endTime: Double,
+    val type: String
+) {
+    fun startMs(): Long = (startTime * 1000.0).toLong()
+    fun endMs(): Long = (endTime * 1000.0).toLong()
+}
 
 interface AniskipService {
     @Headers("Content-Type: application/json")
