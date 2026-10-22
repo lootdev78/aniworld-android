@@ -295,9 +295,6 @@ class AniWorldRepository(
         SeasonPage(
             season = season,
             title = if (season == 0) context.getString(R.string.movies) else context.getString(R.string.season_number, season),
-            // Keep an empty result empty here. The UI owns the visible series-description
-            // fallback so it can label it correctly instead of presenting it as season metadata.
-            description = parseSeasonDescription(markup, series, season),
             episodes = parseEpisodes(markup, series, season)
         )
     }
@@ -1058,94 +1055,6 @@ class AniWorldRepository(
         return found.toList()
     }
 
-
-    private fun parseSeasonDescription(markup: String, series: Series, season: Int): String {
-        val pageUrl = baseUrl + seasonPath(series.slug, season)
-        val doc = Jsoup.parse(markup, pageUrl)
-        val candidates = mutableListOf<String>()
-
-        doc.select(
-            "#stream [data-description], #stream [data-content], #stream [class*=description], " +
-                "#stream [id*=description], .seasonDescription, .season-description, .seasonDesc, " +
-                ".season-desc, .seasonContent .description, .season-content .description"
-        ).forEach { element ->
-            candidates += element.attr("data-description")
-            candidates += element.attr("data-content")
-            candidates += element.text()
-        }
-
-        val headingPattern = if (season == 0) {
-            Regex("^(?:film|filme)$", RegexOption.IGNORE_CASE)
-        } else {
-            Regex("""^staffel\s+$season$""", RegexOption.IGNORE_CASE)
-        }
-        doc.select("#stream h1, #stream h2, #stream h3, #stream h4, #stream strong")
-            .filter { headingPattern.matches(clean(it.text())) }
-            .forEach { heading ->
-                generateSequence(heading.nextElementSibling()) { it.nextElementSibling() }
-                    .take(8)
-                    .forEach { sibling ->
-                        candidates += sibling.attr("data-description")
-                        candidates += sibling.attr("data-content")
-                        candidates += sibling.select("p, [class*=description], [id*=description], [class*=collapse]").eachText()
-                        if (sibling.tagName() == "p") candidates += sibling.text()
-                    }
-            }
-
-        doc.select("#stream button, #stream a, #stream span, #stream [aria-controls]")
-            .filter { element ->
-                clean(element.ownText()).contains("beschreibung", ignoreCase = true) ||
-                    clean(element.ownText()).contains("description", ignoreCase = true)
-            }
-            .forEach { toggle ->
-                val targetIds = listOf(
-                    toggle.attr("aria-controls"),
-                    toggle.attr("data-target").removePrefix("#"),
-                    toggle.attr("href").takeIf { it.startsWith('#') }?.removePrefix("#").orEmpty()
-                ).filter(String::isNotBlank)
-                targetIds.forEach { id -> doc.getElementById(id)?.let { candidates += it.text() } }
-                candidates += toggle.attr("data-description")
-                candidates += toggle.attr("data-content")
-                generateSequence(toggle.nextElementSibling()) { it.nextElementSibling() }
-                    .take(5)
-                    .forEach { candidates += it.text() }
-            }
-
-        return candidates.asSequence()
-            .map(::cleanDescription)
-            .filter(String::isNotBlank)
-            .distinct()
-            .firstOrNull { isSeasonDescriptionCandidate(it, series, season) }
-            .orEmpty()
-    }
-
-    private fun isSeasonDescriptionCandidate(value: String, series: Series, season: Int): Boolean {
-        val text = cleanDescription(value)
-        if (text.length < 30 || text.equals(series.title, ignoreCase = true)) return false
-        val seriesDescription = cleanDescription(series.description)
-        if (seriesDescription.isNotBlank()) {
-            val comparableText = text.lowercase()
-            val comparableSeries = seriesDescription.lowercase()
-            val prefixLength = minOf(100, comparableText.length, comparableSeries.length)
-            if (comparableText == comparableSeries ||
-                (prefixLength >= 60 && comparableText.take(prefixLength) == comparableSeries.take(prefixLength))
-            ) return false
-        }
-        val rejected = listOf(
-            "Wähle einen AniWorld Stream",
-            "Episoden der Staffel",
-            "Folge Titel / Name Hoster Sprache",
-            "Weitere erstklassige",
-            "Folgende Animes",
-            "Jetzt anschauen",
-            "Staffeln:",
-            "Episoden:",
-            "Hoster gefunden"
-        )
-        if (rejected.any { text.contains(it, ignoreCase = true) }) return false
-        if (season == 0 && text.matches(Regex("""^Filme?\s*\d*$""", RegexOption.IGNORE_CASE))) return false
-        return text.split(' ').count { it.isNotBlank() } >= 6
-    }
 
     private fun parseEpisodes(markup: String, series: Series, season: Int): List<Episode> {
         val pageUrl = baseUrl + seasonPath(series.slug, season)

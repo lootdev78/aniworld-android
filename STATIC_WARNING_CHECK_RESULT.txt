@@ -1,9 +1,5 @@
-WARNING PATTERN CHECK: PASSED
-- keine deaktivierten if(false)-Player-/Cast-UIs mehr vorhanden
-- kein separater Chromecast-Systemdialog mehr vorhanden
-- kein Doppeltipp-Seek-Konflikt mit der gewünschten Zwei-Tipp-Bedienung
-- Icon-Hold-Hinweise besitzen Haptik und Accessibility-Aktion
-- Player-Dialoge verwenden die eigene AniWorld-Webseitenpalette
-- Pair-Code-/lokaler Webplayer-Host und zugehörige Runtime-Brücke entfernt
-- Chromecast seek nutzt MediaSeekOptions
-- Gradle-Build nicht ausgeführt: services.gradle.org in der Umgebung nicht erreichbar
+STATIC WARNING CHECK: PARTIAL
+- `tools/verify_project.py`: PASSED for version 1.8.0-aniskip-core
+- Kotlin parser scan: no syntax/parser diagnostics in the modified Kotlin sources
+- source inspection confirms AniSkip does not require shell, curl, fzf, mpv, or temporary chapter files
+- full Android type-check, Gradle compile, lint, API tests and device playback tests were not completed because the Gradle distribution could not be downloaded in this environment

@@ -23,6 +23,7 @@ class AniWorldApplication : Application(), SingletonImageLoader.Factory {
             metadataDao = database.seriesMetadataDao()
         )
     }
+    val aniSkipRepository: AniSkipRepository by lazy { AniSkipRepository(this) }
 
     override fun newImageLoader(context: Context): ImageLoader =
         ImageLoader.Builder(context)

@@ -1,4 +1,4 @@
-# Feature-Matrix – 1.7.9 Cast-/Hotspot-Erweiterung
+# Feature-Matrix – 1.8.0 Native AniSkip-Core-Port
 
 Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen zu. Sie dient als Schutz gegen versehentlich verlorene Funktionen bei späteren Änderungen.
 
@@ -7,10 +7,11 @@ Diese Matrix ordnet die konsolidierten Funktionen den maßgeblichen Quellmodulen
 | Startseite | Umschaltbarer Live-/Offline-Feed, unveränderte Anime-News-Karten, isolierter News-WebView, Hero, Favoriten, Weiterschauen, neue Episoden, beliebte/neue/meistgesehene Sammlungen, frei gespeicherte Sichtbarkeit und Reihenfolge aller Bereiche, Vollansichten | `AniWorldRepository.kt`, `UiScreens.kt`, `AppViewModel.kt`, `IsolatedWebPageScreen.kt`, `AppStore.kt` |
 | Katalog | Offline-Metadaten, JSON-Import/-Export über Android DocumentProvider, Bestandsprüfung beim Öffnen der Einstellungen, bestätigtes Löschen, WorkManager-Aktualisierung, maximal vier parallele Anime-Detailjobs, Skeleton-/Sperrzustand vor Erstimport, Suche, Genre/A–Z, Endlosliste, Alphabetleiste, drei Ansichten | `CatalogMetadataWorker.kt`, `AniWorldRepository.kt`, `AppDatabase.kt`, `AppStore.kt`, `UiScreens.kt` |
 | Cover | DOM-nahe Zuordnung pro Serienlink, Logo-/Placeholderfilter, anime- und URL-spezifische Coil-Schlüssel, Reset/Migration | `AniWorldRepository.kt`, `RepositoryCache.kt`, `AniWorldApplication.kt` |
-| Anime/Staffeln/Filme | Live-Detaildaten, Staffelbeschreibung, Film-/Folgenbeschreibung einmalig, Staffel-/Filmnavigation, kompakte Episodenlisten | `AniWorldRepository.kt`, `UiScreens.kt`, `AppViewModel.kt` |
+| Anime/Staffeln/Filme | Live-Detaildaten, Film-/Folgenbeschreibung einmalig, Staffel-/Filmnavigation, kompakte Episodenlisten ohne zusätzliche Staffelkarte | `AniWorldRepository.kt`, `UiScreens.kt`, `AppViewModel.kt` |
 | Favoriten | Startseiten-Reihe, Such-/Sortierleiste nur bei vorhandenen Einträgen, Raster/Kompakt/Detail, Suche/Vorschläge, alphabetisch/aktualisiert/eigene Reihenfolge, vollständige #/A–Z-Leiste, Mehrfachauswahl und bestätigtes Löschen | `UiScreens.kt`, `AppStore.kt`, `AppDatabase.kt` |
 | Verlauf | Such-/Filterleiste nur bei vorhandenen Einträgen, begonnen/gesehen/favorisiert, Zeitfortschritt, dieselben Ansichten/Sortierungen und #/A–Z-Leiste wie Favoriten, Mehrfachauswahl, Gesehen-Markierung setzen/entfernen | `UiScreens.kt`, `Models.kt`, `AppStore.kt`, `AppDatabase.kt` |
 | Diagnose/Logging | Globaler persistenter Ein-/Aus-Schalter für AppLogger, vollständige Unterdrückung neuer App-Logs bei deaktivierter Diagnose, eigene Vollbild-UI mit Leeren/Kopieren/Teilen | `AppLogger.kt`, `DiagnosticScreen.kt`, `AppViewModel.kt`, `AppStore.kt`, `MainActivity.kt` |
+| AniSkip Android core | Kotlin-Port des synacktraa/ani-skip-Ablaufs ohne Shell/mpv, MAL-/AllAnime-Auflösung, AniSkip v1 OP/ED plus v2 Mixed/Recap-Erweiterung, End-early-Offset, manuelle/automatische Skip-Steuerung, Community-Submission | `AniSkipRepository.kt`, `PlayerScreen.kt`, `AppViewModel.kt`, `AppStore.kt` |
 | Resolver | Sprach-/Hosterpriorität, Verfügbarkeitsprüfung, Hoster-Fallback, Referer/User-Agent/Cookies, Diagnose | `AniWorldRepository.kt`, `AppViewModel.kt`, `Models.kt` |
 | News-WebView | Gewohnte Startseiten-News-Darstellung; separater normaler WebView ohne Challenge-Cookies, Cloudflare-Verifizierung, Hoster-Retry oder Medienerkennung | `UiScreens.kt`, `IsolatedWebPageScreen.kt`, `MainActivity.kt`, `AppViewModel.kt` |
 | Stream-Crawler | Erkennung sichtbarer HLS-, DASH-, SmoothStreaming- und progressiver HTTP(S)-Anfragen nach Seitenabschluss | `MediaDetection.kt`, `ChallengeScreen.kt` |

@@ -3,6 +3,15 @@
 Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
 
 
+## 1.8.0 Native AniSkip-Core-Port
+
+- portiert den `synacktraa/ani-skip`-Ablauf aus Shell/mpv nach Kotlin und AndroidX Media3; es werden weder Shell-Ausführung noch mpv vorausgesetzt
+- verwendet MyAnimeList-Prefixsuche als Standard-Auflösung und bietet AllAnime als alternative Quelle; beide werden auf eine MAL-ID aufgelöst, die AniSkip erwartet
+- fragt die ursprünglichen AniSkip-v1-Opening-/Ending-Zeitstempel ab und ergänzt sie über die aktuelle v2-API um Mixed-OP/ED und Recaps
+- übernimmt den Upstream-Skip-Versatz: Das Skip-Ende wird um 0 bis 5 Sekunden vorgezogen, nicht nach hinten verschoben
+- bewahrt pro Staffel die explizite MAL-Zuordnung sowie Favoriten, Verlauf, Wiedergabeposition, Lautstärkepräferenz und Auto-Next in den vorhandenen App-Daten
+- enthält Upstream-Copyright-/GPL-3.0-Hinweis unter `THIRD_PARTY_NOTICES/ani-skip`
+
 ## 1.7.9 Cast-/Hotspot-Erweiterung
 
 - ergänzt einen lokalen, nur im LAN erreichbaren Cast-Stream-Relay für Hoster-Streams mit Referer-, Cookie-, User-Agent- und weiteren Request-Headern
@@ -73,7 +82,7 @@ Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpa
 
 ## Version
 
-`1.7.9-cast-hotspot`
+`1.8.0-aniskip-core`
 
 ## Paket und Projekt
 

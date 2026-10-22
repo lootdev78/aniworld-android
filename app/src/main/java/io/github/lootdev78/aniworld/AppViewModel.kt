@@ -41,7 +41,6 @@ data class UiState(
     val selectionVersion: Long = 0L,
     val seasons: List<Int> = emptyList(),
     val season: Int? = null,
-    val seasonDescription: String = "",
     val episodes: List<Episode> = emptyList(),
     val hosters: List<Hoster> = emptyList(),
     val pendingEpisode: Episode? = null,
@@ -53,7 +52,16 @@ data class UiState(
     val seriesCollection: SeriesCollectionPage? = null,
     val episodeCollection: EpisodeCollectionPage? = null,
     val playback: ResolvedPlayback? = null,
+    val playerMinimized: Boolean = false,
     val externalPlayback: ResolvedPlayback? = null,
+    val skipEpisodeKey: String? = null,
+    val skipSegments: List<AniSkipSegment> = emptyList(),
+    val skipLoading: Boolean = false,
+    val skipMessage: String? = null,
+    val aniSkipSearchResults: List<AniSkipAnime> = emptyList(),
+    val aniSkipSearchLoading: Boolean = false,
+    val aniSkipSearchMessage: String? = null,
+    val skipSubmitMessage: String? = null,
     val preferences: AppPreferences = AppPreferences(),
     val preferencesReady: Boolean = false,
     val diagnostics: List<DiagnosticEntry> = emptyList(),
@@ -97,6 +105,10 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     private val app = application as AniWorldApplication
     private val repo = app.repository
     private val store = app.store
+    private val aniSkipRepository = app.aniSkipRepository
+    private val skipLoadsInFlight = mutableSetOf<String>()
+    private val skipLoadsAttempted = mutableSetOf<String>()
+    private val backgroundSkippedSegments = mutableSetOf<String>()
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state.asStateFlow()
     private var pendingChallengeRetry: (() -> Unit)? = null
@@ -404,7 +416,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun select(series: Series) {
         saveSelection(series, null)
         viewModelScope.launch {
-            _state.update { it.copy(selected = series, selectionVersion = it.selectionVersion + 1L, season = null, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), resolveLog = emptyList(), error = null) }
+            _state.update { it.copy(selected = series, selectionVersion = it.selectionVersion + 1L, season = null, episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), resolveLog = emptyList(), error = null) }
             store.ensureOfflineMetadata(series)
             runLoad(text(R.string.status_anime_loading), { select(series) }) {
                 val detailed = repo.enrichSeries(series)
@@ -427,7 +439,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val seasonPage = repo.seasonPage(detailed, item.episode.season)
                 store.rememberSeries(detailed)
                 store.rememberSeasonTotal(detailed.slug, item.episode.season, seasonPage.episodes.size)
-                _state.update { it.copy(selected = detailed, seasons = seasons, seasonDescription = seasonPage.description, episodes = seasonPage.episodes) }
+                _state.update { it.copy(selected = detailed, seasons = seasons, episodes = seasonPage.episodes) }
                 seasonPage.episodes.firstOrNull { it.number == item.episode.number }?.let(::inspectEpisode)
             }
         }
@@ -447,7 +459,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val seasons = repo.seasons(detailed)
                 val seasonPage = repo.seasonPage(detailed, progress.season)
                 store.rememberSeasonTotal(detailed.slug, progress.season, seasonPage.episodes.size)
-                _state.update { it.copy(selected = detailed, seasons = seasons, seasonDescription = seasonPage.description, episodes = seasonPage.episodes) }
+                _state.update { it.copy(selected = detailed, seasons = seasons, episodes = seasonPage.episodes) }
             }
         }
     }
@@ -456,13 +468,12 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         val series = _state.value.selected ?: return
         saveSelection(series, number)
         viewModelScope.launch {
-            _state.update { it.copy(season = number, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), error = null) }
+            _state.update { it.copy(season = number, episodes = emptyList(), hosters = emptyList(), error = null) }
             runLoad(text(R.string.status_episodes_loading), { season(number) }) {
                 val seasonPage = repo.seasonPage(series, number)
                 store.rememberSeasonTotal(series.slug, number, seasonPage.episodes.size)
                 _state.update { it.copy(
-                    seasonDescription = seasonPage.description,
-                    episodes = seasonPage.episodes,
+                        episodes = seasonPage.episodes,
                     status = if (number == 0) text(R.string.status_movie_count, seasonPage.episodes.size) else text(R.string.status_episode_count, seasonPage.episodes.size)
                 ) }
             }
@@ -471,12 +482,12 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
 
     fun backToSearch() {
         clearSavedSelection()
-        _state.update { it.copy(selected = null, seasons = emptyList(), season = null, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
+        _state.update { it.copy(selected = null, seasons = emptyList(), season = null, episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
     }
 
     fun backToSeasons() {
         _state.value.selected?.let { saveSelection(it, null) }
-        _state.update { it.copy(season = null, seasonDescription = "", episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
+        _state.update { it.copy(season = null, episodes = emptyList(), hosters = emptyList(), pendingEpisode = null, pendingHosters = emptyList(), error = null, status = null, resolveLog = emptyList()) }
     }
 
     fun inspectEpisode(episode: Episode) {
@@ -567,7 +578,13 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         it.copy(infoSeries = null, infoEpisode = null, infoLoading = false, infoError = null)
     }
 
-    fun playEpisode(episode: Episode, languageOverride: Language? = null, hosterOverride: Hoster? = null, external: Boolean = false) {
+    fun playEpisode(
+        episode: Episode,
+        languageOverride: Language? = null,
+        hosterOverride: Hoster? = null,
+        external: Boolean = false,
+        keepMinimized: Boolean = false
+    ) {
         val series = _state.value.selected ?: return
         viewModelScope.launch {
             _state.update { it.copy(resolving = true, pendingEpisode = null, pendingHosters = emptyList(), status = text(R.string.status_stream_resolving), error = null, resolveLog = emptyList()) }
@@ -619,11 +636,18 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 if (languageOverride != null) store.setLanguagePriority(languages)
                 store.rememberProgress(series, episode)
                 val previous = prefs.episodeWatchStates[episode.key]
+                val positionFresh = previous != null &&
+                    System.currentTimeMillis() - previous.updatedAt <= prefs.playbackPositionExpiryDays * 24L * 60L * 60L * 1000L
+                val resumePosition = previous?.takeIf {
+                    prefs.rememberPlaybackPosition && positionFresh && !it.completed
+                }?.positionMs ?: 0L
+                skipLoadsAttempted.remove(episode.key)
+                backgroundSkippedSegments.removeAll { it.startsWith("${episode.key}#") }
                 val resolvedPlayback = ResolvedPlayback(
                     series = series,
                     episode = episode,
                     stream = stream,
-                    startPositionMs = previous?.takeUnless { state -> state.completed }?.positionMs ?: 0L,
+                    startPositionMs = resumePosition,
                     knownDurationMs = previous?.durationMs?.coerceAtLeast(0L) ?: 0L
                 )
                 _state.update {
@@ -635,6 +659,15 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                     } else {
                         it.copy(
                             playback = resolvedPlayback,
+                            playerMinimized = keepMinimized,
+                            skipEpisodeKey = null,
+                            skipSegments = emptyList(),
+                            skipLoading = false,
+                            skipMessage = null,
+                            aniSkipSearchResults = emptyList(),
+                            aniSkipSearchLoading = false,
+                            aniSkipSearchMessage = null,
+                            skipSubmitMessage = null,
                             status = text(R.string.status_playing_via, stream.hoster, languageName(stream.language))
                         )
                     }
@@ -658,15 +691,64 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun playNextEpisode() = playAdjacentEpisode(1)
 
     private fun playAdjacentEpisode(delta: Int) {
-        val current = _state.value.playback?.episode ?: return
-        val episodes = _state.value.episodes
-        val index = episodes.indexOfFirst { it.key == current.key }
-        val target = episodes.getOrNull(index + delta) ?: return
-        playEpisode(target)
+        val snapshot = _state.value
+        val playback = snapshot.playback ?: return
+        val current = playback.episode
+        viewModelScope.launch {
+            runCatching {
+                // The visible episode list only contains one season. Resolve the adjacent
+                // episode across season boundaries instead of silently doing nothing at
+                // the last/first episode of a season (also used by media notifications).
+                val series = snapshot.selected?.takeIf { it.slug == playback.series.slug } ?: playback.series
+                val knownSeasons = snapshot.seasons.takeIf { snapshot.selected?.slug == series.slug }.orEmpty()
+                val seasons = (knownSeasons.ifEmpty { repo.seasons(series) }).distinct().sorted()
+                val currentSeasonEpisodes = if (snapshot.season == current.season && snapshot.episodes.any { it.key == current.key }) {
+                    snapshot.episodes
+                } else {
+                    repo.seasonPage(series, current.season).episodes
+                }
+                val orderedCurrent = currentSeasonEpisodes.sortedWith(compareBy<Episode> { it.number }.thenBy { it.title })
+                val currentIndex = orderedCurrent.indexOfFirst { it.key == current.key }
+                val inSeasonTarget = if (currentIndex >= 0) orderedCurrent.getOrNull(currentIndex + delta) else null
+                var targetEpisodes: List<Episode> = orderedCurrent
+                val target = inSeasonTarget ?: run {
+                    val adjacentSeason = if (delta > 0) seasons.firstOrNull { it > current.season }
+                        else seasons.lastOrNull { it < current.season }
+                    adjacentSeason?.let { seasonNumber ->
+                        val page = repo.seasonPage(series, seasonNumber)
+                        targetEpisodes = page.episodes.sortedWith(compareBy<Episode> { it.number }.thenBy { it.title })
+                        if (delta > 0) targetEpisodes.firstOrNull() else targetEpisodes.lastOrNull()
+                    }
+                }
+                if (target != null) {
+                    _state.update {
+                        it.copy(
+                            selected = series,
+                            seasons = seasons,
+                            season = target.season,
+                            episodes = targetEpisodes
+                        )
+                    }
+                    playEpisode(target, keepMinimized = snapshot.playerMinimized)
+                }
+            }.onFailure { error ->
+                AppLogger.error("Player", "Nächste/vorherige Folge konnte nicht geladen werden", error)
+                _state.update { it.copy(error = friendlyMessage(error)) }
+            }
+        }
     }
 
     fun onPlaybackProgress(positionMs: Long, durationMs: Long, force: Boolean = false) {
         val playback = _state.value.playback ?: return
+        if (durationMs > 0L && durationMs != Long.MAX_VALUE) ensureAniSkipSegments(playback, durationMs)
+        _state.update { state ->
+            val current = state.playback ?: return@update state
+            state.copy(playback = current.copy(
+                startPositionMs = positionMs.coerceAtLeast(0L),
+                knownDurationMs = durationMs.takeIf { it > 0L && it != Long.MAX_VALUE } ?: current.knownDurationMs
+            ))
+        }
+        if (maybeAutoSkipInBackground(playback, positionMs, durationMs)) return
         val now = System.currentTimeMillis()
         if (!force && now - lastProgressWriteAt < 4_500L) return
         lastProgressWriteAt = now
@@ -674,6 +756,37 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             runCatching { store.savePlaybackProgress(playback.series, playback.episode, positionMs, durationMs, false) }
                 .onFailure { AppLogger.error("Player", "Fortschritt konnte nicht gespeichert werden", it) }
         }
+    }
+
+    private fun maybeAutoSkipInBackground(playback: ResolvedPlayback, positionMs: Long, durationMs: Long): Boolean {
+        val snapshot = _state.value
+        if (!snapshot.playerMinimized || durationMs <= 0L || snapshot.skipEpisodeKey != playback.episode.key) return false
+        val prefs = snapshot.preferences
+        val positionSeconds = positionMs.coerceAtLeast(0L) / 1000.0
+        val segment = snapshot.skipSegments.firstOrNull { item ->
+            val enabled = when {
+                AniSkipType.isOpening(item.type) -> prefs.autoSkipOpening
+                AniSkipType.isEnding(item.type) -> prefs.autoSkipEnding
+                item.type == AniSkipType.RECAP -> prefs.autoSkipRecap
+                else -> false
+            }
+            enabled && "${playback.episode.key}#${item.id}" !in backgroundSkippedSegments &&
+                positionSeconds >= item.startSeconds && positionSeconds < item.endSeconds
+        } ?: return false
+        backgroundSkippedSegments.add("${playback.episode.key}#${segment.id}")
+        val targetMs = AniSkipPlaybackLogic.targetPositionMs(segment, durationMs, prefs.skipOffsetSeconds)
+        PlaybackService.seekTo(getApplication<Application>(), targetMs)
+        if (prefs.playAfterSkip) PlaybackService.play(getApplication<Application>())
+        _state.update { state ->
+            val current = state.playback ?: return@update state
+            if (current.episode.key != playback.episode.key) state
+            else state.copy(playback = current.copy(startPositionMs = targetMs, knownDurationMs = durationMs))
+        }
+        viewModelScope.launch {
+            runCatching { store.savePlaybackProgress(playback.series, playback.episode, targetMs, durationMs, false) }
+                .onFailure { AppLogger.error("AniSkip", "Fortschritt nach Hintergrund-Skip konnte nicht gespeichert werden", it) }
+        }
+        return true
     }
 
     fun onPlaybackEnded(positionMs: Long, durationMs: Long) {
@@ -691,6 +804,28 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         }
     }
 
+    fun onBackgroundPlaybackEnded(positionMs: Long, durationMs: Long) {
+        val snapshot = _state.value
+        if (!snapshot.playerMinimized) return
+        val endedEpisodeKey = snapshot.playback?.episode?.key ?: return
+        onPlaybackEnded(positionMs, durationMs)
+        if (!snapshot.preferences.autoNextEnabled) return
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(snapshot.preferences.autoNextDelaySeconds.coerceIn(0, 30) * 1_000L)
+            val current = _state.value
+            if (current.playerMinimized && current.preferences.autoNextEnabled && current.playback?.episode?.key == endedEpisodeKey) {
+                playNextEpisode()
+            }
+        }
+    }
+
+    fun minimizePlayer(positionMs: Long = 0L, durationMs: Long = 0L) {
+        if (positionMs > 0L || durationMs > 0L) onPlaybackProgress(positionMs, durationMs, true)
+        _state.update { it.copy(playerMinimized = true) }
+    }
+
+    fun restorePlayer() = _state.update { it.copy(playerMinimized = false) }
+
     fun closePlayer(positionMs: Long = 0L, durationMs: Long = 0L) {
         val playback = _state.value.playback
         if (playback != null) {
@@ -701,7 +836,24 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 season(playback.episode.season)
             }
         }
-        _state.update { it.copy(playback = null) }
+        playback?.let {
+            skipLoadsAttempted.remove(it.episode.key)
+            backgroundSkippedSegments.removeAll { key -> key.startsWith("${it.episode.key}#") }
+        }
+        _state.update {
+            it.copy(
+                playback = null,
+                playerMinimized = false,
+                skipEpisodeKey = null,
+                skipSegments = emptyList(),
+                skipLoading = false,
+                skipMessage = null,
+                aniSkipSearchResults = emptyList(),
+                aniSkipSearchLoading = false,
+                aniSkipSearchMessage = null,
+                skipSubmitMessage = null
+            )
+        }
     }
 
     fun reportPlayerError(message: String) {
@@ -953,6 +1105,178 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun setVerifyStreams(enabled: Boolean) = viewModelScope.launch { store.setVerifyStreams(enabled) }.let { Unit }
     fun setDynamicColors(enabled: Boolean) = viewModelScope.launch { store.setDynamicColors(enabled) }.let { Unit }
     fun setAutoNextEnabled(enabled: Boolean) = viewModelScope.launch { store.setAutoNextEnabled(enabled) }.let { Unit }
+    fun setAutoNextDelaySeconds(seconds: Int) = viewModelScope.launch { store.setAutoNextDelaySeconds(seconds) }.let { Unit }
+    fun setAutoSkipOpening(enabled: Boolean) = viewModelScope.launch { store.setAutoSkipOpening(enabled) }.let { Unit }
+    fun setAutoSkipEnding(enabled: Boolean) = viewModelScope.launch { store.setAutoSkipEnding(enabled) }.let { Unit }
+    fun setAutoSkipRecap(enabled: Boolean) = viewModelScope.launch { store.setAutoSkipRecap(enabled) }.let { Unit }
+    fun setShowSkipButtons(enabled: Boolean) = viewModelScope.launch { store.setShowSkipButtons(enabled) }.let { Unit }
+    fun setSkipOffsetSeconds(seconds: Float) = viewModelScope.launch { store.setSkipOffsetSeconds(seconds) }.let { Unit }
+    fun setPlayAfterSkip(enabled: Boolean) = viewModelScope.launch { store.setPlayAfterSkip(enabled) }.let { Unit }
+    fun setRememberPlaybackPosition(enabled: Boolean) = viewModelScope.launch { store.setRememberPlaybackPosition(enabled) }.let { Unit }
+    fun setPlaybackPositionExpiryDays(days: Int) = viewModelScope.launch { store.setPlaybackPositionExpiryDays(days) }.let { Unit }
+    fun setRememberVolume(enabled: Boolean) = viewModelScope.launch { store.setRememberVolume(enabled) }.let { Unit }
+    fun savePlayerVolume(percent: Int) {
+        if (!_state.value.preferences.rememberVolume || percent !in 0..100) return
+        val safe = percent.coerceIn(0, 100)
+        if (_state.value.preferences.savedVolumePercent == safe) return
+        viewModelScope.launch { store.setSavedVolumePercent(safe) }
+    }
+
+    fun searchAniSkipAnime(query: String, source: AniSkipTitleSource = AniSkipTitleSource.MYANIMELIST) {
+        val clean = query.trim()
+        if (clean.length < 2) {
+            _state.update { it.copy(aniSkipSearchResults = emptyList(), aniSkipSearchMessage = "Bitte mindestens zwei Zeichen eingeben.") }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(aniSkipSearchLoading = true, aniSkipSearchMessage = null, aniSkipSearchResults = emptyList()) }
+            runCatching { aniSkipRepository.searchAnime(clean, source) }
+                .onSuccess { results ->
+                    _state.update {
+                        it.copy(
+                            aniSkipSearchLoading = false,
+                            aniSkipSearchResults = results,
+                            aniSkipSearchMessage = if (results.isEmpty()) "Keine passenden Anime gefunden." else null
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    AppLogger.warn("AniSkip", "Anime-Suche fehlgeschlagen", error.message.orEmpty())
+                    _state.update { it.copy(aniSkipSearchLoading = false, aniSkipSearchMessage = error.message ?: "Anime-Lookup nicht erreichbar.") }
+                }
+        }
+    }
+
+    fun selectAniSkipAnime(anime: AniSkipAnime) {
+        val playback = _state.value.playback ?: return
+        val key = seasonKey(playback.series.slug, playback.episode.season)
+        val mapping = AniSkipAnimeMapping(anime.malId, anime.displayTitle, anime.url)
+        viewModelScope.launch {
+            store.setAniSkipMapping(key, mapping)
+            _state.update {
+                it.copy(
+                    preferences = it.preferences.copy(aniSkipMappings = it.preferences.aniSkipMappings + (key to mapping)),
+                    aniSkipSearchResults = emptyList(),
+                    aniSkipSearchLoading = false,
+                    aniSkipSearchMessage = null,
+                    skipSubmitMessage = "MAL-Zuordnung gespeichert: ${mapping.title}"
+                )
+            }
+            // If the automatic lookup was already running, let it finish and then reload with the explicit mapping.
+            while (playback.episode.key in skipLoadsInFlight) kotlinx.coroutines.delay(100L)
+            skipLoadsAttempted.remove(playback.episode.key)
+            val currentPlayback = _state.value.playback?.takeIf { it.episode.key == playback.episode.key } ?: return@launch
+            currentPlayback.knownDurationMs.takeIf { it > 0L }?.let { ensureAniSkipSegments(currentPlayback, it, force = true) }
+        }
+    }
+
+    fun submitAniSkipTime(type: AniSkipType, startSeconds: Double, endSeconds: Double, episodeLengthSeconds: Double) {
+        val playback = _state.value.playback ?: return
+        val mappingKey = seasonKey(playback.series.slug, playback.episode.season)
+        val mapping = _state.value.preferences.aniSkipMappings[mappingKey]
+        if (mapping == null) {
+            _state.update { it.copy(skipSubmitMessage = "Bitte zuerst den Anime über die MAL-Suche zuordnen.") }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(skipSubmitMessage = "Skip-Zeit wird an AniSkip übermittelt …") }
+            runCatching {
+                aniSkipRepository.submitSkipTime(
+                    malId = mapping.malId,
+                    episodeNumber = playback.episode.number,
+                    type = type,
+                    startSeconds = startSeconds,
+                    endSeconds = endSeconds,
+                    episodeLengthSeconds = episodeLengthSeconds,
+                    providerName = playback.stream.hoster.ifBlank { "aniworld-android" }
+                )
+            }.onSuccess {
+                val local = AniSkipSegment(
+                    id = "local:${playback.episode.key}:${type.apiValue}:$startSeconds",
+                    type = type,
+                    startSeconds = startSeconds,
+                    endSeconds = endSeconds,
+                    episodeLengthSeconds = episodeLengthSeconds
+                )
+                aniSkipRepository.rememberSubmittedSkipTime(mapping.malId, playback.episode.number, episodeLengthSeconds, local)
+                _state.update { state ->
+                    if (state.playback?.episode?.key != playback.episode.key) state
+                    else state.copy(
+                        skipSegments = (state.skipSegments + local).distinctBy(AniSkipSegment::id).sortedBy(AniSkipSegment::startSeconds),
+                        skipSubmitMessage = "Skip-Zeit erfolgreich an AniSkip übermittelt."
+                    )
+                }
+            }.onFailure { error ->
+                AppLogger.warn("AniSkip", "Skip-Zeit konnte nicht übermittelt werden", error.message.orEmpty())
+                _state.update { it.copy(skipSubmitMessage = error.message ?: "AniSkip-Übermittlung fehlgeschlagen.") }
+            }
+        }
+    }
+
+    private fun ensureAniSkipSegments(playback: ResolvedPlayback, durationMs: Long, force: Boolean = false) {
+        val episodeKey = playback.episode.key
+        val durationSeconds = durationMs.coerceAtLeast(0L) / 1000.0
+        if (durationSeconds < 60.0) return
+        if (force) skipLoadsAttempted.remove(episodeKey)
+        if (episodeKey in skipLoadsInFlight || episodeKey in skipLoadsAttempted) return
+        skipLoadsInFlight.add(episodeKey)
+        _state.update {
+            if (it.playback?.episode?.key != episodeKey) it
+            else it.copy(skipEpisodeKey = episodeKey, skipLoading = true, skipMessage = null, skipSegments = emptyList())
+        }
+        viewModelScope.launch {
+            try {
+                val prefs = _state.value.preferences
+                val mappingKey = seasonKey(playback.series.slug, playback.episode.season)
+                var mapping = _state.value.preferences.aniSkipMappings[mappingKey] ?: prefs.aniSkipMappings[mappingKey]
+                if (mapping == null) {
+                    val candidate = aniSkipRepository.findConfidentMatch(playback.series.title, playback.episode.season)
+                    mapping = _state.value.preferences.aniSkipMappings[mappingKey]
+                    if (mapping == null && candidate != null) {
+                        val candidateMapping = AniSkipAnimeMapping(candidate.malId, candidate.displayTitle, candidate.url)
+                        mapping = candidateMapping
+                        store.setAniSkipMapping(mappingKey, candidateMapping)
+                        _state.update { state ->
+                            state.copy(preferences = state.preferences.copy(aniSkipMappings = state.preferences.aniSkipMappings + (mappingKey to candidateMapping)))
+                        }
+                    }
+                }
+                val resolvedMapping = mapping
+                if (resolvedMapping == null) {
+                    _state.update {
+                        if (it.playback?.episode?.key != episodeKey) it
+                        else it.copy(
+                            skipEpisodeKey = episodeKey,
+                            skipLoading = false,
+                            skipSegments = emptyList(),
+                            skipMessage = "Anime-Zuordnung erforderlich: über AniSkip/MAL den passenden Anime auswählen."
+                        )
+                    }
+                } else {
+                    val segments = aniSkipRepository.getSkipTimes(resolvedMapping.malId, playback.episode.number, durationSeconds)
+                    _state.update {
+                        if (it.playback?.episode?.key != episodeKey) it
+                        else it.copy(
+                            skipEpisodeKey = episodeKey,
+                            skipLoading = false,
+                            skipSegments = segments,
+                            skipMessage = if (segments.isEmpty()) "Für diese Folge sind keine Community-Skip-Zeiten vorhanden." else null
+                        )
+                    }
+                }
+                skipLoadsAttempted.add(episodeKey)
+            } catch (error: Exception) {
+                AppLogger.warn("AniSkip", "Skip-Zeiten konnten nicht geladen werden", error.message.orEmpty())
+                _state.update {
+                    if (it.playback?.episode?.key != episodeKey) it
+                    else it.copy(skipEpisodeKey = episodeKey, skipLoading = false, skipMessage = error.message ?: "AniSkip ist vorübergehend nicht erreichbar.")
+                }
+                skipLoadsAttempted.add(episodeKey)
+            } finally {
+                skipLoadsInFlight.remove(episodeKey)
+            }
+        }
+    }
     fun setAutoPlayPreferredHoster(enabled: Boolean) = viewModelScope.launch { store.setAutoPlayPreferredHoster(enabled) }.let { Unit }
     fun setAllowExternalPlayer(enabled: Boolean) = viewModelScope.launch { store.setAllowExternalPlayer(enabled) }.let { Unit }
     fun setStartupTab(tab: HomeTab) = viewModelScope.launch { store.setStartupTab(tab.name) }.let { Unit }
@@ -1055,7 +1379,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val targetSeason = progress?.season ?: seasons.firstOrNull { it == 1 } ?: seasons.firstOrNull() ?: return@runLoad
                 val seasonPage = repo.seasonPage(detailed, targetSeason)
                 store.rememberSeasonTotal(detailed.slug, targetSeason, seasonPage.episodes.size)
-                _state.update { it.copy(selected = detailed, seasons = seasons, season = targetSeason, seasonDescription = seasonPage.description, episodes = seasonPage.episodes) }
+                _state.update { it.copy(selected = detailed, seasons = seasons, season = targetSeason, episodes = seasonPage.episodes) }
                 val target = progress?.let { saved -> seasonPage.episodes.firstOrNull { it.number == saved.episode } }
                     ?: seasonPage.episodes.firstOrNull { _state.value.preferences.episodeWatchStates[it.key]?.completed != true }
                     ?: seasonPage.episodes.firstOrNull()
@@ -1099,7 +1423,6 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 _state.update { it.copy(
                     selected = detailed,
                     seasons = seasons,
-                    seasonDescription = seasonPage?.description.orEmpty(),
                     episodes = seasonPage?.episodes.orEmpty(),
                     loading = false
                 ) }

@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,7 +62,10 @@ fun EmbeddedExoPlayer(
     onError: (String) -> Unit,
     onInteraction: () -> Unit = {},
     onSingleTap: () -> Boolean = { false },
-    onPlayingChanged: (Boolean) -> Unit = {}
+    onPlayingChanged: (Boolean) -> Unit = {},
+    rememberVolume: Boolean = true,
+    savedVolumePercent: Int = -1,
+    onVolumeChanged: (Int) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
@@ -76,6 +80,29 @@ fun EmbeddedExoPlayer(
     var gestureVisible by remember { mutableStateOf(false) }
     var playStateVisible by remember { mutableStateOf(false) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
+    val latestOnVolumeChanged by rememberUpdatedState(onVolumeChanged)
+    val latestSavedVolumePercent by rememberUpdatedState(savedVolumePercent)
+
+    LaunchedEffect(playback.id, rememberVolume) {
+        if (!rememberVolume) return@LaunchedEffect
+        val saved = latestSavedVolumePercent
+        if (saved in 0..100) {
+            val target = ((saved / 100f) * maxVolume).roundToInt().coerceIn(0, maxVolume)
+            if (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) != target) {
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+            }
+        }
+        var lastReported = -1
+        while (kotlinx.coroutines.currentCoroutineContext().isActive) {
+            val current = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+            val percent = ((current * 100f) / maxVolume).roundToInt().coerceIn(0, 100)
+            if (percent != lastReported) {
+                latestOnVolumeChanged(percent)
+                lastReported = percent
+            }
+            delay(900L)
+        }
+    }
 
     val controllerFuture = remember {
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))

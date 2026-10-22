@@ -116,6 +116,7 @@
     <string name="language_english_sub">English subtitles</string>
     <string name="language_unknown">Unknown</string>
     <string name="manual_verification">Manual verification</string>
+    <string name="player_minimize">Player minimieren</string>
     <string name="player_close">Close player</string>
     <string name="player_title">%1$s · %2$s</string>
     <string name="player_gesture_hint">Tap: pause/resume · double-tap left/right: −/+10 seconds · swipe left: brightness · swipe right: volume</string>
@@ -243,7 +244,6 @@
     <string name="web_filter_popups">Popups</string>
     <string name="web_filter_redirects">Redirects</string>
     <string name="show_catalog_controls">Show search and filters</string>
-    <string name="season_description">Season description</string>
     <string name="movie_description">Movie description</string>
     <string name="description">Description</string>
     <string name="episodes_count">%1$d episodes</string>
@@ -447,11 +447,9 @@
     <string name="smartview_cast_failed">Samsung Smart View: %1$s</string>
     <string name="smartview_device_standby">Samsung Smart View · Standby-Gerät</string>
     <string name="smartview_device_native">Samsung Smart View · nativer TV-Player</string>
-    <string name="season_description_fallback">Für diese Staffel ist keine eigene Beschreibung verfügbar. Angezeigt wird die Anime-Beschreibung.</string>
     <string name="alphabet_index_short"># A–Z</string>
     <string name="alphabet_index_title">Alphabet index</string>
     <string name="alphabet_index_hint">Select a large letter to jump directly to that section.</string>
-    <string name="season_description_unavailable">No description is currently available for this season.</string>
 
     <string name="player_copy_stream_link">Videolink kopieren</string>
     <string name="player_stream_info">Stream-Info</string>
@@ -477,4 +475,47 @@
     <string name="cast_unified_subtitle">Alle unterstützten Protokolle in einer Geräteliste</string>
     <string name="cast_connected_via">Verbunden über %1$s · Tippen zum Trennen</string>
     <string name="cast_volume_sync_desc">Android- und Gerätelautstärke werden synchronisiert, sofern das Ziel dies unterstützt.</string>
+    <string name="aniskip_settings_title">AniSkip &amp; Player-Automatik</string>
+    <string name="aniskip_settings_desc">Openings, Endings und Recaps überspringen; Wiedergabe und Skip-Zeiten pro Staffel merken.</string>
+    <string name="aniskip_auto_opening">Openings automatisch überspringen</string>
+    <string name="aniskip_auto_opening_desc">Überspringt bekannte Opening-Segmente automatisch.</string>
+    <string name="aniskip_auto_ending">Endings automatisch überspringen</string>
+    <string name="aniskip_auto_ending_desc">Überspringt bekannte Ending-Segmente automatisch.</string>
+    <string name="aniskip_auto_recap">Recaps automatisch überspringen</string>
+    <string name="aniskip_auto_recap_desc">Überspringt bekannte Rückblicke am Folgenanfang.</string>
+    <string name="aniskip_show_buttons">Manuelle Skip-Schaltflächen anzeigen</string>
+    <string name="aniskip_show_buttons_desc">Zeigt eine Schaltfläche, sobald ein bekanntes Segment erreicht wird.</string>
+    <string name="aniskip_play_after_skip">Nach dem Überspringen fortsetzen</string>
+    <string name="aniskip_play_after_skip_desc">Setzt die Wiedergabe nach einem Skip fort, auch wenn sie pausiert war.</string>
+    <string name="aniskip_remember_position">Wiedergabeposition merken</string>
+    <string name="aniskip_remember_position_desc">Setzt eine Folge an der zuletzt gespeicherten Position fort.</string>
+    <string name="aniskip_remember_volume">Player-Lautstärke merken</string>
+    <string name="aniskip_remember_volume_desc">Stellt die zuletzt verwendete Medienlautstärke beim nächsten Playerstart wieder her.</string>
+    <string name="aniskip_skip_offset">Skip-Ende vorziehen: %1$d Sekunden</string>
+    <string name="aniskip_position_expiry">Wiedergabeposition behalten: %1$d Tage</string>
+    <string name="aniskip_auto_next_delay">Countdown für nächste Folge: %1$d Sekunden</string>
+    <string name="aniskip_lookup_button">MAL-Zuordnung</string>
+    <string name="aniskip_submit_button">Skip melden</string>
+    <string name="aniskip_loading">AniSkip-Zeiten werden geladen …</string>
+    <string name="aniskip_mapping_title">Anime für AniSkip zuordnen</string>
+    <string name="aniskip_not_mapped">Noch nicht zugeordnet</string>
+    <string name="aniskip_current_mapping">MAL-Zuordnung: %1$s</string>
+    <string name="aniskip_search_hint">Anime-Titel suchen</string>
+    <string name="aniskip_source">Quelle: %1$s</string>
+    <string name="aniskip_source_mal">MyAnimeList</string>
+    <string name="aniskip_source_allanime">AllAnime</string>
+    <string name="aniskip_search">Suchen</string>
+    <string name="aniskip_submit_title">Skip-Zeit an AniSkip melden</string>
+    <string name="aniskip_skip_type">Segmenttyp: %1$s</string>
+    <string name="aniskip_start_time">Startzeit in Sekunden</string>
+    <string name="aniskip_end_time">Endzeit in Sekunden</string>
+    <string name="aniskip_time_help">Die Zeiten beziehen sich auf den Beginn der Folge. Prüfe die Positionen vor dem Senden.</string>
+    <string name="aniskip_submit">Übermitteln</string>
+    <string name="aniskip_skip_segment">%1$s überspringen</string>
+    <string name="aniskip_opening_label">Opening</string>
+    <string name="aniskip_ending_label">Ending</string>
+    <string name="aniskip_mixed_opening_label">Gemischtes Opening</string>
+    <string name="aniskip_mixed_ending_label">Gemischtes Ending</string>
+    <string name="aniskip_recap_label">Rückblick</string>
+
 </resources>

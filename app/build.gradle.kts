@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.lootdev78.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 66
-        versionName = "1.7.9-cast-hotspot"
+        versionCode = 67
+        versionName = "1.8.0-aniskip-core"
         vectorDrawables.useSupportLibrary = true
     }
 

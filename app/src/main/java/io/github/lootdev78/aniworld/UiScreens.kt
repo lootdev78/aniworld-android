@@ -1483,30 +1483,6 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                     Text(" " + stringResource(if ((st.preferences.episodeWatchStates[quickEpisode.key]?.positionMs ?: 0L) > 0L) R.string.continue_playback else R.string.play_now))
                 }
             }
-            val hasOwnSeasonDescription = st.seasonDescription.isNotBlank()
-            val usesSeriesFallback = !hasOwnSeasonDescription && series.description.isNotBlank()
-            val displayedSeasonDescription = st.seasonDescription
-                .ifBlank { series.description }
-                .ifBlank { stringResource(R.string.season_description_unavailable) }
-            Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        stringResource(if (st.season == 0) R.string.movie_description else R.string.season_description),
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (usesSeriesFallback && st.season != 0) {
-                        Text(
-                            stringResource(R.string.season_description_fallback),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    ExpandableDescriptionText(
-                        displayedSeasonDescription,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
             LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(EpisodeFilter.entries) { item ->
                     FilterChip(selected = episodeFilter == item, onClick = { episodeFilter = item }, label = { Text(stringResource(item.labelRes)) })
@@ -2551,6 +2527,43 @@ fun SettingsScreen(
                         SettingSwitch(stringResource(R.string.auto_next), stringResource(R.string.auto_next_desc), prefs.autoNextEnabled, vm::setAutoNextEnabled)
                         SettingSwitch(stringResource(R.string.external_player), stringResource(R.string.external_player_desc), prefs.allowExternalPlayer, vm::setAllowExternalPlayer)
                         SettingSwitch(stringResource(R.string.auto_play_preferred_hoster), stringResource(R.string.auto_play_preferred_hoster_desc), prefs.autoPlayPreferredHoster, vm::setAutoPlayPreferredHoster)
+                    }
+                }
+
+                item {
+                    SettingsSectionCard(
+                        title = stringResource(R.string.aniskip_settings_title),
+                        subtitle = stringResource(R.string.aniskip_settings_desc)
+                    ) {
+                        SettingSwitch(stringResource(R.string.aniskip_auto_opening), stringResource(R.string.aniskip_auto_opening_desc), prefs.autoSkipOpening, vm::setAutoSkipOpening)
+                        SettingSwitch(stringResource(R.string.aniskip_auto_ending), stringResource(R.string.aniskip_auto_ending_desc), prefs.autoSkipEnding, vm::setAutoSkipEnding)
+                        SettingSwitch(stringResource(R.string.aniskip_auto_recap), stringResource(R.string.aniskip_auto_recap_desc), prefs.autoSkipRecap, vm::setAutoSkipRecap)
+                        SettingSwitch(stringResource(R.string.aniskip_show_buttons), stringResource(R.string.aniskip_show_buttons_desc), prefs.showSkipButtons, vm::setShowSkipButtons)
+                        SettingSwitch(stringResource(R.string.aniskip_play_after_skip), stringResource(R.string.aniskip_play_after_skip_desc), prefs.playAfterSkip, vm::setPlayAfterSkip)
+                        SettingSwitch(stringResource(R.string.aniskip_remember_position), stringResource(R.string.aniskip_remember_position_desc), prefs.rememberPlaybackPosition, vm::setRememberPlaybackPosition)
+                        SettingSwitch(stringResource(R.string.aniskip_remember_volume), stringResource(R.string.aniskip_remember_volume_desc), prefs.rememberVolume, vm::setRememberVolume)
+                        HorizontalDivider()
+                        Text(stringResource(R.string.aniskip_skip_offset, prefs.skipOffsetSeconds.toInt()), fontWeight = FontWeight.SemiBold)
+                        Slider(
+                            value = prefs.skipOffsetSeconds,
+                            onValueChange = vm::setSkipOffsetSeconds,
+                            valueRange = 0f..5f,
+                            steps = 4
+                        )
+                        Text(stringResource(R.string.aniskip_position_expiry, prefs.playbackPositionExpiryDays), fontWeight = FontWeight.SemiBold)
+                        Slider(
+                            value = prefs.playbackPositionExpiryDays.toFloat(),
+                            onValueChange = { vm.setPlaybackPositionExpiryDays(it.toInt()) },
+                            valueRange = 1f..30f,
+                            steps = 28
+                        )
+                        Text(stringResource(R.string.aniskip_auto_next_delay, prefs.autoNextDelaySeconds), fontWeight = FontWeight.SemiBold)
+                        Slider(
+                            value = prefs.autoNextDelaySeconds.toFloat(),
+                            onValueChange = { vm.setAutoNextDelaySeconds(it.toInt()) },
+                            valueRange = 0f..30f,
+                            steps = 29
+                        )
                     }
                 }
 

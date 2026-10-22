@@ -8,9 +8,9 @@ Dieses Vollprojekt baut auf dem bereits ergänzten Smart-View-, Xbox-, DLNA-, FC
 
 Die kollabierbaren Kopfbereiche in Katalog, Favoriten und Verlauf werden beim Tippen nicht mehr nach jedem Zeichen zwangsweise geöffnet oder an den Listenanfang gesetzt. Dadurch kann der Nutzer den Such-/Vorschlagsbereich auch mit gefüllter Suchleiste und sichtbaren Vorschlägen per Aufwärtswisch ausblenden. Sortierung, Ansicht oder Statusfilter dürfen den Bereich weiterhin bewusst zurücksetzen.
 
-## Staffelbeschreibung
+## Staffelbeschreibung — durch spätere Änderung entfernt
 
-Der Staffelbereich bleibt in der Episodenansicht sichtbar und verwendet den vorhandenen auf-/zuklappbaren Beschreibungstext. Die Repository-Schicht gibt jetzt nur eine tatsächlich gefundene Staffelbeschreibung als solche zurück. Fehlt sie, kennzeichnet die UI den Rückfall auf die Anime-Beschreibung korrekt; fehlt auch diese, wird ein eindeutiger Platzhalter angezeigt.
+Dieser ältere Bericht beschreibt einen früheren Stand. In der aktuellen Quellversion wurde die Staffelbeschreibung vollständig aus dem aktiven Modell, dem Parser, der UI und den Stringressourcen entfernt. Historische Quelltext-Snapshots unter `docs/original-source/` bleiben als unveränderte Archivkopien erhalten und werden nicht zur Laufzeit verwendet.
 
 ## Diagnose-Schaltflächen
 

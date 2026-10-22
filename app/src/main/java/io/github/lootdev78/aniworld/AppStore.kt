@@ -38,8 +38,20 @@ private data class SettingsSnapshot(
     val webSessionPanelExpanded: Boolean,
     val webMediaPanelExpanded: Boolean,
     val autoNextEnabled: Boolean,
+    val autoNextDelaySeconds: Int,
     val autoPlayPreferredHoster: Boolean,
     val allowExternalPlayer: Boolean,
+    val autoSkipOpening: Boolean,
+    val autoSkipEnding: Boolean,
+    val autoSkipRecap: Boolean,
+    val showSkipButtons: Boolean,
+    val skipOffsetSeconds: Float,
+    val playAfterSkip: Boolean,
+    val rememberPlaybackPosition: Boolean,
+    val playbackPositionExpiryDays: Int,
+    val rememberVolume: Boolean,
+    val savedVolumePercent: Int,
+    val aniSkipMappings: Map<String, AniSkipAnimeMapping>,
     val startupTab: String,
     val homeOfflineMode: Boolean,
     val accentColor: AppAccent,
@@ -102,8 +114,20 @@ class AppStore(
                 webSessionPanelExpanded = prefs[WEB_SESSION_PANEL_EXPANDED] ?: true,
                 webMediaPanelExpanded = prefs[WEB_MEDIA_PANEL_EXPANDED] ?: true,
                 autoNextEnabled = prefs[AUTO_NEXT_ENABLED] ?: true,
+                autoNextDelaySeconds = (prefs[AUTO_NEXT_DELAY_SECONDS] ?: 8).coerceIn(0, 30),
                 autoPlayPreferredHoster = prefs[AUTO_PLAY_PREFERRED_HOSTER] ?: false,
                 allowExternalPlayer = prefs[ALLOW_EXTERNAL_PLAYER] ?: false,
+                autoSkipOpening = prefs[AUTO_SKIP_OPENING] ?: true,
+                autoSkipEnding = prefs[AUTO_SKIP_ENDING] ?: true,
+                autoSkipRecap = prefs[AUTO_SKIP_RECAP] ?: false,
+                showSkipButtons = prefs[SHOW_SKIP_BUTTONS] ?: true,
+                skipOffsetSeconds = (prefs[SKIP_OFFSET_SECONDS] ?: 0f).coerceIn(0f, 5f),
+                playAfterSkip = prefs[PLAY_AFTER_SKIP] ?: true,
+                rememberPlaybackPosition = prefs[REMEMBER_PLAYBACK_POSITION] ?: true,
+                playbackPositionExpiryDays = (prefs[PLAYBACK_POSITION_EXPIRY_DAYS] ?: 7).coerceIn(1, 30),
+                rememberVolume = prefs[REMEMBER_VOLUME] ?: true,
+                savedVolumePercent = (prefs[SAVED_VOLUME_PERCENT] ?: -1).coerceIn(-1, 100),
+                aniSkipMappings = parseAniSkipMappings(prefs[ANISKIP_MAPPINGS]),
                 startupTab = prefs[STARTUP_TAB] ?: "START",
                 homeOfflineMode = prefs[HOME_OFFLINE_MODE] ?: false,
                 accentColor = prefs[ACCENT_COLOR]?.let { raw -> AppAccent.entries.firstOrNull { it.name == raw } } ?: AppAccent.RED,
@@ -176,8 +200,20 @@ class AppStore(
             webSessionPanelExpanded = settings.webSessionPanelExpanded,
             webMediaPanelExpanded = settings.webMediaPanelExpanded,
             autoNextEnabled = settings.autoNextEnabled,
+            autoNextDelaySeconds = settings.autoNextDelaySeconds,
             autoPlayPreferredHoster = settings.autoPlayPreferredHoster,
             allowExternalPlayer = settings.allowExternalPlayer,
+            autoSkipOpening = settings.autoSkipOpening,
+            autoSkipEnding = settings.autoSkipEnding,
+            autoSkipRecap = settings.autoSkipRecap,
+            showSkipButtons = settings.showSkipButtons,
+            skipOffsetSeconds = settings.skipOffsetSeconds,
+            playAfterSkip = settings.playAfterSkip,
+            rememberPlaybackPosition = settings.rememberPlaybackPosition,
+            playbackPositionExpiryDays = settings.playbackPositionExpiryDays,
+            rememberVolume = settings.rememberVolume,
+            savedVolumePercent = settings.savedVolumePercent,
+            aniSkipMappings = settings.aniSkipMappings,
             startupTab = settings.startupTab,
             homeOfflineMode = settings.homeOfflineMode,
             accentColor = settings.accentColor,
@@ -268,6 +304,30 @@ class AppStore(
     }
     suspend fun setAutoNextEnabled(enabled: Boolean) = editSafely("Auto-Next speichern") {
         it[AUTO_NEXT_ENABLED] = enabled
+    }
+    suspend fun setAutoNextDelaySeconds(seconds: Int) = editSafely("Auto-Next-Verzögerung speichern") {
+        it[AUTO_NEXT_DELAY_SECONDS] = seconds.coerceIn(0, 30)
+    }
+    suspend fun setAutoSkipOpening(enabled: Boolean) = editSafely("Opening-Auto-Skip speichern") { it[AUTO_SKIP_OPENING] = enabled }
+    suspend fun setAutoSkipEnding(enabled: Boolean) = editSafely("Ending-Auto-Skip speichern") { it[AUTO_SKIP_ENDING] = enabled }
+    suspend fun setAutoSkipRecap(enabled: Boolean) = editSafely("Recap-Auto-Skip speichern") { it[AUTO_SKIP_RECAP] = enabled }
+    suspend fun setShowSkipButtons(enabled: Boolean) = editSafely("Skip-Schaltflächen speichern") { it[SHOW_SKIP_BUTTONS] = enabled }
+    suspend fun setSkipOffsetSeconds(seconds: Float) = editSafely("Skip-Offset speichern") { it[SKIP_OFFSET_SECONDS] = seconds.coerceIn(0f, 5f) }
+    suspend fun setPlayAfterSkip(enabled: Boolean) = editSafely("Wiedergabe nach Skip speichern") { it[PLAY_AFTER_SKIP] = enabled }
+    suspend fun setRememberPlaybackPosition(enabled: Boolean) = editSafely("Wiedergabeposition merken speichern") { it[REMEMBER_PLAYBACK_POSITION] = enabled }
+    suspend fun setPlaybackPositionExpiryDays(days: Int) = editSafely("Ablauf der Wiedergabeposition speichern") { it[PLAYBACK_POSITION_EXPIRY_DAYS] = days.coerceIn(1, 30) }
+    suspend fun setRememberVolume(enabled: Boolean) = editSafely("Lautstärke merken speichern") { it[REMEMBER_VOLUME] = enabled }
+    suspend fun setSavedVolumePercent(percent: Int) = editSafely("Player-Lautstärke speichern") { it[SAVED_VOLUME_PERCENT] = percent.coerceIn(0, 100) }
+
+    suspend fun setAniSkipMapping(key: String, mapping: AniSkipAnimeMapping?) = editSafely("AniSkip-Anime-Zuordnung speichern") { prefs ->
+        if (key.isBlank()) return@editSafely
+        val updated = parseAniSkipMappings(prefs[ANISKIP_MAPPINGS]).toMutableMap()
+        if (mapping == null) updated.remove(key) else updated[key] = mapping
+        prefs[ANISKIP_MAPPINGS] = JSONObject().apply {
+            updated.forEach { (mapKey, value) ->
+                put(mapKey, JSONObject().put("malId", value.malId).put("title", value.title).put("url", value.url))
+            }
+        }.toString()
     }
     suspend fun setAutoPlayPreferredHoster(enabled: Boolean) = editSafely("Automatischen Hosterstart speichern") {
         it[AUTO_PLAY_PREFERRED_HOSTER] = enabled
@@ -878,6 +938,18 @@ class AppStore(
         buildMap { root.keys().forEach { put(it, root.optInt(it)) } }
     }.getOrDefault(emptyMap())
 
+    private fun parseAniSkipMappings(raw: String?): Map<String, AniSkipAnimeMapping> = if (raw.isNullOrBlank()) emptyMap() else runCatching {
+        val root = JSONObject(raw)
+        buildMap {
+            root.keys().forEach { key ->
+                val value = root.optJSONObject(key) ?: return@forEach
+                val malId = value.optInt("malId", 0)
+                val title = value.optString("title").trim()
+                if (malId > 0 && title.isNotBlank()) put(key, AniSkipAnimeMapping(malId, title, value.optString("url").orEmpty()))
+            }
+        }
+    }.getOrDefault(emptyMap())
+
     private fun parseLegacyStringList(raw: String?): List<String> = if (raw.isNullOrBlank()) emptyList() else runCatching {
         val array = JSONArray(raw)
         buildList { for (i in 0 until array.length()) add(array.optString(i)) }.filter(String::isNotBlank)
@@ -909,8 +981,20 @@ class AppStore(
         private val WEB_SESSION_PANEL_EXPANDED = booleanPreferencesKey("web_session_panel_expanded")
         private val WEB_MEDIA_PANEL_EXPANDED = booleanPreferencesKey("web_media_panel_expanded")
         private val AUTO_NEXT_ENABLED = booleanPreferencesKey("auto_next_enabled")
+        private val AUTO_NEXT_DELAY_SECONDS = intPreferencesKey("auto_next_delay_seconds")
         private val AUTO_PLAY_PREFERRED_HOSTER = booleanPreferencesKey("auto_play_preferred_hoster")
         private val ALLOW_EXTERNAL_PLAYER = booleanPreferencesKey("allow_external_player")
+        private val AUTO_SKIP_OPENING = booleanPreferencesKey("auto_skip_opening")
+        private val AUTO_SKIP_ENDING = booleanPreferencesKey("auto_skip_ending")
+        private val AUTO_SKIP_RECAP = booleanPreferencesKey("auto_skip_recap")
+        private val SHOW_SKIP_BUTTONS = booleanPreferencesKey("show_skip_buttons")
+        private val SKIP_OFFSET_SECONDS = floatPreferencesKey("skip_offset_seconds")
+        private val PLAY_AFTER_SKIP = booleanPreferencesKey("play_after_skip")
+        private val REMEMBER_PLAYBACK_POSITION = booleanPreferencesKey("remember_playback_position")
+        private val PLAYBACK_POSITION_EXPIRY_DAYS = intPreferencesKey("playback_position_expiry_days")
+        private val REMEMBER_VOLUME = booleanPreferencesKey("remember_volume")
+        private val SAVED_VOLUME_PERCENT = intPreferencesKey("saved_volume_percent")
+        private val ANISKIP_MAPPINGS = stringPreferencesKey("aniskip_mappings")
         private val STARTUP_TAB = stringPreferencesKey("startup_tab")
         private val HOME_OFFLINE_MODE = booleanPreferencesKey("home_offline_mode")
         private val ACCENT_COLOR = stringPreferencesKey("accent_color")

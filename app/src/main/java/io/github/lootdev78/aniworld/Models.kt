@@ -137,7 +137,6 @@ data class EpisodePage(
 data class SeasonPage(
     val season: Int,
     val title: String,
-    val description: String,
     val episodes: List<Episode>
 )
 
@@ -319,8 +318,20 @@ data class AppPreferences(
     val webSessionPanelExpanded: Boolean = true,
     val webMediaPanelExpanded: Boolean = true,
     val autoNextEnabled: Boolean = true,
+    val autoNextDelaySeconds: Int = 8,
     val autoPlayPreferredHoster: Boolean = false,
     val allowExternalPlayer: Boolean = false,
+    val autoSkipOpening: Boolean = true,
+    val autoSkipEnding: Boolean = true,
+    val autoSkipRecap: Boolean = false,
+    val showSkipButtons: Boolean = true,
+    val skipOffsetSeconds: Float = 0f,
+    val playAfterSkip: Boolean = true,
+    val rememberPlaybackPosition: Boolean = true,
+    val playbackPositionExpiryDays: Int = 7,
+    val rememberVolume: Boolean = true,
+    val savedVolumePercent: Int = -1,
+    val aniSkipMappings: Map<String, AniSkipAnimeMapping> = emptyMap(),
     val startupTab: String = "START",
     val homeOfflineMode: Boolean = false,
     val accentColor: AppAccent = AppAccent.RED,

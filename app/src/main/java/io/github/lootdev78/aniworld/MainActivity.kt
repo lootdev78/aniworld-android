@@ -10,6 +10,7 @@ import android.os.Build
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +18,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,9 +38,11 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
@@ -78,12 +85,30 @@ import kotlin.math.roundToInt
 private const val DETAIL_ROUTE = "detail"
 
 class MainActivity : ComponentActivity() {
+    private val activityViewModel: AppViewModel by viewModels()
     private val deepLink = MutableStateFlow<String?>(null)
     private val playbackAction = MutableStateFlow<String?>(null)
     private var playbackReceiverRegistered = false
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            playbackAction.value = intent?.action
+            val received = intent ?: return
+            when (received.action) {
+                PlaybackService.ACTION_PROGRESS -> {
+                    activityViewModel.onPlaybackProgress(
+                        received.getLongExtra(PlaybackService.EXTRA_POSITION_MS, 0L),
+                        received.getLongExtra(PlaybackService.EXTRA_DURATION_MS, 0L),
+                        false
+                    )
+                    if (received.hasExtra(PlaybackService.EXTRA_VOLUME_PERCENT)) {
+                        activityViewModel.savePlayerVolume(received.getIntExtra(PlaybackService.EXTRA_VOLUME_PERCENT, -1))
+                    }
+                }
+                PlaybackService.ACTION_ENDED -> activityViewModel.onBackgroundPlaybackEnded(
+                    received.getLongExtra(PlaybackService.EXTRA_POSITION_MS, 0L),
+                    received.getLongExtra(PlaybackService.EXTRA_DURATION_MS, 0L)
+                )
+                else -> playbackAction.value = received.action
+            }
         }
     }
 
@@ -99,6 +124,8 @@ class MainActivity : ComponentActivity() {
                     addAction(PlaybackService.ACTION_PREVIOUS)
                     addAction(PlaybackService.ACTION_NEXT)
                     addAction(PlaybackService.ACTION_STOPPED)
+                    addAction(PlaybackService.ACTION_PROGRESS)
+                    addAction(PlaybackService.ACTION_ENDED)
                 },
                 ContextCompat.RECEIVER_NOT_EXPORTED
             )
@@ -110,8 +137,12 @@ class MainActivity : ComponentActivity() {
             val link by deepLink.collectAsStateWithLifecycle()
             val mediaAction by playbackAction.collectAsStateWithLifecycle()
             LaunchedEffect(link) { vm.openDeepLink(link) }
+            LaunchedEffect(intent?.action) {
+                if (intent?.action == PlaybackService.ACTION_OPEN_PLAYER) vm.restorePlayer()
+            }
             LaunchedEffect(mediaAction) {
                 when (mediaAction) {
+                    PlaybackService.ACTION_OPEN_PLAYER -> vm.restorePlayer()
                     PlaybackService.ACTION_PREVIOUS -> vm.playPreviousEpisode()
                     PlaybackService.ACTION_NEXT -> vm.playNextEpisode()
                     PlaybackService.ACTION_STOPPED -> vm.closePlayer()
@@ -122,6 +153,18 @@ class MainActivity : ComponentActivity() {
                 AniWorldApp(vm)
             }
         }
+    }
+
+    override fun onStop() {
+        // Returning via the launcher should show the compact player; only a media-session
+        // notification tap explicitly expands it again. Configuration changes and PiP
+        // are not treated as leaving playback.
+        if (isFinishing) {
+            activityViewModel.closePlayer()
+        } else if (!isChangingConfigurations && !isInPictureInPictureMode) {
+            activityViewModel.minimizePlayer()
+        }
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -136,6 +179,10 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         deepLink.value = intent.dataString
+        if (intent.action == PlaybackService.ACTION_OPEN_PLAYER) {
+            // Route the notification tap through the same lifecycle-aware action stream.
+            playbackAction.value = PlaybackService.ACTION_OPEN_PLAYER
+        }
     }
 }
 
@@ -297,22 +344,44 @@ fun AniWorldApp(vm: AppViewModel) {
         )
         return
     }
-    st.playback?.let { playback ->
+    st.playback?.takeUnless { st.playerMinimized }?.let { playback ->
         val currentIndex = st.episodes.indexOfFirst { it.key == playback.episode.key }
         PlayerScreen(
             playback = playback,
-            hasPrevious = currentIndex > 0,
-            hasNext = currentIndex >= 0 && currentIndex < st.episodes.lastIndex,
+            hasPrevious = (currentIndex > 0) || st.seasons.any { it < playback.episode.season },
+            hasNext = (currentIndex >= 0 && currentIndex < st.episodes.lastIndex) || st.seasons.any { it > playback.episode.season },
             autoNextEnabled = st.preferences.autoNextEnabled,
+            autoNextDelaySeconds = st.preferences.autoNextDelaySeconds,
             availableHosters = st.hosters,
             allowExternalPlayer = st.preferences.allowExternalPlayer,
             castEnabled = st.preferences.castEnabled,
             pipEnabled = st.preferences.pipEnabled,
+            skipSegments = st.skipSegments.takeIf { st.skipEpisodeKey == playback.episode.key }.orEmpty(),
+            skipLoading = st.skipLoading && st.skipEpisodeKey == playback.episode.key,
+            skipMessage = st.skipMessage.takeIf { st.skipEpisodeKey == playback.episode.key },
+            aniSkipMapping = st.preferences.aniSkipMappings[seasonKey(playback.series.slug, playback.episode.season)],
+            aniSkipSearchResults = st.aniSkipSearchResults,
+            aniSkipSearchLoading = st.aniSkipSearchLoading,
+            aniSkipSearchMessage = st.aniSkipSearchMessage,
+            skipSubmitMessage = st.skipSubmitMessage,
+            autoSkipOpening = st.preferences.autoSkipOpening,
+            autoSkipEnding = st.preferences.autoSkipEnding,
+            autoSkipRecap = st.preferences.autoSkipRecap,
+            showSkipButtons = st.preferences.showSkipButtons,
+            skipOffsetSeconds = st.preferences.skipOffsetSeconds,
+            playAfterSkip = st.preferences.playAfterSkip,
+            rememberVolume = st.preferences.rememberVolume,
+            savedVolumePercent = st.preferences.savedVolumePercent,
+            onSearchAniSkipAnime = vm::searchAniSkipAnime,
+            onSelectAniSkipAnime = vm::selectAniSkipAnime,
+            onSubmitAniSkipTime = vm::submitAniSkipTime,
+            onVolumeChanged = vm::savePlayerVolume,
             onLanguageChange = { language -> vm.playEpisode(playback.episode, languageOverride = language) },
             onHosterChange = { hoster -> vm.playEpisode(playback.episode, languageOverride = hoster.lang.takeIf { it != Language.UNKNOWN }, hosterOverride = hoster) },
             onPrevious = vm::playPreviousEpisode,
             onNext = vm::playNextEpisode,
             onClose = vm::closePlayer,
+            onMinimize = vm::minimizePlayer,
             onProgress = vm::onPlaybackProgress,
             onEnded = vm::onPlaybackEnded,
             onError = vm::reportPlayerError
@@ -409,29 +478,64 @@ fun AniWorldApp(vm: AppViewModel) {
                     color = MaterialTheme.colorScheme.background,
                     contentColor = MaterialTheme.colorScheme.onBackground
                 ) {
-                    NavHost(navController = navController, startDestination = HomeTab.START.route) {
-                        composable(HomeTab.START.route) { HomeScreen(st, vm) }
-                        composable(HomeTab.CATALOG.route) { CatalogScreen(st, vm, expanded) }
-                        composable(HomeTab.FAVORITES.route) { FavoritesScreen(st, vm, expanded) }
-                        composable(HomeTab.HISTORY.route) { HistoryScreen(st, vm, expanded) }
-                        composable(DETAIL_ROUTE) {
-                            if (st.selected != null) DetailScreen(st, vm, expanded)
-                            else LaunchedEffect(Unit) { navController.popBackStack() }
+                    Column(Modifier.fillMaxSize()) {
+                        val compactPlayback = st.playback?.takeIf { st.playerMinimized }
+                        if (compactPlayback != null) {
+                            val duration = compactPlayback.knownDurationMs.coerceAtLeast(0L)
+                            val position = compactPlayback.startPositionMs.coerceAtLeast(0L)
+                            val progress = if (duration > 0L) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 5.dp)
+                                    .clickable { vm.restorePlayer() },
+                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(14.dp),
+                                tonalElevation = 4.dp
+                            ) {
+                                Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                        Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                                            Text(compactPlayback.seriesTitle, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                            Text(compactPlayback.episode.localizedDisplayTitle(context), style = MaterialTheme.typography.bodySmall, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        Text("${compactTime(position)} / ${if (duration > 0L) compactTime(duration) else "--:--"}", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(3.dp))
+                                }
+                            }
                         }
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            NavHost(navController = navController, startDestination = HomeTab.START.route) {
+                                composable(HomeTab.START.route) { HomeScreen(st, vm) }
+                                composable(HomeTab.CATALOG.route) { CatalogScreen(st, vm, expanded) }
+                                composable(HomeTab.FAVORITES.route) { FavoritesScreen(st, vm, expanded) }
+                                composable(HomeTab.HISTORY.route) { HistoryScreen(st, vm, expanded) }
+                                composable(DETAIL_ROUTE) {
+                                    if (st.selected != null) DetailScreen(st, vm, expanded)
+                                    else LaunchedEffect(Unit) { navController.popBackStack() }
+                                }
+                            }
+                            st.error?.let { AppErrorBanner(it, { diagnosticsOpen = true }, vm::dismissError) }
+                            DraggableSettingsButton(
+                                x = st.preferences.settingsButtonX,
+                                y = st.preferences.settingsButtonY,
+                                onOpen = { settingsOpen = true },
+                                onPosition = vm::setSettingsButtonPosition,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+
                     }
-                    st.error?.let { AppErrorBanner(it, { diagnosticsOpen = true }, vm::dismissError) }
-                    DraggableSettingsButton(
-                        x = st.preferences.settingsButtonX,
-                        y = st.preferences.settingsButtonY,
-                        onOpen = { settingsOpen = true },
-                        onPosition = vm::setSettingsButtonPosition,
-                        modifier = Modifier.fillMaxSize()
-                    )
                 }
             }
         }
     }
 
+}
+
+private fun compactTime(milliseconds: Long): String {
+    val totalSeconds = (milliseconds.coerceAtLeast(0L) / 1000L)
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
 }
 
 @Composable

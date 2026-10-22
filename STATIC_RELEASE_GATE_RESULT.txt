@@ -1,7 +1,11 @@
 STATIC RELEASE GATE: PASSED
 - XML-Dateien: 12
-- Stringschlüssel: 470
-- Kotlin-Dateien: 30
-- Featuregruppen geprüft: 39
-- Pair-Code-/Webplayer-Host: vollständig entfernt
-- Gemeinsame Cast-UI: Google Cast, Smart View, DLNA/Xbox und FCast
+- Stringschlüssel: 510
+- Kotlin-Dateien: 31
+- Featuregruppen geprüft: 46
+- AniSkip Android core: native Kotlin port; no shell/mpv runtime dependency
+- MyAnimeList and AllAnime title resolution mapped to MAL IDs
+- AniSkip v1 OP/ED with v2 mixed/recap extension and community submissions
+- Skip offset follows upstream end-early semantics (0–5 seconds)
+- Season-description model/parser/UI/resource strings remain removed
+- Android/Gradle compilation not verified: Gradle distribution download blocked by network

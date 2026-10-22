@@ -17,8 +17,8 @@ SRC = APP / "src" / "main"
 KOTLIN = SRC / "java" / "io" / "github" / "lootdev78" / "aniworld"
 RES = SRC / "res"
 EXPECTED_PACKAGE = "io.github.lootdev78.aniworld"
-EXPECTED_VERSION_CODE = 66
-EXPECTED_VERSION_NAME = "1.7.9-cast-hotspot"
+EXPECTED_VERSION_CODE = 67
+EXPECTED_VERSION_NAME = "1.8.0-aniskip-core"
 
 errors: list[str] = []
 notes: list[str] = []
@@ -210,15 +210,25 @@ feature_markers: dict[str, tuple[Path, tuple[str, ...]]] = {
     "Lesbarer Alphabetindex": (KOTLIN / "UiScreens.kt", ("alphabet_index_title", "maxItemsInEachRow = 5", "fontSize = 22.sp", "FullAlphabetIndex")),
     "Player Stream-Link und Formatinfo": (KOTLIN / "PlayerScreen.kt", ("copyStreamLink", "player_copy_stream_link", "streamInfo.compactLabel", "PlayerStreamInfoRow")),
     "Streamformat-Präsentation": (KOTLIN / "StreamPresentation.kt", ("data class StreamPresentationInfo", "DirectMediaDetector.mimeTypeFor", "application/dash+xml", "application/x-mpegURL")),
-    "Staffelbeschreibung und Fallback": (KOTLIN / "UiScreens.kt", ("hasOwnSeasonDescription", "season_description_fallback", "season_description_unavailable", "ExpandableDescriptionText")),
     "Miracast-Systemauswahl": (KOTLIN / "ExternalPlayback.kt", ("ACTION_CAST_SETTINGS", "WIFI_DISPLAY_SETTINGS")),
     "Vier parallele Metadatenjobs": (KOTLIN / "AniWorldRepository.kt", ("MAX_PARALLEL_METADATA_JOBS = 4", "queue.chunked(MAX_PARALLEL_METADATA_JOBS)")),
+    "AniSkip v1/v2 lookup and community submission": (KOTLIN / "AniSkipRepository.kt", ("https://api.aniskip.com/v1", "https://api.aniskip.com/v2", "getSkipTimes", "submitSkipTime", "episodeLength")),
+    "Native ani-skip core port": (KOTLIN / "AniSkipRepository.kt", ("class AniSkipAndroidCore", "searchMyAnimeListPrefix", "searchAllAnime", "AniSkipPlaybackLogic", "endSeconds - earlyBySeconds")),
+    "One-time end-early skip does not prematurely mark episode watched": (KOTLIN / "PlayerScreen.kt", ("skippedSegments.add(active.id)", "AniSkipPlaybackLogic.targetPositionMs(active, duration, skipOffsetSeconds)")),
+    "MAL and AllAnime title resolution": (KOTLIN / "AniSkipRepository.kt", ("https://api.tenrai.org/v1", "https://api.jikan.moe/v4", "findConfidentMatch", "AniSkipTitleSource.ALLANIME")),
+    "Season-scoped MAL mapping": (KOTLIN / "AppStore.kt", ("ANISKIP_MAPPINGS", "setAniSkipMapping", "parseAniSkipMappings")),
+    "Skip controls and timeline markers": (KOTLIN / "PlayerScreen.kt", ("Canvas(Modifier.fillMaxWidth()", "aniSkipMappingDialogOpen", "openAniSkipSubmitDialog", "autoSkipRecap")),
+    "Background playback progress and end events": (KOTLIN / "PlaybackService.kt", ("ACTION_PROGRESS", "ACTION_ENDED", "sendPlaybackProgress")),
+    "Top compact player across tabs": (KOTLIN / "MainActivity.kt", ("compactPlayback", "ACTION_OPEN_PLAYER", "activityViewModel.minimizePlayer()")),
 }
 for feature, (path, markers) in feature_markers.items():
     text = read(path)
     for marker in markers:
         if marker not in text:
             fail(f"Featuremarker fehlt ({feature}): {path.name} -> {marker}")
+require("seasonDescription" not in all_kotlin, "Entfernte Staffelbeschreibung ist im aktiven Kotlin-Code noch referenziert")
+require(not any("season_description" in name for name in base_strings), "Entfernte Staffelbeschreibung ist noch in aktiven Stringressourcen vorhanden")
+notes.append("Staffelbeschreibung: aus aktivem Modell, Parser, UI und Ressourcen entfernt")
 notes.append(f"Featuregruppen geprüft: {len(feature_markers)}")
 require("AirPlay" not in all_kotlin and "AirServer" not in all_kotlin, "Nicht gewünschtes AirPlay/AirServer-Protokoll gefunden")
 require("LocalPlaybackWebServer" not in all_kotlin, "Entfernter lokaler Webplayer ist noch referenziert")

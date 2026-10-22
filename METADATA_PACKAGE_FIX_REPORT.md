@@ -83,9 +83,9 @@ Vor dem ersten erfolgreichen Import:
 - Position und Laufzeit bleiben in Room pro Episode beziehungsweise Film offline gespeichert.
 - Fortschrittsbalken bleiben als visuelle Ergänzung erhalten.
 
-## Staffelbeschreibungen
+## Staffelbeschreibungen — aktueller Stand
 
-Der Parser wurde enger auf echte Staffel-/Filmbeschreibungscontainer, referenzierte Collapse-Ziele und nahe Beschreibungselemente ausgerichtet. Episodentabellen, Hostertexte, Navigationstexte und eine lediglich erneut ausgegebene allgemeine Serienbeschreibung werden verworfen. Falls AniWorld keine eigene Staffelbeschreibung liefert, zeigt die App keine künstlich duplizierte Serienbeschreibung an.
+Der Parser und das aktive Datenmodell liefern keine Staffelbeschreibung mehr. Die frühere Beschreibungskarte und ihre Fallback-Strings wurden aus der UI und den aktiven Ressourcen entfernt. Die alten Dateien unter `docs/original-source/` sind ausschließlich historische Archivkopien.
 
 ## Validierung
 

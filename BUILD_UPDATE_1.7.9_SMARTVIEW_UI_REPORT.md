@@ -74,9 +74,8 @@ Chromecast, FCast, generisches DLNA und die Android-Miracast-Systemauswahl bleib
 
 ## Player, Beschreibungen und Navigation
 
-- lange Anime-, Staffel- und Episodentexte sind auf- und zuklappbar
-- Staffelbeschreibung hat einen eigenen Bereich
-- fehlt eine echte Staffelbeschreibung, wird die Serienbeschreibung sichtbar als Fallback angezeigt
+- lange Anime- und Episodentexte sind auf- und zuklappbar
+- die frühere Staffelbeschreibungs-Karte wurde in einer späteren Änderung aus dem aktiven Code entfernt
 - begonnene, nicht abgeschlossene Staffeln/Folgen werden separat hervorgehoben und bleiben dynamisch einstellbar
 - Cast kann global in den Einstellungen aktiviert oder deaktiviert werden
 - Chromecast-Aktion erscheint nur bei verfügbarer Cast-Unterstützung
