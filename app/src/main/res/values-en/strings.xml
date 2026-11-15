@@ -439,11 +439,6 @@
     <string name="xbox_profile_generic">DLNA/UPnP</string>
     <string name="cast_volume">Device volume</string>
 
-    <string name="smartview_sdk_title">Samsung Smart View (native)</string>
-    <string name="smartview_sdk_missing_short">Optional Samsung SDK is missing from app/libs</string>
-    <string name="smartview_sdk_missing">Samsung Smart View SDK is not bundled. Put the officially licensed Android JAR/AAR in app/libs; the app detects it automatically.</string>
-    <string name="smartview_sdk_ready">Samsung Smart View is ready</string>
-    <string name="smartview_sdk_ready_desc">Samsung TVs can be discovered and controlled through the native Default Media Player.</string>
     <string name="smartview_device_lost">The Samsung TV is no longer reachable. Search for devices again.</string>
     <string name="smartview_cast_failed">Samsung Smart View: %1$s</string>
     <string name="smartview_device_standby">Samsung Smart View · standby device</string>

@@ -2449,9 +2449,6 @@ fun SettingsScreen(
 ) {
     val prefs = st.preferences
     val context = LocalContext.current
-    val smartViewSdkAvailable = remember(context.applicationContext) {
-        SamsungSmartViewController.isSdkAvailable(context.applicationContext)
-    }
     var confirmMetadataDelete by rememberSaveable { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         vm.refreshCatalogMetadata()
@@ -2590,34 +2587,6 @@ fun SettingsScreen(
                             prefs.pipEnabled,
                             vm::setPipEnabled
                         )
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.medium,
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .52f)
-                        ) {
-                            Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(
-                                    if (smartViewSdkAvailable) Icons.Default.CheckCircle else Icons.Default.Info,
-                                    null,
-                                    tint = if (smartViewSdkAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text(
-                                        stringResource(if (smartViewSdkAvailable) R.string.smartview_sdk_ready else R.string.smartview_sdk_title),
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text(
-                                        stringResource(if (smartViewSdkAvailable) R.string.smartview_sdk_ready_desc else R.string.smartview_sdk_missing),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
 
