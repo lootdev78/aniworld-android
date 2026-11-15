@@ -298,6 +298,15 @@ enum class HomeSection(@StringRes val labelRes: Int) {
             val parsed = raw.mapNotNull { value -> entries.firstOrNull { it.name == value } }.distinct()
             return parsed + DEFAULT_ORDER.filterNot(parsed::contains)
         }
+
+        fun moveInOrder(order: List<HomeSection>, section: HomeSection, delta: Int): List<HomeSection> {
+            val normalized = normalizeOrder(order.map(HomeSection::name))
+            val from = normalized.indexOf(section)
+            if (delta == 0 || from < 0) return normalized
+            val to = (from + delta).coerceIn(0, normalized.lastIndex)
+            if (from == to) return normalized
+            return normalized.toMutableList().apply { add(to, removeAt(from)) }
+        }
     }
 }
 

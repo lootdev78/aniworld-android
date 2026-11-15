@@ -146,6 +146,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -3199,84 +3200,90 @@ private fun HomeSectionOrderEditor(
 ) {
     var displayedOrder by remember { mutableStateOf(order) }
     var draggedSection by remember { mutableStateOf<HomeSection?>(null) }
+    var dragStartOrder by remember { mutableStateOf<List<HomeSection>?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    val dragThreshold = with(LocalDensity.current) { 62.dp.toPx() }
+    val fallbackDragThreshold = with(LocalDensity.current) { 62.dp.toPx() }
+    val rowSpacingPx = with(LocalDensity.current) { 12.dp.toPx() }
 
     LaunchedEffect(order) {
         if (draggedSection == null) displayedOrder = order
     }
 
-    fun moveSection(section: HomeSection, delta: Int) {
-        val from = displayedOrder.indexOf(section)
-        if (from < 0 || displayedOrder.isEmpty()) return
-        val to = (from + delta).coerceIn(0, displayedOrder.lastIndex)
-        if (from == to) return
-        val updated = displayedOrder.toMutableList().apply { add(to, removeAt(from)) }
+    fun moveSection(section: HomeSection, delta: Int, persist: Boolean = true) {
+        val updated = HomeSection.moveInOrder(displayedOrder, section, delta)
+        if (updated == displayedOrder) return
         displayedOrder = updated
-        onOrderChanged(updated)
+        if (persist) onOrderChanged(updated)
+    }
+
+    fun finishDrag() {
+        if (dragStartOrder != null && dragStartOrder != displayedOrder) onOrderChanged(displayedOrder)
+        draggedSection = null
+        dragStartOrder = null
+        dragOffset = 0f
     }
 
     displayedOrder.forEachIndexed { index, section ->
-        val isDragging = draggedSection == section
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .graphicsLayer { translationY = if (isDragging) dragOffset else 0f }
-                .zIndex(if (isDragging) 1f else 0f)
-                .pointerInput(section) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = {
-                            draggedSection = section
-                            dragOffset = 0f
-                        },
-                        onDragEnd = {
-                            draggedSection = null
-                            dragOffset = 0f
-                        },
-                        onDragCancel = {
-                            draggedSection = null
-                            dragOffset = 0f
-                        },
-                        onDrag = { change, dragAmount ->
-                            if (draggedSection == section) {
-                                change.consume()
-                                dragOffset += dragAmount.y
-                                while (dragOffset > dragThreshold && displayedOrder.lastOrNull() != section) {
-                                    moveSection(section, 1)
-                                    dragOffset -= dragThreshold
-                                }
-                                while (dragOffset < -dragThreshold && displayedOrder.firstOrNull() != section) {
-                                    moveSection(section, -1)
-                                    dragOffset += dragThreshold
+        key(section) {
+            val isDragging = draggedSection == section
+            var rowHeightPx by remember { mutableFloatStateOf(0f) }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onSizeChanged { rowHeightPx = it.height.toFloat() }
+                    .graphicsLayer { translationY = if (isDragging) dragOffset else 0f }
+                    .zIndex(if (isDragging) 1f else 0f)
+                    .pointerInput(section) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggedSection = section
+                                dragStartOrder = displayedOrder
+                                dragOffset = 0f
+                            },
+                            onDragEnd = ::finishDrag,
+                            onDragCancel = ::finishDrag,
+                            onDrag = { change, dragAmount ->
+                                if (draggedSection == section) {
+                                    change.consume()
+                                    dragOffset += dragAmount.y
+                                    val threshold = (rowHeightPx.takeIf { it > 0f } ?: fallbackDragThreshold) + rowSpacingPx
+                                    while (dragOffset > threshold && displayedOrder.lastOrNull() != section) {
+                                        moveSection(section, 1, persist = false)
+                                        dragOffset -= threshold
+                                    }
+                                    while (dragOffset < -threshold && displayedOrder.firstOrNull() != section) {
+                                        moveSection(section, -1, persist = false)
+                                        dragOffset += threshold
+                                    }
                                 }
                             }
-                        }
-                    )
-                },
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDragging) .8f else .48f),
-            shadowElevation = if (isDragging) 8.dp else 0.dp
-        ) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        )
+                    },
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDragging) .8f else .48f),
+                shadowElevation = if (isDragging) 8.dp else 0.dp
             ) {
-                Switch(
-                    checked = section !in hiddenSections,
-                    onCheckedChange = { onVisibilityChanged(section, it) }
-                )
-                Text(stringResource(section.labelRes), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                Icon(
-                    Icons.Default.DragHandle,
-                    contentDescription = stringResource(R.string.drag_to_reorder),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                IconButton(enabled = index > 0, onClick = { moveSection(section, -1) }) {
-                    Icon(Icons.Default.ArrowUpward, stringResource(R.string.move_up))
-                }
-                IconButton(enabled = index < displayedOrder.lastIndex, onClick = { moveSection(section, 1) }) {
-                    Icon(Icons.Default.ArrowDownward, stringResource(R.string.move_down))
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Switch(
+                        checked = section !in hiddenSections,
+                        onCheckedChange = { onVisibilityChanged(section, it) }
+                    )
+                    Text(stringResource(section.labelRes), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    Icon(
+                        Icons.Default.DragHandle,
+                        contentDescription = stringResource(R.string.drag_to_reorder),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    IconButton(enabled = index > 0, onClick = { moveSection(section, -1) }) {
+                        Icon(Icons.Default.ArrowUpward, stringResource(R.string.move_up))
+                    }
+                    IconButton(enabled = index < displayedOrder.lastIndex, onClick = { moveSection(section, 1) }) {
+                        Icon(Icons.Default.ArrowDownward, stringResource(R.string.move_down))
+                    }
                 }
             }
         }

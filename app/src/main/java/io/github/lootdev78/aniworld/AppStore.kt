@@ -407,11 +407,7 @@ class AppStore(
     }
     suspend fun moveHomeSection(section: HomeSection, delta: Int) = editSafely("Startseitenreihenfolge speichern") { prefs ->
         val order = HomeSection.normalizeOrder(parseStoredList(prefs[HOME_SECTION_ORDER])).toMutableList()
-        val from = order.indexOf(section)
-        if (from < 0 || order.isEmpty()) return@editSafely
-        val to = (from + delta).coerceIn(0, order.lastIndex)
-        if (from != to) order.add(to, order.removeAt(from))
-        prefs[HOME_SECTION_ORDER] = order.joinToString(",") { it.name }
+        prefs[HOME_SECTION_ORDER] = HomeSection.moveInOrder(order, section, delta).joinToString(",") { it.name }
     }
     suspend fun setHomeSectionOrder(order: List<HomeSection>) = editSafely("Startseitenreihenfolge speichern") { prefs ->
         prefs[HOME_SECTION_ORDER] = HomeSection.normalizeOrder(order.map(HomeSection::name)).joinToString(",") { it.name }
