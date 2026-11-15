@@ -109,6 +109,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -206,13 +207,11 @@ fun PlayerScreen(
     var autoNextSeconds by remember(playback.id) { mutableIntStateOf(8) }
     var controlsVisible by remember(playback.id) { mutableStateOf(true) }
     var controlsGeneration by remember(playback.id) { mutableIntStateOf(0) }
-    var topControlsFocused by remember(playback.id) { mutableStateOf(false) }
-    var timelineControlsFocused by remember(playback.id) { mutableStateOf(false) }
     var playerSurfaceFocused by remember(playback.id) { mutableStateOf(false) }
     var videoBuffering by remember(playback.id) { mutableStateOf(true) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
     val playerFocusRequester = remember(playback.id) { FocusRequester() }
-    val controlsFocused = topControlsFocused || timelineControlsFocused
+    val focusManager = LocalFocusManager.current
     var languageMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var hosterMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var castMenuOpen by remember(playback.id) { mutableStateOf(false) }
@@ -341,10 +340,12 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, controlsGeneration, isPlaying, playerOverlayOpen, controlsFocused, loading, videoBuffering) {
-        if (controlsVisible && isPlaying && !playerOverlayOpen && !controlsFocused && !loading && !videoBuffering) {
+    LaunchedEffect(controlsVisible, controlsGeneration, playerOverlayOpen, loading, videoBuffering) {
+        if (controlsVisible && !playerOverlayOpen && !loading && !videoBuffering) {
             delay(3_000L)
             controlsVisible = false
+            focusManager.clearFocus()
+            playerFocusRequester.requestFocus()
         }
     }
 
@@ -753,7 +754,7 @@ fun PlayerScreen(
                             true
                         }
                         playerSurfaceFocused -> {
-                            togglePlayback()
+                            controlsVisible = false
                             true
                         }
                         else -> false
@@ -808,6 +809,9 @@ fun PlayerScreen(
                     controlsVisible = true
                     controlsGeneration++
                     true
+                } else if (!isPlaying) {
+                    controlsVisible = false
+                    true
                 } else {
                     false
                 }
@@ -829,7 +833,7 @@ fun PlayerScreen(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(
                 end = 28.dp,
-                bottom = if (controlsVisible) 250.dp else 88.dp
+                bottom = if (controlsVisible) 230.dp else 72.dp
             )
         ) {
             manualSkipSegment?.let { segment ->
@@ -903,7 +907,6 @@ fun PlayerScreen(
                     .padding(horizontal = 14.dp, vertical = 10.dp)
                     .focusGroup()
                     .onFocusChanged {
-                        topControlsFocused = it.hasFocus
                         if (it.hasFocus) {
                             controlsVisible = true
                             controlsGeneration++
@@ -1601,10 +1604,9 @@ fun PlayerScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 14.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
                     .focusGroup()
                     .onFocusChanged {
-                        timelineControlsFocused = it.hasFocus
                         if (it.hasFocus) {
                             controlsVisible = true
                             controlsGeneration++
@@ -1614,10 +1616,10 @@ fun PlayerScreen(
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
                 tonalElevation = 8.dp
             ) {
-                Column(Modifier.padding(horizontal = 18.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 24.dp)) {
+                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = 12.dp)) {
                         if (knownDuration != null && skipSegments.isNotEmpty()) {
-                            Canvas(Modifier.fillMaxWidth().heightIn(min = 24.dp)) {
+                            Canvas(Modifier.fillMaxWidth().heightIn(min = 12.dp)) {
                                 val inset = 12.dp.toPx()
                                 val trackWidth = (size.width - inset * 2f).coerceAtLeast(0f)
                                 val markerHeight = 4.dp.toPx()
@@ -1642,7 +1644,7 @@ fun PlayerScreen(
                     Text(
                         "${playback.seriesTitle} · ${playback.episode.localizedLabel(context)} · ${playback.episode.localizedDisplayTitle(context)}",
                         color = Color.White,
-                        style = MaterialTheme.typography.labelLarge,
+                        style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1
                     )
@@ -1682,16 +1684,17 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        PlayerRoundButton(Icons.Default.Replay10, stringResource(R.string.seek_back_seconds), size = 50.dp) {
+                        PlayerRoundButton(Icons.Default.Replay10, stringResource(R.string.seek_back_seconds), size = 42.dp) {
                             seekPlayback((position - 10_000L).coerceAtLeast(0L))
                         }
                         PlayerPrimaryButton(
                             icon = if ((castActive && remoteTransportState != XboxTransportState.PAUSED) || (!castActive && isPlaying)) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) stringResource(R.string.playback_paused) else stringResource(R.string.play)
+                            contentDescription = if (isPlaying) stringResource(R.string.playback_paused) else stringResource(R.string.play),
+                            size = 58.dp
                         ) {
                             togglePlayback()
                         }
-                        PlayerRoundButton(Icons.Default.Forward10, stringResource(R.string.seek_forward_seconds), size = 50.dp) {
+                        PlayerRoundButton(Icons.Default.Forward10, stringResource(R.string.seek_forward_seconds), size = 42.dp) {
                             seekPlayback(knownDuration?.let { (position + 10_000L).coerceAtMost(it) } ?: (position + 10_000L))
                         }
                     }
@@ -1863,15 +1866,20 @@ private fun PlayerRoundButton(
 }
 
 @Composable
-private fun PlayerPrimaryButton(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
+private fun PlayerPrimaryButton(
+    icon: ImageVector,
+    contentDescription: String,
+    size: androidx.compose.ui.unit.Dp = 68.dp,
+    onClick: () -> Unit
+) {
     Surface(
-        modifier = Modifier.padding(horizontal = 8.dp),
+        modifier = Modifier.padding(horizontal = 6.dp),
         shape = androidx.compose.foundation.shape.CircleShape,
         color = AniWorldPlayerAccentStrong,
-        shadowElevation = 12.dp
+        shadowElevation = 8.dp
     ) {
-        IconButton(onClick = onClick, modifier = Modifier.size(68.dp)) {
-            Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(38.dp))
+        IconButton(onClick = onClick, modifier = Modifier.size(size)) {
+            Icon(icon, contentDescription, tint = Color.White, modifier = Modifier.size(size * .56f))
         }
     }
 }
@@ -1884,14 +1892,15 @@ private fun PlayerFeatureButton(
     onClick: () -> Unit
 ) {
     var labelVisible by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
     Box(
-        modifier = Modifier.padding(horizontal = 5.dp),
+        modifier = Modifier.padding(horizontal = 2.dp),
         contentAlignment = Alignment.BottomCenter
     ) {
         if (labelVisible) {
             Surface(
-                modifier = Modifier.padding(bottom = 56.dp),
+                modifier = Modifier.padding(bottom = 44.dp),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
                 color = Color.Black.copy(alpha = .94f),
                 shadowElevation = 8.dp
@@ -1906,7 +1915,7 @@ private fun PlayerFeatureButton(
         }
         Surface(
             modifier = Modifier
-                .size(48.dp)
+                .size(38.dp)
                 .semantics {
                     role = Role.Button
                     contentDescription = label
@@ -1931,17 +1940,35 @@ private fun PlayerFeatureButton(
                             }
                         }
                     )
+                }
+                .focusable()
+                .onFocusChanged { focused = it.isFocused }
+                .onPreviewKeyEvent { event ->
+                    val keyEvent = event.nativeKeyEvent
+                    if (keyEvent.action != KeyEvent.ACTION_DOWN || keyEvent.repeatCount > 0) {
+                        false
+                    } else when (keyEvent.keyCode) {
+                        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                            onClick()
+                            true
+                        }
+                        else -> false
+                    }
                 },
             shape = androidx.compose.foundation.shape.CircleShape,
-            color = if (active) AniWorldPlayerAccent.copy(alpha = .34f) else AniWorldPlayerControl.copy(alpha = .96f),
-            shadowElevation = if (active) 7.dp else 2.dp
+            color = when {
+                focused -> AniWorldPlayerAccentStrong
+                active -> AniWorldPlayerAccent.copy(alpha = .34f)
+                else -> AniWorldPlayerControl.copy(alpha = .96f)
+            },
+            shadowElevation = if (active || focused) 7.dp else 2.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     icon,
                     contentDescription = label,
                     tint = if (active) AniWorldPlayerAccent else Color.White,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
