@@ -545,7 +545,6 @@ fun AniWorldApp(vm: AppViewModel) {
             savedVolumePercent = st.preferences.savedVolumePercent,
             onSearchAniSkipAnime = vm::searchAniSkipAnime,
             onSelectAniSkipAnime = vm::selectAniSkipAnime,
-            onSubmitAniSkipTime = vm::submitAniSkipTime,
             onVolumeChanged = vm::savePlayerVolume,
             onLanguageChange = { language -> vm.playEpisode(playback.episode, languageOverride = language) },
             onHosterChange = { hoster -> vm.playEpisode(playback.episode, languageOverride = hoster.lang.takeIf { it != Language.UNKNOWN }, hosterOverride = hoster) },

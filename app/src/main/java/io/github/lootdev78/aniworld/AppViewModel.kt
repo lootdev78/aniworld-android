@@ -1315,7 +1315,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val mappingKey = seasonKey(playback.series.slug, playback.episode.season)
                 var mapping = _state.value.preferences.aniSkipMappings[mappingKey] ?: prefs.aniSkipMappings[mappingKey]
                 if (mapping == null) {
-                    val candidate = aniSkipRepository.findConfidentMatch(playback.series.title, playback.episode.season)
+                    val candidate = aniSkipRepository.findExactTitleMatch(playback.series.title)
                     mapping = _state.value.preferences.aniSkipMappings[mappingKey]
                     if (mapping == null && candidate != null) {
                         val candidateMapping = AniSkipAnimeMapping(candidate.malId, candidate.displayTitle, candidate.url)

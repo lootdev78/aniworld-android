@@ -890,6 +890,8 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     var filter by rememberSaveable { mutableStateOf("") }
     var selectedSlugs by remember { mutableStateOf(emptySet<String>()) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var favoriteActions by remember { mutableStateOf<FavoriteEntry?>(null) }
+    val context = LocalContext.current
     val favoritesGridPosition = vm.savedListPosition("favorites:grid")
     val favoritesListPosition = vm.savedListPosition("favorites:list")
     val gridState = rememberLazyGridState(favoritesGridPosition.first, favoritesGridPosition.second)
@@ -927,6 +929,10 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
 
     fun toggleSelection(slug: String) {
         selectedSlugs = selectedSlugs.toMutableSet().apply { if (!add(slug)) remove(slug) }
+    }
+
+    fun onFavoriteLongPress(entry: FavoriteEntry) {
+        if (selectionMode) toggleSelection(entry.slug) else favoriteActions = entry
     }
 
     Column(Modifier.fillMaxSize().nestedScroll(controlsState.nestedScrollConnection)) {
@@ -979,7 +985,7 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                                 watchedCount = st.preferences.watchedCount(entry.slug),
                                 selectionMode = selectionMode,
                                 selected = selected,
-                                onLongClick = { toggleSelection(entry.slug) }
+                                onLongClick = { onFavoriteLongPress(entry) }
                             )
                         }
                     }
@@ -1005,7 +1011,7 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                                 moveDown = if (!selectionMode && st.preferences.favoriteSort == LibrarySort.CUSTOM) ({ vm.moveFavorite(entry.slug, 1) }) else null,
                                 selectionMode = selectionMode,
                                 selected = selected,
-                                onLongClick = { toggleSelection(entry.slug) }
+                                onLongClick = { onFavoriteLongPress(entry) }
                             )
                         }
                     }
@@ -1054,6 +1060,40 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                 confirmDelete = false
             },
             onDismiss = { confirmDelete = false }
+        )
+    }
+    favoriteActions?.let { entry ->
+        AlertDialog(
+            onDismissRequest = { favoriteActions = null },
+            title = { Text(entry.title) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.favorite_context_message))
+                    TextButton(
+                        onClick = {
+                            favoriteActions = null
+                            pinAnimeShortcut(context, entry.asSeries())
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.favorite_action_pin_shortcut))
+                    }
+                    TextButton(
+                        onClick = {
+                            favoriteActions = null
+                            toggleSelection(entry.slug)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(stringResource(R.string.favorite_action_select))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { favoriteActions = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
         )
     }
 }

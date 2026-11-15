@@ -16,6 +16,7 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
+import kotlinx.coroutines.CancellationException
 
 /** Anime title resolver used by the native Android port of synacktraa/ani-skip. */
 data class AniSkipAnime(
@@ -131,32 +132,29 @@ class AniSkipAndroidCore(context: Context) {
             result
         }
 
-    suspend fun findConfidentMatch(title: String, season: Int): AniSkipAnime? {
+    suspend fun findExactTitleMatch(title: String): AniSkipAnime? {
         val clean = title.trim().takeIf(String::isNotBlank) ?: return null
-        val seasonQuery = if (season > 1) "$clean season $season" else clean
-        val results = runCatching { searchAnime(seasonQuery, AniSkipTitleSource.MYANIMELIST) }.getOrElse {
-            if (season > 1) runCatching { searchAnime(clean, AniSkipTitleSource.MYANIMELIST) }.getOrNull().orEmpty()
-            else emptyList()
-        }
-        if (results.isEmpty()) return null
-        val normalized = normalizeTitle(clean)
-        val ranked = results.map { anime ->
-            val titles = listOf(anime.title, anime.englishTitle, anime.japaneseTitle)
-                .filter(String::isNotBlank).map(::normalizeTitle)
-            val score = when {
-                normalized in titles -> 1.0
-                titles.any { it.isNotBlank() && (it.startsWith(normalized) || normalized.startsWith(it)) } -> 0.93
-                else -> titles.maxOfOrNull { tokenSimilarity(normalized, it) } ?: 0.0
+        val failures = mutableListOf<Throwable>()
+        var anyProviderResponded = false
+        val candidates = AniSkipTitleSource.entries.flatMap { source ->
+            try {
+                searchAnime(clean, source).also { anyProviderResponded = true }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                failures += error
+                emptyList()
             }
-            anime to score
-        }.sortedByDescending { it.second }
-        val first = ranked.firstOrNull() ?: return null
-        val secondScore = ranked.getOrNull(1)?.second ?: 0.0
-        val candidateTitle = "${first.first.title} ${first.first.englishTitle}".lowercase(Locale.ROOT)
-        val seasonSignal = season == 1 || Regex("season\\s*${season}\\b").containsMatchIn(candidateTitle) ||
-            Regex("\\b${season}(st|nd|rd|th)\\s+season\\b").containsMatchIn(candidateTitle) ||
-            Regex("\\b${season}\\s+season\\b").containsMatchIn(candidateTitle)
-        return first.first.takeIf { first.second >= 0.93 && first.second - secondScore >= 0.06 && seasonSignal }
+        }
+        if (!anyProviderResponded) {
+            throw IOException("Anime-Lookup ist momentan nicht erreichbar.", failures.firstOrNull())
+        }
+        val exactMatches = candidates.filter { anime ->
+            sequenceOf(anime.title, anime.englishTitle, anime.japaneseTitle)
+                .filter(String::isNotBlank)
+                .any { aniWorldTitleEquals(clean, it) }
+        }.distinctBy(AniSkipAnime::malId)
+        return exactMatches.singleOrNull()
     }
 
     suspend fun getSkipTimes(malId: Int, episodeNumber: Int, episodeLengthSeconds: Double): List<AniSkipSegment> =
@@ -455,31 +453,19 @@ class AniSkipAndroidCore(context: Context) {
     private fun extractMessage(raw: String): String = runCatching { JSONObject(raw).optString("message") }
         .getOrNull().orEmpty().take(180)
 
-    private fun normalizeTitle(value: String): String = value.lowercase(Locale.ROOT)
-        .replace(Regex("season\\s+(\\d+)"), " $1 ")
-        .replace(Regex("[^a-z0-9]+"), " ")
-        .trim().replace(Regex("\\s+"), " ")
-
-    private fun tokenSimilarity(a: String, b: String): Double {
-        if (a.isBlank() || b.isBlank()) return 0.0
-        if (a == b) return 1.0
-        val left = a.split(' ').filter(String::isNotBlank).toSet()
-        val right = b.split(' ').filter(String::isNotBlank).toSet()
-        if (left.isEmpty() || right.isEmpty()) return 0.0
-        val intersection = left.intersect(right).size.toDouble()
-        return (2.0 * intersection) / (left.size + right.size).toDouble() - abs(left.size - right.size) * 0.015
-    }
-
     companion object {
         private const val ANISKIP_V1 = "https://api.aniskip.com/v1"
         private const val ANISKIP_V2 = "https://api.aniskip.com/v2"
         private const val ALLANIME_API = "https://api.allanime.day/api"
-        private const val APP_USER_AGENT = "LootDev78-AniWorld-Android/1.8 (Android; AniSkip Kotlin port)"
+        private const val APP_USER_AGENT = "LootDev78-AniWorld-Android/${BuildConfig.VERSION_NAME} (Android; AniSkip Kotlin port)"
         private const val MAL_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0"
         private val ANIME_METADATA_BASES = listOf("https://api.tenrai.org/v1", "https://api.jikan.moe/v4")
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
+
+internal fun aniWorldTitleEquals(aniWorldTitle: String, aniSkipTitle: String): Boolean =
+    aniWorldTitle.trim().equals(aniSkipTitle.trim(), ignoreCase = true)
 
 /** Shared seek calculation matching upstream ani-skip's endTime - offset behavior. */
 object AniSkipPlaybackLogic {
@@ -497,7 +483,7 @@ class AniSkipRepository(context: Context) {
 
     suspend fun searchAnime(query: String): List<AniSkipAnime> = core.searchAnime(query)
     suspend fun searchAnime(query: String, source: AniSkipTitleSource): List<AniSkipAnime> = core.searchAnime(query, source)
-    suspend fun findConfidentMatch(title: String, season: Int): AniSkipAnime? = core.findConfidentMatch(title, season)
+    suspend fun findExactTitleMatch(title: String): AniSkipAnime? = core.findExactTitleMatch(title)
     suspend fun getSkipTimes(malId: Int, episodeNumber: Int, episodeLengthSeconds: Double): List<AniSkipSegment> =
         core.getSkipTimes(malId, episodeNumber, episodeLengthSeconds)
     fun rememberSubmittedSkipTime(malId: Int, episodeNumber: Int, episodeLengthSeconds: Double, segment: AniSkipSegment) =

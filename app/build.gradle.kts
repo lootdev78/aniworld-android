@@ -13,8 +13,8 @@ android {
         applicationId = "io.github.lootdev78.aniworld"
         minSdk = 26
         targetSdk = 36
-        versionCode = 67
-        versionName = "1.8.0-aniskip-core"
+        versionCode = 68
+        versionName = "1.8.1"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -106,5 +106,6 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.google.play.services.cast.framework)
     implementation(libs.androidx.mediarouter)
+    testImplementation(libs.junit)
 
 }

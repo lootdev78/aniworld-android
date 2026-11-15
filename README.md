@@ -1,310 +1,110 @@
-# AniWorldAndroid
+<div align="center">
 
-Benutzerfreundlicher Android-Port des `aniworld-cli`-Workflows mit Kotlin, Jetpack Compose, Material 3, Room und AndroidX Media3/ExoPlayer.
+# 🌸 AniWorld Android
 
+### Anime · Filme · Folgen — deine Bibliothek und Wiedergabe in einer Android-App
 
-## 1.8.0 Native AniSkip-Core-Port
+[![Android build](https://github.com/lootdev78/aniworld-android/actions/workflows/android-debug.yml/badge.svg?branch=main)](https://github.com/lootdev78/aniworld-android/actions/workflows/android-debug.yml)
+[![License](https://img.shields.io/badge/license-GPL--3.0--or--later-e84b63)](LICENSE)
+[![Android 8+](https://img.shields.io/badge/Android-8.0%2B-3ddc84)](#requirements-anforderungen)
 
-- portiert den `synacktraa/ani-skip`-Ablauf aus Shell/mpv nach Kotlin und AndroidX Media3; es werden weder Shell-Ausführung noch mpv vorausgesetzt
-- verwendet MyAnimeList-Prefixsuche als Standard-Auflösung und bietet AllAnime als alternative Quelle; beide werden auf eine MAL-ID aufgelöst, die AniSkip erwartet
-- fragt die ursprünglichen AniSkip-v1-Opening-/Ending-Zeitstempel ab und ergänzt sie über die aktuelle v2-API um Mixed-OP/ED und Recaps
-- übernimmt den Upstream-Skip-Versatz: Das Skip-Ende wird um 0 bis 5 Sekunden vorgezogen, nicht nach hinten verschoben
-- bewahrt pro Staffel die explizite MAL-Zuordnung sowie Favoriten, Verlauf, Wiedergabeposition, Lautstärkepräferenz und Auto-Next in den vorhandenen App-Daten
-- enthält Upstream-Copyright-/GPL-3.0-Hinweis unter `THIRD_PARTY_NOTICES/ani-skip`
+**A community-built, native Android client inspired by the AniWorld browsing experience.**
 
-## 1.7.9 Cast-/Hotspot-Erweiterung
+**Ein unabhängiger, nativer Android-Client im Stil des AniWorld-Browsererlebnisses.**
 
-- ergänzt einen lokalen, nur im LAN erreichbaren Cast-Stream-Relay für Hoster-Streams mit Referer-, Cookie-, User-Agent- und weiteren Request-Headern
-- leitet Byte-Range-Anfragen weiter und schreibt HLS-Varianten, Segmente, Schlüssel sowie Untertitel-URIs auf den Relay um; DASH-BaseURLs und URL-Attribute werden ebenfalls angepasst
-- verwendet für Chromecast weiterhin das offizielle Google-Cast-Framework und bindet AndroidX MediaRouter 1.8.1 explizit ein
-- ermittelt die ausgewählte Chromecast-Empfängeradresse und stellt den Relay über die passende WLAN- oder Hotspot-Gateway-Adresse bereit
-- erweitert FCast um die Standard-mDNS-Erkennung über Android NSD sowie parallele TCP-, /24-Subnetz- und Nachbartabellen-Fallbacks
-- behält die mehrstufige DLNA-/UPnP-Erkennung per SSDP-Multicast, schnittstellengebundener Suche, Broadcast, Unicast-Subnetzscan, Nachbartabelle und manueller IP bei
-- fordert die Android-Berechtigung „Geräte in der Nähe“ vor lokalen Cast-Sockets und der Chromecast-Auswahl an
-- startet Miracast ausschließlich über die geschützte Android-/Hersteller-Systemauswahl; AirPlay und AirServer bleiben ausgeschlossen
-- startet Relay, Google Cast und Discovery ausschließlich nach einer Cast-Aktion, sodass die normale Hoster-Wiedergabe nicht davon abhängt
+</div>
 
-## 1.7.8 Wiedergabe-Hotfix
+> **Unofficial / Inoffiziell:** This project is not affiliated with or endorsed by AniWorld. /
+> Dieses Projekt ist nicht mit AniWorld verbunden und wird nicht von AniWorld unterstützt.
 
-- Lokale Hoster-Wiedergabe startet wieder ohne Google-Cast-Initialisierung.
-- Chromecast wird erst nach einem bewussten Klick auf das Chromecast-Symbol geladen.
-- Fehler beim Play-Services-/MediaRouter-Setup werden abgefangen und beenden den Player nicht mehr.
-- Die wiederholte Chromecast-Vorbereitung bei jeder Positionsaktualisierung wurde entfernt.
+---
 
-## 1.7.7 Einstellungen, Startseite und erweitertes Casting
+## English
 
-- strukturiert die Einstellungen in klar getrennte Material-3-Bereiche mit überarbeiteten Bezeichnungen und Hilfetexten
-- prüft beim Öffnen der Einstellungen den lokalen Metadatenbestand und aktiviert „Vorhandene löschen“ sowie „Exportieren“ nur bei tatsächlich vorhandenen Daten
-- ordnet die Metadatenaktionen als Aktualisieren, Vorhandene löschen, Exportieren und Importieren an
-- ergänzt einen globalen Diagnose-/Logging-Schalter und eine eigene Vollbild-Diagnoseansicht statt des bisherigen Popups
-- zeigt Favoriten als frei konfigurierbaren Startseitenbereich und speichert Sichtbarkeit sowie Reihenfolge aller Startseitenbereiche dauerhaft
-- belässt die vorhandenen News-Karten unverändert, öffnet Artikel aber in einem isolierten normalen WebView ohne Challenge-, Cloudflare- oder Medien-Extractor-Logik
-- erweitert den Player um offizielles Google Cast für Chromecast, FCast als offenes Cast-Protokoll und den Android-Systemeinstieg für Miracast; AirPlay/AirServer sind nicht enthalten
-- erweitert DLNA/UPnP- und FCast-Erkennung um direkte lokale Subnetz-/Nachbar-Fallbacks für Geräte, die als Clients mit dem Handy-Hotspot verbunden sind
-- begrenzt parallele Anime-Detailabrufe bei der Katalog-Metadatenaktualisierung auf maximal vier gleichzeitig
+AniWorld Android is a Kotlin app built with Jetpack Compose and AndroidX Media3. It brings anime discovery, a locally stored library, episode playback, and optional casting into a mobile interface with a dark, red-accented visual style.
 
-## 1.7.6 Offline-Metadaten und Erststart-Berechtigung
+### Features
 
-- blendet Suche, Sortierung und Filter in Favoriten und Verlauf erst ein, sobald tatsächlich Einträge vorhanden sind
-- überarbeitet die rechte `#`-/A–Z-Leiste als deutlich sichtbare, vollhohe Schnellnavigation bei alphabetischer Sortierung
-- exportiert Katalog- und optional gespeicherte Startseitenmetadaten über den Android-Dokumentanbieter als JSON-Datei
-- importiert eine ausgewählte Metadatendatei über den Android-Dokumentanbieter und schaltet den Katalog danach sofort für die Offline-Nutzung frei
-- ergänzt einen umschaltbaren Offline-Modus für die Startseite; im Offline-Modus wird der letzte gespeicherte Feed verwendet und nur über die manuelle Einstellungsaktion neu gecrawlt
-- fragt ab Android 13 die Benachrichtigungsberechtigung beim ersten App-Start einmalig über den Android-Systemdialog ab
+- **Discover:** live home feed, anime news, searchable catalog, genres, A–Z navigation, seasons, movies, and episodes.
+- **Personal library:** favorites and viewing progress stored locally; grid, compact, and detailed views; sorting, search, and resume position.
+- **Offline and backups:** import/export catalog metadata, import a library backup, and separately back up or restore app settings. Restore behavior is shown before applying a backup.
+- **Appearance:** dark/light theme support, Android dynamic colors, preset accent colors, a custom color picker, and draggable home-section ordering.
+- **Playback:** native Media3 player, persistent progress, language/hoster selection, next-episode countdown, picture-in-picture, and controls for brightness and volume.
+- **AniSkip:** OP/ED and other community skip ranges, automatic skipping, and manual MAL mapping. Automatic mapping is allowed only when an AniWorld title equals a title returned by MyAnimeList or AllAnime, ignoring letter case only; punctuation, accents, and wording are not normalized. Choose a result manually when there is no unique exact match.
+- **Casting:** Google Cast, Samsung Smart View, DLNA/UPnP (including Xbox), FCast, and the Android system entry point for Miracast.
+- **Anime shortcuts:** pin a shortcut to an anime from its detail page or from the favorite list's long-press actions.
+- **News:** articles open in an in-app WebView with normal page scrolling, touch gestures, and zoom.
 
-## 1.7.5 Hotspot-Cast und Bibliotheksleisten
+The app does not automatically bypass site challenges. If a site asks for verification, the user must complete it.
 
-- erweitert Xbox-/DLNA-Erkennung für Android-Hotspots um schnittstellengebundene SSDP-Suche, Subnetz-Broadcast, lokalen /24-Unicast-Fallback und bekannte Hotspot-Nachbarn
-- ergänzt im Player eine manuelle Xbox-IP-Suche als Fallback, wenn ein Hotspot Multicast unterdrückt
-- lässt Such-, Filter- und Sortierbereiche in Katalog, Favoriten und Verlauf mit der Scrollrichtung weich ein- und ausfahren
-- zeigt bei alphabetischer Sortierung in Favoriten und Verlauf dauerhaft die vollständige `#`-/A–Z-Schnellleiste wie im Katalog
-- behält zeitliche und benutzerdefinierte Schnellnavigation für die anderen Sortierungen bei
+### Requirements & Anforderungen
 
-## 1.7.4 Xbox-Casting
+- Android 8.0 (API 26) or later.
+- App version: `1.8.1` (`versionCode` 68).
+- Build environment: JDK 17 and Android SDK 36.
+- Package: `io.github.lootdev78.aniworld`.
 
-- ergänzt im Player eine Cast-Schaltfläche für Xbox One sowie Xbox Series S/X über DLNA/UPnP AVTransport
-- sucht kompatible Renderer per SSDP im lokalen Netzwerk und priorisiert erkannte Xbox-Geräte
-- sendet die aktuelle Stream-URL inklusive Titel-Metadaten an die Xbox und startet an der aktuellen Wiedergabeposition
-- unterstützt Fernsteuerung für Wiedergabe/Pause, Stop, Zeitleisten-Suche sowie Rückkehr auf das Android-Gerät
-- lässt die globale HTTPS-only-Richtlinie unverändert; lokale UPnP-HTTP-Endpunkte werden über einen isolierten Socket-Client angesprochen
-- fordert die Berechtigung für Geräte in der Nähe erst beim Öffnen der Cast-Auswahl an
+### Build, runner status & releases
 
-## 1.7.3 Picture-in-Picture, Anime-News und Metadaten-Benachrichtigung
+The **Android Production-Debug Candidate** workflow uses a GitHub-hosted Ubuntu runner, installs JDK 17 and Android SDK 36, runs unit tests, then assembles a clean debug APK. It is configured for pushes and pull requests targeting `main`, plus manual `workflow_dispatch`; feature-branch pushes alone do not trigger it. Successful runs upload the APK and SHA-256 file as an Actions artifact for 14 days.
 
-- konsolidiert den vollständigen Funktionsumfang der vorherigen Projektstände in einer gemeinsamen Codebasis
-- behebt den Kotlin-Compilerfehler im generischen DataStore-Migrationsparser: Callback-Funktionen werden nicht mehr fälschlich als `inline` durch eine Java-Iteration gereicht
-- enthält einen statischen Release-Gate-Checker für Paket, Ressourcen, Manifest, Featuremarker und bekannte Regressionen
-- ergänzt Bild-in-Bild im internen Player, eine dauerhaft sichtbare und verschiebbare Wiedergabezeitleiste sowie reine Icon-Aktionen für Neustart und ±10 Sekunden
-- liest den originalen Startseitenabschnitt „Anime News“ aus und ordnet Bilder artikelgenau zu; fehlende Bilder werden über das Open-Graph-Bild des verlinkten Artikels ergänzt
-- zeigt den Katalog-Metadatenimport als laufende Android-Systembenachrichtigung mit Fortschritt, Abbrechen und Abschlussstatus
-- enthält eine CI-Pipeline, die den statischen Gate, einen sauberen Debug-Build und Android Lint ausführt und anschließend APK plus SHA-256-Prüfsumme bereitstellt
-- behält den Debug-Paket-Suffix `.debug`; es werden keine privaten Signing-Schlüssel ausgeliefert
+[Open workflow and runner status](https://github.com/lootdev78/aniworld-android/actions/workflows/android-debug.yml) · [Open Releases](https://github.com/lootdev78/aniworld-android/releases)
 
-## Version
+There is currently no published GitHub Release. An Actions artifact is a build result, not a signed store release. The repository has no checked-in changelog; its current workflow does not generate changelog files or release notes.
 
-`1.8.0-aniskip-core`
+To build locally:
 
-## Paket und Projekt
-
-- Android-Paket/Namespace: `io.github.lootdev78.aniworld`
-- Projekt-Credits und Repository sind direkt in den Einstellungen verlinkt
-- Sprachvarianten zeigen Länderflaggen für Deutsch, Englisch und Japanisch
-
-## App-Icon und Sprachen
-
-- Launcher-Icon für alle klassischen Android-Dichten
-- adaptives Icon und Round Icon ab Android 8
-- monochromes Themed Icon ab Android 13
-- Icon-Gestaltung auf Basis des aktuellen AniWorld-Wordmarks
-- sämtliche sichtbaren App-Texte als Android-Stringressourcen
-- Englisch als Standardsprache in `values/` und `values-en/`
-- Deutsch in `values-de/`
-- Android-Sprachauswahl über `locales_config.xml` für Deutsch und Englisch
-
-## Oberfläche
-
-- Streaming-Startseite im Netflix-/Prime-Stil
-- Hero-Bereich und horizontale Inhaltsreihen
-- „Beliebt bei AniWorld“
-- „Die 50 neuesten Episoden“
-- „Neue Animes“
-- „Derzeit beliebt“
-- „Das sehen andere AniWorld Nutzer“
-- eigene Top-50-/Meistgesehen-Sammlung
-- Vollansichten für alle Startseiten-Sammlungen über die anklickbaren Abschnittsüberschriften
-- persönliche „Weiterschauen“-Reihe
-- persönliche Favoriten-Reihe auf der Startseite
-- dauerhaft gespeicherte Sichtbarkeit und Reihenfolge aller Startseitenbereiche
-- reduzierte Navigation ohne obere App-Leiste; schwebende Bottom Bar auf Smartphones und Navigation Rail auf größeren Displays
-- frei verschiebbarer Einstellungsbutton mit begrenzter, rotationsfester DataStore-Position und Rücksetzfunktion
-- Material-3-Dark-Mode, optional dynamische Android-Farben sowie eine feste Akzentfarbpalette in den Einstellungen
-- Pull-to-refresh, Skeleton-Ladezustände, leere Zustände und verständliche Fehlermeldungen
-- Cover, Anime-/Film-/Folgentitel, Genres, Veröffentlichungsjahr, Altersangabe, Beschreibungen und Fortschrittsanzeigen
-- alle Sucheingaben mit bis zu drei direkten Treffervorschlägen und einer Löschen-Schaltfläche am rechten Rand
-- Katalogsuche mit gespeicherten Suchbegriffen, A–Z- und Genre-Filter
-- durchgehend scrollbarer Katalog ohne sichtbare Seitennavigation, mit A–Z-Schnellleiste am rechten Rand
-
-## Bibliothek und Verlauf
-
-- Favoriten per Herz
-- Favoritenliste mit alphabetischer, zeitlicher oder eigener Sortierung
-- eigene Verlaufseite mit denselben Raster-, Kompakt- und Detailansichten wie Favoriten
-- angefangen/gesehen-Markierungen für Folgen und Filme
-- Staffelstatus und Wiedergabefortschritt als `HH:MM:SS – HH:MM:SS`; Position und Laufzeit werden offline gespeichert
-- Verlaufsfilter für alle, begonnene, vollständig gesehene und favorisierte Inhalte
-- zuletzt verwendete Suchbegriffe
-- gespeicherte Katalogsuchbegriffe mit verzögerter Speicherung
-- Wiederherstellung der zuletzt geöffneten Serie und Staffel nach einem Prozess-Neustart
-
-Die Nutzerdaten werden ausschließlich lokal in Room und DataStore gespeichert. Android-Backup, Geräteübertragung, Cloud-Backup sowie Export/Import sind nicht enthalten; `android:allowBackup` ist deaktiviert.
-
-## Offline und Performance
-
-- Startseite, Anime-Details, Staffeln und Episodenseiten werden live geladen und nicht als Webseiten-Metadaten gecacht
-- Room speichert für den alphabetischen Katalog Titel, URL, Beschreibung, Cover-/Poster-URL und Genres offline; Startseitenmetadaten bleiben live
-- vollständige Webseiten werden nicht offline gecacht; dauerhaft gespeichert werden nur die für den Katalog benötigten strukturierten Metadaten
-- manuell startbarer WorkManager-Hintergrundauftrag für die vollständige Katalog-Metadatenaktualisierung; bis zum abgeschlossenen Erstimport zeigt der Katalog Skeletons und deaktivierte Bedienelemente
-- Fortschritt und Abbrechen ausschließlich über eine Android-Systembenachrichtigung; der Auftrag läuft bei geschlossener Ansicht weiter
-- Coil-Disk- und Memory-Cache mit anime- und URL-spezifischen Cover-Schlüsseln
-- zentrale Filterung von Logo-, Branding-, Header-, Placeholder-, Tracking- und unplausibel dimensionierten Bildern
-- Rücksetzfunktion für gespeicherte Coverdaten, Katalogseiten, Metadaten sowie Coil-Bildcache
-- begrenzte parallele Katalog- und Metadatenanfragen; Anime-Detailmetadaten werden mit maximal vier gleichzeitigen Jobs verarbeitet
-- automatische Wiederholungsversuche mit Backoff und eine kurze DNS-Sperre gegen Retry-Kaskaden
-- der vollständige Katalog wird erst beim Öffnen des Katalog-Tabs geladen, damit der App-Start keine tausenden Kataloganfragen auslöst
-
-## AniWorld-Workflow
-
-- Suche über `/ajax/search`
-- Serien-, Staffel-, Film- und Episodennavigation
-- Startseiten- und Katalogparser
-- Sprach- und Hosterprioritäten
-- gruppierte Hoster-Auswahl nach Sprache, direkter bevorzugter Hoster und interner Medien-Detector
-- automatischer Hoster-Fallback und optionale Stream-Erreichbarkeitsprüfung; Hoster mit Browserprüfung werden zunächst übersprungen
-- Resolver-Diagnose
-- gezielte Hoster-WebView für eine eventuell erforderliche CAPTCHA-/Turnstile-Prüfung, nur wenn kein direkter Alternativhoster funktioniert
-- gemeinsamer Cookie-Speicher für WebView und OkHttp
-- Fortsetzen der unterbrochenen Aktion nach erfolgreicher manueller Verifizierung
-- sichtbare Aktion „Prüfung abgeschlossen – Hoster erneut versuchen“ übernimmt die WebView-Session und startet denselben Hoster erneut
-- Erkennung direkt angeforderter HLS-, DASH-, SmoothStreaming- und progressiver Medien-URLs erst nach vollständig geladener Hoster-Seite
-- getrennte AniWorld-Verifizierung und Hoster-WebView, einklappbare und gespeicherte Session-/Medienbereiche
-- nativer, konfigurierbarer WebView-Filter für typische Werbung, Tracking, Popups und Weiterleitungen sowie temporäre Domain-Ausnahme
-- Übergabe von Referer, User-Agent und vorhandenen Session-Cookies an Media3
-- optionaler Start in einer installierten externen Video-App; die Funktion muss zuvor in den Einstellungen aktiviert werden
-
-Die App löst Web-Challenges nicht automatisch und umgeht keine Schutzprüfung. Der Nutzer führt eine eventuell angezeigte Prüfung selbst durch. Der Medien-Detector verarbeitet ausschließlich bereits sichtbare HTTP(S)-Anfragen mit einem eindeutig Media3-kompatiblen Format. Er entschlüsselt keine Skripte, rekonstruiert keine Tokens und umgeht keine Zugriffskontrollen.
-
-## Player
-
-Die Wiedergabe läuft direkt in der App über Media3/ExoPlayer. Der Player ist bewusst reduziert:
-
-- erster Tipp bei ausgeblendeter Oberfläche: Steuerung einblenden; weiterer Tipp: Pause oder Weiter
-- vertikale Geste links: Bildschirmhelligkeit
-- vertikale Geste rechts: Medienlautstärke
-- HLS-, DASH-, SmoothStreaming- und progressive Media3-Wiedergabe
-- Wiedergabe über einen `MediaSessionService` mit offizieller Android-Medienbenachrichtigung
-- Titel/Folge, Pause/Wiedergabe, Stop sowie vorherige/nächste Folge in der Systemoberfläche
-- kontextbezogene `POST_NOTIFICATIONS`-Abfrage ab Android 13
-- Schließen und lokales Speichern des realen Fortschritts
-- vorherige/nächste Folge innerhalb der geöffneten Staffel
-- Wechsel von Sprache und Hoster direkt in der eingeblendeten Player-Steuerung
-- dauerhaft sichtbare Wiedergabezeitleiste bei eingeblendeten Steuerelementen mit aktuellem Zeitpunkt, Videolänge und verschiebbarem Positionspunkt
-- zentrale Icon-Aktionen für zehn Sekunden zurück/vor; kein konkurrierender Doppeltipp-Seek
-- reine Icon-Aktionsleiste; langes Gedrückthalten zeigt die jeweilige Funktion bis zum Loslassen
-- Icon zum Starten von Anfang und optional einblendbare Picture-in-Picture-Schaltfläche
-- DLNA/UPnP-Casting einschließlich Xbox mit Gerätesuche, Wiedergabe/Pause, Remote-Suche und Trennen/Fortsetzen
-- gemeinsamer dynamischer Cast-Dialog für Google Cast, Samsung Smart View, DLNA/UPnP, Xbox und FCast
-- gleichnamige Geräte werden gruppiert; bei mehreren Protokollen kann die Verbindungsmethode gewählt werden
-- Android- und Empfängerlautstärke werden bei unterstützten Protokollen bestmöglich bidirektional synchronisiert
-- FCast-Wiedergabe als offenes Cast-Protokoll sowie Miracast-Einstieg über die Android-Systemauswahl
-- lokaler Subnetz- und Nachbartabellen-Fallback für DLNA/FCast-Geräte am Handy-Hotspot
-- optionales Auto-Next mit achtsekündigem, abbrechbarem Countdown
-- stabilisierte Helligkeits-/Lautstärkegesten mit seitlichen Zonen und Bewegungsschwelle
-- automatisch ausblendende Player-Oberfläche während laufender Wiedergabe; Interaktion oder Pause blendet sie wieder ein
-- Rückkehr aus dem Player in die zuletzt geöffnete Staffel- oder Filmliste einschließlich Scrollposition
-
-Der frühere Pair-Code-/Webplayer-Host wurde vollständig aus Quellcode und Einstellungen entfernt. Es gibt weiterhin keine Qualitäts- oder Geschwindigkeitsmenüs. Picture-in-Picture ist über das Player-Icon verfügbar. Unterstützt werden DLNA/UPnP-Renderer einschließlich Xbox, Chromecast über Google Cast, FCast sowie Miracast über die Android-Systemauswahl. Lokale Renderer können sich im selben WLAN oder als Clients am vom Android-Gerät bereitgestellten Hotspot befinden. AirPlay und AirServer sind nicht enthalten.
-
-## Navigation
-
-Die App verwendet Navigation Compose für Start, Katalog, Favoriten, Verlauf und Details. Die separate Suchseite wurde entfernt; Suche und Filter befinden sich direkt im Katalog. Ein lokaler Deep Link kann eine Serie öffnen:
-
-```text
-aniworldapp://anime/<slug>
+```shell
+./gradlew :app:assembleDebug
 ```
 
-## Cover-, Info- und Listenansichten
+On Windows, run `.\gradlew.bat :app:assembleDebug`.
 
-- AniWorld-Cover werden bevorzugt aus den eigentlichen Cover-/Poster-Elementen gelesen; Logo-, Icon-, Tracking- und Placeholder-Bilder werden verworfen.
-- Katalogeinträge zeigen die echten AniWorld-Cover beziehungsweise Poster und können als kompakte Liste, Detail-Liste oder Raster angezeigt werden.
-- Favoriten unterstützen dieselben drei Ansichtsarten; die Auswahl wird dauerhaft gespeichert.
-- Optionale Zähler werden erst ab einem Wert von 1 angezeigt.
-- Langes Drücken auf einen Anime lädt nur aktuelle Anime-Informationen. Langes Drücken auf eine Episode zeigt Anime- und Episodeninformationen.
-- Startseitenbereiche zeigen zunächst zehn Einträge; Überschrift und „Mehr anzeigen“ öffnen eine eigene vollflächige, deduplizierte Sammlungsseite ohne Bottom-Sheet-Überlauf.
-- Die Detailseite besitzt einen kompakten Netflix-artigen Bildheader, Verlauf für lesbaren Text, direkte Wiedergabe/Fortsetzen-Aktion, Staffelchips und kompakte Episodenzeilen.
-- Detailinformationen können Jahr, Altersfreigabe, Genres, Regie, Produzenten, Darsteller, Land, IMDb und Nutzerbewertung enthalten, sofern AniWorld diese Angaben bereitstellt.
+### Privacy and attribution
 
-## Webfilter-Hinweis
+Favorites, playback progress, and preferences are stored on-device. Online features contact the respective sites and APIs. See [`LICENSE`](LICENSE) for the application license, project references, direct dependency notices, trademark note, and the unresolved terms for the bundled Samsung Smart View AAR.
 
-Der integrierte Filter ist eine native, bewusst konservative WebView-Implementierung. Eine unveränderte 1:1-Ausführung der Browser-Erweiterung uBlock Origin ist in Android WebView nicht möglich; das Projekt behauptet daher keine vollständige uBlock-Origin-Kompatibilität. Die vorhandenen Filterkategorien können in den Einstellungen einzeln aktiviert und bei Hoster-Problemen temporär für die aktuelle Domain ausgesetzt werden.
+## Deutsch
 
-## Projektstruktur
+AniWorld Android ist eine Kotlin-App mit Jetpack Compose und AndroidX Media3. Anime-Entdeckung, eine lokal gespeicherte Bibliothek, Folgenwiedergabe und optionales Casting sind in einer mobilen Oberfläche mit dunklem, rot akzentuiertem Erscheinungsbild vereint.
 
-```text
-AniWorldAndroid/
-├── app/
-│   ├── schemas/          # Room-Schemata beim lokalen Build
-│   └── src/main/         # Compose-UI, Datenbank, Parser, Resolver und Player
-├── gradle/               # Version Catalog und Wrapper
-├── .github/workflows/ # CI für Prüfung, Lint und Debug-APK
-├── tools/             # statisches Release-Gate
-├── FEATURE_MATRIX.md
-├── PRODUCTION_AUDIT_REPORT.md
-├── THIRD_PARTY_NOTICES/
-├── build.gradle.kts
-├── settings.gradle.kts
-├── gradlew
-└── gradlew.bat
+### Funktionen
+
+- **Entdecken:** Live-Startseite, Anime-News, durchsuchbarer Katalog, Genres, A–Z-Navigation, Staffeln, Filme und Folgen.
+- **Persönliche Bibliothek:** lokal gespeicherte Favoriten und Wiedergabefortschritte; Raster-, Kompakt- und Detailansicht; Sortierung, Suche und Fortsetzen der Wiedergabe.
+- **Offline und Sicherungen:** Katalog-Metadaten importieren/exportieren, Bibliothekssicherung importieren sowie App-Einstellungen separat sichern und wiederherstellen. Vor dem Wiederherstellen wird die Auswirkung angezeigt.
+- **Darstellung:** helle/dunkle Themes, dynamische Android-Farben, Akzentfarbpaletten, eigener Farbwähler und per Drag-and-drop sortierbare Startseitenbereiche.
+- **Wiedergabe:** nativer Media3-Player, gespeicherter Fortschritt, Sprach-/Hosterwahl, Countdown zur nächsten Folge, Bild-in-Bild sowie Helligkeits- und Lautstärkesteuerung.
+- **AniSkip:** Community-Zeitbereiche für OP/ED und weitere Segmente, automatisches Überspringen und manuelle MAL-Zuordnung. Automatisch wird nur zugeordnet, wenn ein AniWorld-Titel mit einem von MyAnimeList oder AllAnime gelieferten Titel übereinstimmt; Groß-/Kleinschreibung wird ignoriert, Satzzeichen, Akzente und Wortlaut bleiben unverändert. Ohne eindeutigen exakten Treffer ist eine manuelle Auswahl möglich.
+- **Casting:** Google Cast, Samsung Smart View, DLNA/UPnP (einschließlich Xbox), FCast und der Android-Systemeinstieg für Miracast.
+- **Anime-Verknüpfungen:** Launcher-Shortcut zur Serie über die Detailseite oder das Langdruckmenü der Favoritenliste hinzufügen.
+- **News:** Artikel öffnen in einer integrierten WebView mit normalem Scrollen, Touch-Gesten und Zoom.
+
+Die App umgeht Website-Prüfungen nicht automatisch. Eine gegebenenfalls angezeigte Prüfung muss der Nutzer selbst abschließen.
+
+### Anforderungen
+
+- Android 8.0 (API 26) oder neuer.
+- App-Version: `1.8.1` (`versionCode` 68).
+- Build-Umgebung: JDK 17 und Android SDK 36.
+- Paket: `io.github.lootdev78.aniworld`.
+
+### Build, Runner-Status und Releases
+
+Der Workflow **Android Production-Debug Candidate** nutzt einen von GitHub gehosteten Ubuntu-Runner, installiert JDK 17 und Android SDK 36, führt Unit-Tests aus und erstellt anschließend ein sauberes Debug-APK. Auslöser sind Pushes und Pull Requests nach `main` sowie `workflow_dispatch`; Pushes auf Feature-Branches allein starten den Workflow nicht. Erfolgreiche Läufe stellen APK und SHA-256-Datei 14 Tage als Actions-Artefakt bereit.
+
+[Workflow- und Runner-Status öffnen](https://github.com/lootdev78/aniworld-android/actions/workflows/android-debug.yml) · [Releases öffnen](https://github.com/lootdev78/aniworld-android/releases)
+
+Aktuell ist kein GitHub-Release veröffentlicht. Ein Actions-Artefakt ist ein Build-Ergebnis und kein signiertes Store-Release. Im Repository liegt keine Changelog-Datei; der derzeitige Workflow erzeugt weder Changelog-Dateien noch Release Notes.
+
+Lokal bauen:
+
+```shell
+./gradlew :app:assembleDebug
 ```
 
-Es ist kein mpv-Modul enthalten. Die CI-Konfiguration erzeugt ausschließlich ein Debug-APK; private Signing-Schlüssel und Release-Signaturen sind absichtlich nicht enthalten.
+Unter Windows: `.\gradlew.bat :app:assembleDebug`.
 
-## Build
+### Datenschutz und Hinweise
 
-Voraussetzungen:
-
-- Android Studio
-- JDK 17
-- Android SDK 36
-- Internetzugriff beim ersten Gradle-Sync
-
-Statischer Projektcheck:
-
-```text
-python3 tools/verify_project.py
-```
-
-Linux/macOS:
-
-```text
-./gradlew --no-daemon --stacktrace clean :app:assembleDebug
-```
-
-Windows:
-
-```text
-gradlew.bat --no-daemon --stacktrace clean :app:assembleDebug
-```
-
-CI-Debug-Build:
-
-Die Workflow-Datei `.github/workflows/android-debug.yml` führt den statischen Gate, `:app:assembleDebug` und `:app:lintDebug` aus. Das erzeugte Debug-APK und seine SHA-256-Datei werden als GitHub-Actions-Artefakt hochgeladen.
-
-Release-Build:
-
-```text
-./gradlew assembleRelease
-```
-
-Für eine eigene Veröffentlichung muss lokal ein persönlicher Signing-Key in Android Studio konfiguriert werden. Private Signaturschlüssel sind absichtlich nicht im Projekt enthalten.
-
-## Build-Konfiguration
-
-- Android Gradle Plugin `8.13.2`
-- Gradle `8.14.3`
-- Kotlin `2.2.21`
-- Room `2.8.4`
-- Navigation Compose `2.9.8`
-- Media3 `1.10.1`
-- `compileSdk` / `targetSdk` 36
-- `minSdk` 26
-
-## Rechtliches
-
-Dieses Projekt hostet keine Medien. Verwende es nur für Inhalte und Quellen, für die du berechtigt bist, und beachte die Nutzungsbedingungen der beteiligten Dienste sowie die Lizenz des zugrunde liegenden Projekts.
-
-## Build-Hinweis für RV2IDE / alte Gradle-Caches
-
-Diese Version verwendet Kotlin **2.2.21**. Alle Kotlin-Stdlib-Varianten werden ebenfalls auf `2.2.21` festgesetzt, damit Gradle keine inkompatible `2.4.x`-Metadatenversion auswählt.
-
-Nach dem Ersetzen einer älteren Projektversion einmal **Clean Project** ausführen. Falls RV2IDE weiterhin eine ältere oder neuere Kotlin-Stdlib aus dem Cache benutzt, den Projektordner `.gradle` löschen und anschließend neu synchronisieren. Danach `:app:assembleDebug` erneut starten.
-
+Favoriten, Wiedergabefortschritt und Einstellungen werden lokal auf dem Gerät gespeichert. Online-Funktionen greifen auf die jeweiligen Websites und APIs zu. [`LICENSE`](LICENSE) enthält die Projektlizenz, Referenzen auf Originalprojekte, Hinweise zu direkten Abhängigkeiten, den Markenhinweis und den noch ungeklärten Lizenzstatus der gebündelten Samsung-Smart-View-AAR.

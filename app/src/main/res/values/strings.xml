@@ -532,7 +532,6 @@
     <string name="aniskip_position_expiry">Wiedergabeposition behalten: %1$d Tage</string>
     <string name="aniskip_auto_next_delay">Countdown für nächste Folge: %1$d Sekunden</string>
     <string name="aniskip_lookup_button">MAL-Zuordnung</string>
-    <string name="aniskip_submit_button">Skip melden</string>
     <string name="aniskip_loading">AniSkip-Zeiten werden geladen …</string>
     <string name="aniskip_mapping_title">Anime für AniSkip zuordnen</string>
     <string name="aniskip_not_mapped">Noch nicht zugeordnet</string>
@@ -542,12 +541,6 @@
     <string name="aniskip_source_mal">MyAnimeList</string>
     <string name="aniskip_source_allanime">AllAnime</string>
     <string name="aniskip_search">Suchen</string>
-    <string name="aniskip_submit_title">Skip-Zeit an AniSkip melden</string>
-    <string name="aniskip_skip_type">Segmenttyp: %1$s</string>
-    <string name="aniskip_start_time">Startzeit in Sekunden</string>
-    <string name="aniskip_end_time">Endzeit in Sekunden</string>
-    <string name="aniskip_time_help">Die Zeiten beziehen sich auf den Beginn der Folge. Prüfe die Positionen vor dem Senden.</string>
-    <string name="aniskip_submit">Übermitteln</string>
     <string name="aniskip_skip_segment">%1$s überspringen</string>
     <string name="aniskip_opening_label">Opening</string>
     <string name="aniskip_ending_label">Ending</string>
@@ -572,6 +565,9 @@
     <string name="favorites_clear_complete">All favorites were deleted.</string>
     <string name="favorites_clear_failed">Could not delete favorites</string>
     <string name="favorites_clear_failed_detail">Could not delete favorites: %1$s</string>
+    <string name="favorite_context_message">Choose an action for this favorite.</string>
+    <string name="favorite_action_pin_shortcut">Add launcher shortcut</string>
+    <string name="favorite_action_select">Select for bulk actions</string>
     <string name="playback_progress_clear">Delete viewing progress</string>
     <string name="playback_progress_clear_confirm_title">Delete viewing progress?</string>
     <string name="playback_progress_clear_confirm_body">This permanently deletes %1$d current progress entries and %2$d episode states.</string>

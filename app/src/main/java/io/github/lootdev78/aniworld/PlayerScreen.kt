@@ -22,7 +22,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -98,7 +97,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -175,7 +173,6 @@ fun PlayerScreen(
     savedVolumePercent: Int,
     onSearchAniSkipAnime: (String, AniSkipTitleSource) -> Unit,
     onSelectAniSkipAnime: (AniSkipAnime) -> Unit,
-    onSubmitAniSkipTime: (AniSkipType, Double, Double, Double) -> Unit,
     onVolumeChanged: (Int) -> Unit,
     onLanguageChange: (Language) -> Unit,
     onHosterChange: (Hoster) -> Unit,
@@ -222,14 +219,9 @@ fun PlayerScreen(
     var streamInfoOpen by remember(playback.id) { mutableStateOf(false) }
     var internalPausedForCast by remember(playback.id) { mutableStateOf(false) }
     var aniSkipMappingDialogOpen by remember(playback.id) { mutableStateOf(false) }
-    var aniSkipSubmitDialogOpen by remember(playback.id) { mutableStateOf(false) }
     var aniSkipSearchQuery by remember(playback.id) { mutableStateOf(playback.series.title) }
     var aniSkipTitleSource by remember(playback.id) { mutableStateOf(AniSkipTitleSource.MYANIMELIST) }
     var aniSkipSourceMenuOpen by remember(playback.id) { mutableStateOf(false) }
-    var submitType by remember(playback.id) { mutableStateOf(AniSkipType.OPENING) }
-    var submitTypeMenuOpen by remember(playback.id) { mutableStateOf(false) }
-    var submitStartText by remember(playback.id) { mutableStateOf("0") }
-    var submitEndText by remember(playback.id) { mutableStateOf("90") }
     val skippedSegments = remember(playback.id) { mutableSetOf<String>() }
     val manualSkipSegment = skipSegments.firstOrNull { segment ->
         val autoEnabled = when {
@@ -241,7 +233,7 @@ fun PlayerScreen(
         !autoEnabled && position / 1000.0 >= segment.startSeconds - 5.0 &&
             position / 1000.0 < segment.endSeconds
     }
-    val playerOverlayOpen = languageMenuOpen || hosterMenuOpen || castMenuOpen || moreMenuOpen || aniSkipMappingDialogOpen || aniSkipSubmitDialogOpen ||
+    val playerOverlayOpen = languageMenuOpen || hosterMenuOpen || castMenuOpen || moreMenuOpen || aniSkipMappingDialogOpen ||
         manualCastDialogOpen || streamInfoOpen || autoNextVisible || playerError != null
     val streamInfo = remember(playback.stream.url, playback.stream.mimeType) {
         StreamPresentation.from(playback.stream)
@@ -625,17 +617,6 @@ fun PlayerScreen(
         if (playAfterSkip) PlaybackService.play(context)
     }
 
-    fun openAniSkipSubmitDialog() {
-        val current = (position / 1000L).coerceAtLeast(0L)
-        val total = (duration / 1000L).takeIf { it > 0L } ?: current + 90L
-        submitStartText = current.toString()
-        submitEndText = minOf(current + 90L, total).toString()
-        submitType = AniSkipType.OPENING
-        aniSkipSubmitDialogOpen = true
-        controlsVisible = true
-        controlsGeneration++
-    }
-
     fun setPlaybackState(playing: Boolean) {
         when {
             castActive && ((remoteTransportState != XboxTransportState.PAUSED) != playing) -> when {
@@ -860,10 +841,7 @@ fun PlayerScreen(
             visible = manualSkipSegment != null && showSkipButtons && !videoBuffering && !loading,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomEnd).padding(
-                end = 28.dp,
-                bottom = if (controlsVisible) 230.dp else 72.dp
-            )
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 28.dp, bottom = 230.dp)
         ) {
             manualSkipSegment?.let { segment ->
                 Button(
@@ -958,6 +936,12 @@ fun PlayerScreen(
                         Icon(Icons.Default.Close, stringResource(R.string.player_close), tint = Color.White)
                     }
                 }
+                PlayerRoundButton(Icons.Default.SkipPrevious, stringResource(R.string.player_previous_episode), enabled = hasPrevious, size = 42.dp) {
+                    navigateEpisode(next = false)
+                }
+                PlayerRoundButton(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), enabled = hasNext, size = 42.dp) {
+                    navigateEpisode(next = true)
+                }
                 Column(
                     Modifier.weight(1f).padding(horizontal = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -996,22 +980,11 @@ fun PlayerScreen(
                     (skipSubmitMessage ?: skipMessage)?.let {
                         Text(it, color = AniWorldPlayerTextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TextButton(onClick = {
-                            aniSkipSearchQuery = playback.series.title
-                            aniSkipMappingDialogOpen = true
-                            controlsGeneration++
-                        }) { Text(stringResource(R.string.aniskip_lookup_button), color = AniWorldPlayerAccent, maxLines = 1) }
-                        TextButton(onClick = { openAniSkipSubmitDialog() }, enabled = aniSkipMapping != null && duration > 0L) {
-                            Text(stringResource(R.string.aniskip_submit_button), color = AniWorldPlayerAccent, maxLines = 1)
-                        }
-                    }
-                }
-                PlayerRoundButton(Icons.Default.SkipPrevious, stringResource(R.string.player_previous_episode), enabled = hasPrevious, size = 42.dp) {
-                    navigateEpisode(next = false)
-                }
-                PlayerRoundButton(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), enabled = hasNext, size = 42.dp) {
-                    navigateEpisode(next = true)
+                    TextButton(onClick = {
+                        aniSkipSearchQuery = playback.series.title
+                        aniSkipMappingDialogOpen = true
+                        controlsGeneration++
+                    }) { Text(stringResource(R.string.aniskip_lookup_button), color = AniWorldPlayerAccent, maxLines = 1) }
                 }
             }
         }
@@ -1457,7 +1430,7 @@ fun PlayerScreen(
                                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                                     Text(anime.displayTitle, color = Color.White, fontWeight = FontWeight.SemiBold)
                                     Text(
-                                        "MAL ${anime.malId}${anime.episodes?.let { " · $it Folgen" }.orEmpty()}${anime.title.takeIf { it != anime.displayTitle }?.let { " · $it" }.orEmpty()}",
+                                        "${context.getString(R.string.aniskip_source, aniSkipTitleSourceLabel(context, aniSkipTitleSource))} · MAL ${anime.malId}${anime.episodes?.let { " · $it Folgen" }.orEmpty()}${anime.title.takeIf { it != anime.displayTitle }?.let { " · $it" }.orEmpty()}",
                                         color = AniWorldPlayerTextMuted,
                                         style = MaterialTheme.typography.labelSmall
                                     )
@@ -1470,77 +1443,6 @@ fun PlayerScreen(
                     TextButton(onClick = { aniSkipMappingDialogOpen = false; controlsGeneration++ }) {
                         Text(stringResource(R.string.close), color = AniWorldPlayerAccent)
                     }
-                }
-            )
-        }
-
-        if (aniSkipSubmitDialogOpen) {
-            AlertDialog(
-                onDismissRequest = { aniSkipSubmitDialogOpen = false; controlsGeneration++ },
-                containerColor = AniWorldPlayerPanel,
-                titleContentColor = Color.White,
-                textContentColor = Color.White,
-                title = { Text(stringResource(R.string.aniskip_submit_title)) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            stringResource(R.string.aniskip_current_mapping, aniSkipMapping?.title ?: stringResource(R.string.aniskip_not_mapped)),
-                            color = AniWorldPlayerTextMuted,
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Box {
-                            TextButton(onClick = { submitTypeMenuOpen = true }) {
-                                Text(stringResource(R.string.aniskip_skip_type, skipTypeLabel(context, submitType)), color = AniWorldPlayerAccent)
-                            }
-                            DropdownMenu(expanded = submitTypeMenuOpen, onDismissRequest = { submitTypeMenuOpen = false }) {
-                                listOf(AniSkipType.OPENING, AniSkipType.ENDING).forEach { type ->
-                                    DropdownMenuItem(
-                                        text = { Text(skipTypeLabel(context, type)) },
-                                        onClick = { submitType = type; submitTypeMenuOpen = false }
-                                    )
-                                }
-                            }
-                        }
-                        OutlinedTextField(
-                            value = submitStartText,
-                            onValueChange = { submitStartText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
-                            label = { Text(stringResource(R.string.aniskip_start_time)) },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                                focusedBorderColor = AniWorldPlayerAccent, unfocusedBorderColor = AniWorldPlayerDivider,
-                                focusedLabelColor = AniWorldPlayerAccent, unfocusedLabelColor = AniWorldPlayerTextMuted
-                            )
-                        )
-                        OutlinedTextField(
-                            value = submitEndText,
-                            onValueChange = { submitEndText = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
-                            label = { Text(stringResource(R.string.aniskip_end_time)) },
-                            singleLine = true,
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White, unfocusedTextColor = Color.White,
-                                focusedBorderColor = AniWorldPlayerAccent, unfocusedBorderColor = AniWorldPlayerDivider,
-                                focusedLabelColor = AniWorldPlayerAccent, unfocusedLabelColor = AniWorldPlayerTextMuted
-                            )
-                        )
-                        Text(stringResource(R.string.aniskip_time_help), color = AniWorldPlayerTextMuted, style = MaterialTheme.typography.labelSmall)
-                    }
-                },
-                confirmButton = {
-                    val start = submitStartText.replace(',', '.').toDoubleOrNull()
-                    val end = submitEndText.replace(',', '.').toDoubleOrNull()
-                    TextButton(
-                        enabled = aniSkipMapping != null && start != null && end != null && start >= 0.0 && end > start && duration > 0L && end < duration / 1000.0,
-                        onClick = {
-                            val startSeconds = submitStartText.replace(',', '.').toDoubleOrNull() ?: return@TextButton
-                            val endSeconds = submitEndText.replace(',', '.').toDoubleOrNull() ?: return@TextButton
-                            onSubmitAniSkipTime(submitType, startSeconds, endSeconds, duration / 1000.0)
-                            aniSkipSubmitDialogOpen = false
-                        }
-                    ) { Text(stringResource(R.string.aniskip_submit), color = AniWorldPlayerAccent) }
-                },
-                dismissButton = {
-                    TextButton(onClick = { aniSkipSubmitDialogOpen = false }) { Text(stringResource(R.string.cancel), color = AniWorldPlayerAccent) }
                 }
             )
         }
@@ -1634,30 +1536,6 @@ fun PlayerScreen(
                 tonalElevation = 8.dp
             ) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Box(Modifier.fillMaxWidth().heightIn(min = 12.dp)) {
-                        if (knownDuration != null && skipSegments.isNotEmpty()) {
-                            Canvas(Modifier.fillMaxWidth().heightIn(min = 12.dp)) {
-                                val inset = 12.dp.toPx()
-                                val trackWidth = (size.width - inset * 2f).coerceAtLeast(0f)
-                                val markerHeight = 4.dp.toPx()
-                                skipSegments.forEach { segment ->
-                                    val left = inset + (segment.startSeconds * 1000.0 / knownDuration.toDouble()).toFloat().coerceIn(0f, 1f) * trackWidth
-                                    val right = inset + (segment.endSeconds * 1000.0 / knownDuration.toDouble()).toFloat().coerceIn(0f, 1f) * trackWidth
-                                    val markerColor = when {
-                                        AniSkipType.isOpening(segment.type) -> Color(0xFFE879F9)
-                                        AniSkipType.isEnding(segment.type) -> Color(0xFF4ADE80)
-                                        segment.type == AniSkipType.RECAP -> Color(0xFFFACC15)
-                                        else -> AniWorldPlayerAccent
-                                    }
-                                    drawRect(
-                                        color = markerColor.copy(alpha = 0.92f),
-                                        topLeft = Offset(left, size.height / 2f - 8.dp.toPx()),
-                                        size = Size((right - left).coerceAtLeast(2.dp.toPx()), markerHeight)
-                                    )
-                                }
-                            }
-                        }
-                    }
                     Text(
                         "${playback.seriesTitle} · ${playback.episode.localizedLabel(context)} · ${playback.episode.localizedDisplayTitle(context)}",
                         color = Color.White,
