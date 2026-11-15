@@ -40,7 +40,7 @@ private fun settingsActivity(category: SettingsCategory): Class<out ComponentAct
     SettingsCategory.METADATA -> MetadataSettingsActivity::class.java
     SettingsCategory.BROWSER -> BrowserSettingsActivity::class.java
     SettingsCategory.DIAGNOSTICS -> DiagnosticsSettingsActivity::class.java
-    SettingsCategory.MAINTENANCE -> MaintenanceSettingsActivity::class.java
+    SettingsCategory.MAINTENANCE -> AppearanceSettingsActivity::class.java
     SettingsCategory.CREDITS -> CreditsSettingsActivity::class.java
 }
 
@@ -59,7 +59,7 @@ class SettingsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val state by vm.state.collectAsStateWithLifecycle()
-            AniWorldTheme(state.preferences.useDynamicColors, state.preferences.accentColor) {
+            AniWorldTheme(state.preferences.useDynamicColors, state.preferences.accentColor, state.preferences.customAccentColor) {
                 SettingsScreen(
                     st = state,
                     vm = vm,
@@ -83,7 +83,7 @@ abstract class SettingsCategoryActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val state by vm.state.collectAsStateWithLifecycle()
-            AniWorldTheme(state.preferences.useDynamicColors, state.preferences.accentColor) {
+            AniWorldTheme(state.preferences.useDynamicColors, state.preferences.accentColor, state.preferences.customAccentColor) {
                 var diagnosticsOpen by rememberSaveable { mutableStateOf(false) }
                 if (diagnosticsOpen) {
                     DiagnosticScreen(
@@ -129,7 +129,7 @@ class DiagnosticsSettingsActivity : SettingsCategoryActivity() {
 }
 
 class MaintenanceSettingsActivity : SettingsCategoryActivity() {
-    override val category = SettingsCategory.MAINTENANCE
+    override val category = SettingsCategory.APPEARANCE
 }
 
 class CreditsSettingsActivity : SettingsCategoryActivity() {

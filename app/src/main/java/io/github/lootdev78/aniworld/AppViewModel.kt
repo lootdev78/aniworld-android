@@ -1002,6 +1002,8 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         viewModelScope.launch { store.setHomeSectionVisible(section, visible) }.let { Unit }
     fun moveHomeSection(section: HomeSection, delta: Int) =
         viewModelScope.launch { store.moveHomeSection(section, delta) }.let { Unit }
+    fun setHomeSectionOrder(order: List<HomeSection>) =
+        viewModelScope.launch { store.setHomeSectionOrder(order) }.let { Unit }
 
     fun checkOfflineMetadata() {
         viewModelScope.launch {
@@ -1371,6 +1373,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         }
     }
     fun setAccentColor(accent: AppAccent) = viewModelScope.launch { store.setAccentColor(accent) }.let { Unit }
+    fun setCustomAccentColor(color: Int) = viewModelScope.launch { store.setCustomAccentColor(color) }.let { Unit }
     fun setWebAdBlockEnabled(enabled: Boolean) = viewModelScope.launch { store.setWebAdBlockEnabled(enabled) }.let { Unit }
     fun setWebFilterLists(ids: Set<String>) = viewModelScope.launch { store.setWebFilterLists(ids) }.let { Unit }
     fun setWebSessionPanelExpanded(expanded: Boolean) = viewModelScope.launch { store.setWebSessionPanelExpanded(expanded) }.let { Unit }

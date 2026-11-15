@@ -263,7 +263,7 @@
     <string name="change_language">Sprache wechseln</string>
     <string name="change_hoster">Hoster wechseln</string>
     <string name="accent_color">Material-3-Akzentfarbe</string>
-    <string name="accent_color_desc">Wähle eine feste Akzentfarbe. Die Auswahl deaktiviert dynamische Systemfarben.</string>
+    <string name="accent_color_desc">Wähle eine Vorgabe oder erstelle eine eigene Farbe. Eine feste Akzentfarbe deaktiviert dynamische Systemfarben.</string>
     <string name="selected">Ausgewählt</string>
     <string name="color_red">Rot</string>
     <string name="color_blue">Blau</string>
@@ -272,6 +272,18 @@
     <string name="color_orange">Orange</string>
     <string name="color_cyan">Cyan</string>
     <string name="color_pink">Pink</string>
+    <string name="color_teal">Türkis</string>
+    <string name="color_indigo">Indigo</string>
+    <string name="color_yellow">Gelb</string>
+    <string name="color_lime">Limette</string>
+    <string name="color_brown">Braun</string>
+    <string name="color_gray">Grau</string>
+    <string name="color_custom">Eigene Farbe</string>
+    <string name="color_custom_picker_title">Eigene Akzentfarbe wählen</string>
+    <string name="color_hue">Farbton</string>
+    <string name="color_saturation">Sättigung</string>
+    <string name="color_brightness">Helligkeit</string>
+    <string name="apply">Übernehmen</string>
     <string name="seek_back_seconds">10 Sekunden zurück</string>
     <string name="seek_forward_seconds">10 Sekunden vor</string>
     <string name="play_best_hoster_external">Mit bestem Hoster extern abspielen</string>
@@ -380,7 +392,7 @@
     <string name="settings_category_diagnostics">Diagnose</string>
     <string name="settings_category_diagnostics_desc">Diagnoseprotokollierung und technische Berichte.</string>
     <string name="settings_category_maintenance">Wartung</string>
-    <string name="settings_category_maintenance_desc">Cover-Cache und Position des Einstellungsbuttons zurücksetzen.</string>
+    <string name="settings_category_maintenance_desc">Veralteter Einstellungseintrag.</string>
     <string name="settings_category_credits">Credits</string>
     <string name="settings_category_credits_desc">Projektlinks und Mitwirkende.</string>
     <string name="playback_settings_desc">Bevorzugte Sprache, Hoster, automatisches Weiterschalten und Wiedergabe</string>
@@ -389,7 +401,8 @@
     <string name="home_screen_settings">Startseite</string>
     <string name="home_screen_settings_desc">Startbereich, sichtbare Bereiche und deren Reihenfolge</string>
     <string name="home_sections">Bereiche und Reihenfolge</string>
-    <string name="home_sections_desc">Bereiche ein- oder ausblenden und nach oben oder unten verschieben.</string>
+    <string name="home_sections_desc">Bereiche ein- oder ausblenden. Halte einen Eintrag gedrückt, um ihn zu ziehen, oder nutze die Pfeile zum Sortieren.</string>
+    <string name="drag_to_reorder">Gedrückt halten und zum Sortieren ziehen</string>
     <string name="home_section_featured">Empfohlener Titel</string>
     <string name="metadata_management">Metadaten &amp; Sicherung</string>
     <string name="metadata_management_desc">Offline-Katalog verwalten sowie Favoriten und Wiedergabefortschritt sichern</string>

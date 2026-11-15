@@ -28,6 +28,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,6 +73,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ClearAll
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Favorite
@@ -129,12 +131,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
@@ -1418,6 +1425,7 @@ private enum class EpisodeFilter(@StringRes val labelRes: Int) { ALL(R.string.al
 @Composable
 fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val series = st.selected ?: return
+    val context = LocalContext.current
     var episodeFilter by rememberSaveable(series.slug, st.season) { mutableStateOf(EpisodeFilter.ALL) }
     if (st.season == null) key(series.slug) {
         val seasonListKey = "detail:${series.slug}:seasons"
@@ -1439,7 +1447,24 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                 NetflixDetailHeader(series, st, vm, expanded)
             }
             item {
-                SectionTitle(stringResource(R.string.seasons_and_movies), stringResource(R.string.areas_count, st.seasons.size))
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.seasons_and_movies), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                        Text(
+                            stringResource(R.string.areas_count, st.seasons.size),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    OutlinedButton(onClick = { pinAnimeShortcut(context, series) }) {
+                        Icon(Icons.Default.Home, null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.shortcut_pin))
+                    }
+                }
             }
             items(st.seasons, key = { it }) { season ->
                 val watched = st.preferences.watchedCount(series.slug, season)
@@ -1586,7 +1611,6 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
 
 @Composable
 private fun NetflixDetailHeader(series: Series, st: UiState, vm: AppViewModel, expanded: Boolean) {
-    val context = LocalContext.current
     Box(Modifier.fillMaxWidth().height(if (expanded) 500.dp else 430.dp)) {
         AnimeImage(series.coverUrl, series.title, series.slug, Modifier.fillMaxSize(), ContentScale.Crop)
         Box(
@@ -1621,10 +1645,6 @@ private fun NetflixDetailHeader(series: Series, st: UiState, vm: AppViewModel, e
                     OutlinedButton(onClick = { vm.toggleFavorite(series) }) {
                         Icon(if (st.preferences.isFavorite(series.slug)) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
                         Text(" " + stringResource(if (st.preferences.isFavorite(series.slug)) R.string.remove_favorite else R.string.favorite))
-                    }
-                    OutlinedButton(onClick = { pinAnimeShortcut(context, series) }) {
-                        Icon(Icons.Default.Home, null)
-                        Text(" " + stringResource(R.string.shortcut_pin))
                     }
                     OutlinedButton(onClick = { vm.openAnimeInfo(series) }) { Icon(Icons.Default.Info, null); Text(" " + stringResource(R.string.info)) }
                 }
@@ -2531,6 +2551,7 @@ fun SettingsScreen(
     var confirmFavoritesDelete by rememberSaveable { mutableStateOf(false) }
     var confirmProgressDelete by rememberSaveable { mutableStateOf(false) }
     var settingsBackupToRestore by rememberSaveable { mutableStateOf<String?>(null) }
+    var customAccentPickerOpen by rememberSaveable { mutableStateOf(false) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         vm.refreshCatalogMetadata()
     }
@@ -2596,7 +2617,7 @@ fun SettingsScreen(
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 if (category == null) {
-                    items(SettingsCategory.entries, key = { it.name }) { entry ->
+                    items(SettingsCategory.entries.filterNot { it == SettingsCategory.MAINTENANCE }, key = { it.name }) { entry ->
                         SettingsCategoryRow(entry) { onOpenCategory(entry) }
                     }
                 } else {
@@ -2738,31 +2759,12 @@ fun SettingsScreen(
                         HorizontalDivider()
                         Text(stringResource(R.string.home_sections), fontWeight = FontWeight.Bold)
                         Text(stringResource(R.string.home_sections_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        prefs.homeSectionOrder.forEachIndexed { index, section ->
-                            val visible = section !in prefs.hiddenHomeSections
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = MaterialTheme.shapes.medium,
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .48f)
-                            ) {
-                                Row(
-                                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Switch(checked = visible, onCheckedChange = { vm.setHomeSectionVisible(section, it) })
-                                    Text(stringResource(section.labelRes), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                    IconButton(
-                                        enabled = index > 0,
-                                        onClick = { vm.moveHomeSection(section, -1) }
-                                    ) { Icon(Icons.Default.ArrowUpward, stringResource(R.string.move_up)) }
-                                    IconButton(
-                                        enabled = index < prefs.homeSectionOrder.lastIndex,
-                                        onClick = { vm.moveHomeSection(section, 1) }
-                                    ) { Icon(Icons.Default.ArrowDownward, stringResource(R.string.move_down)) }
-                                }
-                            }
-                        }
+                        HomeSectionOrderEditor(
+                            order = prefs.homeSectionOrder,
+                            hiddenSections = prefs.hiddenHomeSections,
+                            onVisibilityChanged = vm::setHomeSectionVisible,
+                            onOrderChanged = vm::setHomeSectionOrder
+                        )
                         HorizontalDivider()
                         SettingSwitch(
                             stringResource(R.string.home_offline_mode),
@@ -2793,23 +2795,48 @@ fun SettingsScreen(
                         Text(stringResource(R.string.accent_color), fontWeight = FontWeight.Bold)
                         Text(stringResource(R.string.accent_color_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            AppAccent.entries.forEach { accent ->
+                            AppAccent.entries.filterNot { it == AppAccent.CUSTOM }.forEach { accent ->
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Surface(
-                                        modifier = Modifier.size(46.dp).clip(CircleShape).clickable { vm.setAccentColor(accent) },
+                                        modifier = Modifier.size(46.dp).clip(CircleShape).clickable {
+                                            vm.setAccentColor(accent)
+                                        },
                                         shape = CircleShape,
-                                        color = accentPreviewColor(accent),
+                                        color = accentPreviewColor(accent, prefs.customAccentColor),
                                         tonalElevation = if (prefs.accentColor == accent) 8.dp else 0.dp
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             if (prefs.accentColor == accent && !prefs.useDynamicColors) {
-                                                Icon(Icons.Default.CheckCircle, stringResource(R.string.selected), tint = accentPreviewContentColor(accent))
+                                                Icon(
+                                                    Icons.Default.CheckCircle,
+                                                    stringResource(R.string.selected),
+                                                    tint = accentPreviewContentColor(accentPreviewColor(accent, prefs.customAccentColor))
+                                                )
                                             }
                                         }
                                     }
                                     Text(stringResource(accent.labelRes()), style = MaterialTheme.typography.labelSmall)
                                 }
                             }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Surface(
+                                    modifier = Modifier.size(46.dp).clip(CircleShape).clickable { customAccentPickerOpen = true },
+                                    shape = CircleShape,
+                                    color = Color(prefs.customAccentColor),
+                                    tonalElevation = if (prefs.accentColor == AppAccent.CUSTOM) 8.dp else 0.dp
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        if (prefs.accentColor == AppAccent.CUSTOM) {
+                                            Icon(Icons.Default.CheckCircle, stringResource(R.string.selected), tint = accentPreviewContentColor(Color(prefs.customAccentColor)))
+                                        }
+                                    }
+                                }
+                                Text(stringResource(R.string.color_custom), style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                        OutlinedButton(onClick = vm::resetSettingsButtonPosition, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Tune, null)
+                            Text(" " + stringResource(R.string.reset_settings_button_position))
                         }
                     }
                 }
@@ -2903,6 +2930,10 @@ fun SettingsScreen(
                             Icon(Icons.Default.FileUpload, null)
                             Text(" " + stringResource(R.string.metadata_action_import))
                         }
+                        OutlinedButton(onClick = vm::resetCoverDataAndCache, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.ClearAll, null)
+                            Text(" " + stringResource(R.string.reset_cover_cache))
+                        }
                         Text(stringResource(R.string.metadata_file_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         HorizontalDivider()
                         Text(stringResource(R.string.library_backup_title), fontWeight = FontWeight.Bold)
@@ -2986,22 +3017,6 @@ fun SettingsScreen(
                         OutlinedButton(onClick = onDiagnostics, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.BugReport, null)
                             Text(" " + stringResource(R.string.open_diagnostics))
-                        }
-                    }
-                }
-
-                if (category == SettingsCategory.MAINTENANCE) item {
-                    SettingsSectionCard(
-                        title = stringResource(R.string.maintenance),
-                        subtitle = stringResource(R.string.maintenance_desc)
-                    ) {
-                        OutlinedButton(onClick = vm::resetCoverDataAndCache, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.ClearAll, null)
-                            Text(" " + stringResource(R.string.reset_cover_cache))
-                        }
-                        OutlinedButton(onClick = vm::resetSettingsButtonPosition, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.Tune, null)
-                            Text(" " + stringResource(R.string.reset_settings_button_position))
                         }
                     }
                 }
@@ -3100,11 +3115,160 @@ fun SettingsScreen(
             }
         )
     }
+    if (customAccentPickerOpen) {
+        CustomAccentColorPicker(
+            initialColor = prefs.customAccentColor,
+            onDismiss = { customAccentPickerOpen = false },
+            onApply = { color ->
+                vm.setCustomAccentColor(color)
+                customAccentPickerOpen = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun HomeSectionOrderEditor(
+    order: List<HomeSection>,
+    hiddenSections: Set<HomeSection>,
+    onVisibilityChanged: (HomeSection, Boolean) -> Unit,
+    onOrderChanged: (List<HomeSection>) -> Unit
+) {
+    var displayedOrder by remember { mutableStateOf(order) }
+    var draggedSection by remember { mutableStateOf<HomeSection?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val dragThreshold = with(LocalDensity.current) { 62.dp.toPx() }
+
+    LaunchedEffect(order) {
+        if (draggedSection == null) displayedOrder = order
+    }
+
+    fun moveSection(section: HomeSection, delta: Int) {
+        val from = displayedOrder.indexOf(section)
+        if (from < 0 || displayedOrder.isEmpty()) return
+        val to = (from + delta).coerceIn(0, displayedOrder.lastIndex)
+        if (from == to) return
+        val updated = displayedOrder.toMutableList().apply { add(to, removeAt(from)) }
+        displayedOrder = updated
+        onOrderChanged(updated)
+    }
+
+    displayedOrder.forEachIndexed { index, section ->
+        val isDragging = draggedSection == section
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationY = if (isDragging) dragOffset else 0f }
+                .zIndex(if (isDragging) 1f else 0f)
+                .pointerInput(section) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            draggedSection = section
+                            dragOffset = 0f
+                        },
+                        onDragEnd = {
+                            draggedSection = null
+                            dragOffset = 0f
+                        },
+                        onDragCancel = {
+                            draggedSection = null
+                            dragOffset = 0f
+                        },
+                        onDrag = { change, dragAmount ->
+                            if (draggedSection == section) {
+                                change.consume()
+                                dragOffset += dragAmount.y
+                                while (dragOffset > dragThreshold && displayedOrder.lastOrNull() != section) {
+                                    moveSection(section, 1)
+                                    dragOffset -= dragThreshold
+                                }
+                                while (dragOffset < -dragThreshold && displayedOrder.firstOrNull() != section) {
+                                    moveSection(section, -1)
+                                    dragOffset += dragThreshold
+                                }
+                            }
+                        }
+                    )
+                },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (isDragging) .8f else .48f),
+            shadowElevation = if (isDragging) 8.dp else 0.dp
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Switch(
+                    checked = section !in hiddenSections,
+                    onCheckedChange = { onVisibilityChanged(section, it) }
+                )
+                Text(stringResource(section.labelRes), modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = stringResource(R.string.drag_to_reorder),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                IconButton(enabled = index > 0, onClick = { moveSection(section, -1) }) {
+                    Icon(Icons.Default.ArrowUpward, stringResource(R.string.move_up))
+                }
+                IconButton(enabled = index < displayedOrder.lastIndex, onClick = { moveSection(section, 1) }) {
+                    Icon(Icons.Default.ArrowDownward, stringResource(R.string.move_down))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomAccentColorPicker(
+    initialColor: Int,
+    onDismiss: () -> Unit,
+    onApply: (Int) -> Unit
+) {
+    val initialHsv = remember(initialColor) {
+        FloatArray(3).also { android.graphics.Color.colorToHSV(initialColor, it) }
+    }
+    var hue by remember(initialColor) { mutableFloatStateOf(initialHsv[0]) }
+    var saturation by remember(initialColor) { mutableFloatStateOf(initialHsv[1].coerceIn(.25f, 1f)) }
+    var brightness by remember(initialColor) { mutableFloatStateOf(initialHsv[2].coerceIn(.72f, 1f)) }
+    val picked = Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, saturation, brightness)))
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.color_custom_picker_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    color = picked,
+                    shape = MaterialTheme.shapes.medium
+                ) {}
+                Text(stringResource(R.string.color_hue), style = MaterialTheme.typography.labelMedium)
+                Slider(value = hue, onValueChange = { hue = it }, valueRange = 0f..360f)
+                Text(stringResource(R.string.color_saturation), style = MaterialTheme.typography.labelMedium)
+                Slider(value = saturation, onValueChange = { saturation = it }, valueRange = .25f..1f)
+                Text(stringResource(R.string.color_brightness), style = MaterialTheme.typography.labelMedium)
+                Slider(value = brightness, onValueChange = { brightness = it }, valueRange = .72f..1f)
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onApply(picked.toArgb()) }) {
+                Text(stringResource(R.string.apply))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        }
+    )
 }
 
 private fun pinAnimeShortcut(context: android.content.Context, series: Series) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
         Toast.makeText(context, R.string.shortcut_unsupported, Toast.LENGTH_LONG).show()
+        return
+    }
+    if (!series.slug.matches(Regex("[a-z0-9][a-z0-9._-]{0,159}"))) {
+        Toast.makeText(context, R.string.shortcut_invalid_anime, Toast.LENGTH_LONG).show()
         return
     }
     val shortcutManager = context.getSystemService(ShortcutManager::class.java)
@@ -3126,7 +3290,12 @@ private fun pinAnimeShortcut(context: android.content.Context, series: Series) {
         .setIcon(Icon.createWithResource(context, R.mipmap.ic_launcher))
         .setIntent(shortcutIntent)
         .build()
-    val result = shortcutManager.requestPinShortcut(shortcut, null)
+    val result = try {
+        shortcutManager.requestPinShortcut(shortcut, null)
+    } catch (error: SecurityException) {
+        AppLogger.warn("Shortcut", "Launcher-Verknüpfung wurde abgelehnt", error.message.orEmpty())
+        false
+    }
     Toast.makeText(
         context,
         if (result) R.string.shortcut_requested else R.string.shortcut_unsupported,
@@ -3192,9 +3361,16 @@ private fun AppAccent.labelRes(): Int = when (this) {
     AppAccent.ORANGE -> R.string.color_orange
     AppAccent.CYAN -> R.string.color_cyan
     AppAccent.PINK -> R.string.color_pink
+    AppAccent.TEAL -> R.string.color_teal
+    AppAccent.INDIGO -> R.string.color_indigo
+    AppAccent.YELLOW -> R.string.color_yellow
+    AppAccent.LIME -> R.string.color_lime
+    AppAccent.BROWN -> R.string.color_brown
+    AppAccent.GRAY -> R.string.color_gray
+    AppAccent.CUSTOM -> R.string.color_custom
 }
 
-private fun accentPreviewColor(accent: AppAccent): Color = when (accent) {
+private fun accentPreviewColor(accent: AppAccent, customColor: Int): Color = when (accent) {
     AppAccent.RED -> Color(0xFFFF4655)
     AppAccent.BLUE -> Color(0xFF74B4FF)
     AppAccent.PURPLE -> Color(0xFFC6A0FF)
@@ -3202,10 +3378,19 @@ private fun accentPreviewColor(accent: AppAccent): Color = when (accent) {
     AppAccent.ORANGE -> Color(0xFFFFB060)
     AppAccent.CYAN -> Color(0xFF62D8E8)
     AppAccent.PINK -> Color(0xFFFF8FC7)
+    AppAccent.TEAL -> Color(0xFF4DD0B4)
+    AppAccent.INDIGO -> Color(0xFF9BA8FF)
+    AppAccent.YELLOW -> Color(0xFFFFD166)
+    AppAccent.LIME -> Color(0xFFB4E66A)
+    AppAccent.BROWN -> Color(0xFFD9A47E)
+    AppAccent.GRAY -> Color(0xFFBEC5D2)
+    AppAccent.CUSTOM -> Color(customColor)
 }
 
-private fun accentPreviewContentColor(accent: AppAccent): Color =
-    if (accent == AppAccent.RED || accent == AppAccent.PURPLE || accent == AppAccent.PINK) Color.White else Color.Black
+private fun accentPreviewContentColor(color: Color): Color {
+    val luminance = .2126 * color.red + .7152 * color.green + .0722 * color.blue
+    return if (luminance > .40) Color.Black else Color.White
+}
 
 @Composable
 private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, onChecked: (Boolean) -> Unit) {

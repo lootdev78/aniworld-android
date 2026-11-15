@@ -256,7 +256,7 @@ data class WatchedSeriesEntry(
 
 
 enum class AppAccent {
-    RED, BLUE, PURPLE, GREEN, ORANGE, CYAN, PINK
+    RED, BLUE, PURPLE, GREEN, ORANGE, CYAN, PINK, TEAL, INDIGO, YELLOW, LIME, BROWN, GRAY, CUSTOM
 }
 
 object HosterCatalog {
@@ -342,6 +342,7 @@ data class AppPreferences(
     val startupTab: String = "START",
     val homeOfflineMode: Boolean = false,
     val accentColor: AppAccent = AppAccent.RED,
+    val customAccentColor: Int = 0xFFFF4655.toInt(),
     val settingsButtonX: Float = 0.92f,
     val settingsButtonY: Float = 0.72f,
     val catalogViewMode: LibraryViewMode = LibraryViewMode.DETAILED,

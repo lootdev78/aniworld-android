@@ -171,7 +171,11 @@ class MainActivity : ComponentActivity() {
                 }
                 if (mediaAction != null) playbackAction.value = null
             }
-            AniWorldTheme(useDynamicColors = state.preferences.useDynamicColors, accentColor = state.preferences.accentColor) {
+            AniWorldTheme(
+                useDynamicColors = state.preferences.useDynamicColors,
+                accentColor = state.preferences.accentColor,
+                customAccentColor = state.preferences.customAccentColor
+            ) {
                 Box(Modifier.fillMaxSize()) {
                     AniWorldApp(vm)
                     if (state.preferencesReady &&
@@ -333,8 +337,14 @@ private fun StreamLoadingDialog() {
 }
 
 @Composable
-fun AniWorldTheme(useDynamicColors: Boolean, accentColor: AppAccent, content: @Composable () -> Unit) {
+fun AniWorldTheme(
+    useDynamicColors: Boolean,
+    accentColor: AppAccent,
+    customAccentColor: Int = 0xFFFF4655.toInt(),
+    content: @Composable () -> Unit
+) {
     val context = LocalContext.current
+    val customColor = Color(customAccentColor or 0xFF000000.toInt())
     val (primary, primaryContainer, secondary) = when (accentColor) {
         AppAccent.RED -> Triple(Color(0xFFFF4655), Color(0xFF65000A), Color(0xFFFFB3B9))
         AppAccent.BLUE -> Triple(Color(0xFF74B4FF), Color(0xFF00315F), Color(0xFFB5D5FF))
@@ -343,10 +353,25 @@ fun AniWorldTheme(useDynamicColors: Boolean, accentColor: AppAccent, content: @C
         AppAccent.ORANGE -> Triple(Color(0xFFFFB060), Color(0xFF633100), Color(0xFFFFD0A1))
         AppAccent.CYAN -> Triple(Color(0xFF62D8E8), Color(0xFF004D56), Color(0xFFA6F0F7))
         AppAccent.PINK -> Triple(Color(0xFFFF8FC7), Color(0xFF652044), Color(0xFFFFC0DE))
+        AppAccent.TEAL -> Triple(Color(0xFF4DD0B4), Color(0xFF00483E), Color(0xFFA2F2E0))
+        AppAccent.INDIGO -> Triple(Color(0xFF9BA8FF), Color(0xFF273278), Color(0xFFC4CCFF))
+        AppAccent.YELLOW -> Triple(Color(0xFFFFD166), Color(0xFF5C4300), Color(0xFFFFE6A3))
+        AppAccent.LIME -> Triple(Color(0xFFB4E66A), Color(0xFF3B5200), Color(0xFFD8F5A5))
+        AppAccent.BROWN -> Triple(Color(0xFFD9A47E), Color(0xFF58351F), Color(0xFFF2C6A7))
+        AppAccent.GRAY -> Triple(Color(0xFFBEC5D2), Color(0xFF3D4656), Color(0xFFDDE1E9))
+        AppAccent.CUSTOM -> {
+            val hsv = FloatArray(3)
+            android.graphics.Color.colorToHSV(customAccentColor or 0xFF000000.toInt(), hsv)
+            val container = hsv.copyOf().apply { this[2] = .42f }
+            val secondary = hsv.copyOf().apply { this[2] = .92f }
+            Triple(customColor, Color(android.graphics.Color.HSVToColor(container)), Color(android.graphics.Color.HSVToColor(secondary)))
+        }
     }
+    val customLuminance = .2126 * customColor.red + .7152 * customColor.green + .0722 * customColor.blue
+    val customOnPrimary = if (customLuminance > .40) Color.Black else Color.White
     val fallback = darkColorScheme(
         primary = primary,
-        onPrimary = if (accentColor == AppAccent.RED || accentColor == AppAccent.PURPLE || accentColor == AppAccent.PINK) Color.White else Color.Black,
+        onPrimary = if (accentColor == AppAccent.CUSTOM) customOnPrimary else if (accentColor in setOf(AppAccent.RED, AppAccent.PURPLE, AppAccent.PINK, AppAccent.INDIGO, AppAccent.BROWN)) Color.White else Color.Black,
         primaryContainer = primaryContainer,
         onPrimaryContainer = Color.White,
         secondary = secondary,

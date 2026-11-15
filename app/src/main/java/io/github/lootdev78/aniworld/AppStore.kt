@@ -56,6 +56,7 @@ private data class SettingsSnapshot(
     val startupTab: String,
     val homeOfflineMode: Boolean,
     val accentColor: AppAccent,
+    val customAccentColor: Int,
     val settingsButtonX: Float,
     val settingsButtonY: Float,
     val catalogViewMode: LibraryViewMode,
@@ -132,6 +133,7 @@ class AppStore(
                 startupTab = prefs[STARTUP_TAB] ?: "START",
                 homeOfflineMode = prefs[HOME_OFFLINE_MODE] ?: false,
                 accentColor = prefs[ACCENT_COLOR]?.let { raw -> AppAccent.entries.firstOrNull { it.name == raw } } ?: AppAccent.RED,
+                customAccentColor = prefs[CUSTOM_ACCENT_COLOR] ?: 0xFFFF4655.toInt(),
                 settingsButtonX = (prefs[SETTINGS_BUTTON_X] ?: 0.92f).coerceIn(0f, 1f),
                 settingsButtonY = (prefs[SETTINGS_BUTTON_Y] ?: 0.72f).coerceIn(0f, 1f),
                 catalogViewMode = parseViewMode(prefs[CATALOG_VIEW_MODE], LibraryViewMode.DETAILED),
@@ -218,6 +220,7 @@ class AppStore(
             startupTab = settings.startupTab,
             homeOfflineMode = settings.homeOfflineMode,
             accentColor = settings.accentColor,
+            customAccentColor = settings.customAccentColor,
             settingsButtonX = settings.settingsButtonX,
             settingsButtonY = settings.settingsButtonY,
             catalogViewMode = settings.catalogViewMode,
@@ -344,6 +347,12 @@ class AppStore(
     }
     suspend fun setAccentColor(accent: AppAccent) = editSafely("Akzentfarbe speichern") {
         it[ACCENT_COLOR] = accent.name
+        it.remove(CUSTOM_ACCENT_COLOR)
+        it[DYNAMIC_COLORS] = false
+    }
+    suspend fun setCustomAccentColor(color: Int) = editSafely("Benutzerdefinierte Akzentfarbe speichern") {
+        it[ACCENT_COLOR] = AppAccent.CUSTOM.name
+        it[CUSTOM_ACCENT_COLOR] = color
         it[DYNAMIC_COLORS] = false
     }
     suspend fun setSettingsButtonPosition(x: Float, y: Float) = editSafely("Einstellungsposition speichern") {
@@ -395,6 +404,9 @@ class AppStore(
         val to = (from + delta).coerceIn(0, order.lastIndex)
         if (from != to) order.add(to, order.removeAt(from))
         prefs[HOME_SECTION_ORDER] = order.joinToString(",") { it.name }
+    }
+    suspend fun setHomeSectionOrder(order: List<HomeSection>) = editSafely("Startseitenreihenfolge speichern") { prefs ->
+        prefs[HOME_SECTION_ORDER] = HomeSection.normalizeOrder(order.map(HomeSection::name)).joinToString(",") { it.name }
     }
 
     suspend fun offlineMetadataCount(): Int = metadataDao.count()
@@ -1303,6 +1315,7 @@ class AppStore(
         private val STARTUP_TAB = stringPreferencesKey("startup_tab")
         private val HOME_OFFLINE_MODE = booleanPreferencesKey("home_offline_mode")
         private val ACCENT_COLOR = stringPreferencesKey("accent_color")
+        private val CUSTOM_ACCENT_COLOR = intPreferencesKey("custom_accent_color")
         private val SETTINGS_BUTTON_X = floatPreferencesKey("settings_button_x")
         private val SETTINGS_BUTTON_Y = floatPreferencesKey("settings_button_y")
         private val CATALOG_VIEW_MODE = stringPreferencesKey("catalog_view_mode")
@@ -1360,6 +1373,7 @@ class AppStore(
             "startup_tab" to "string",
             "home_offline_mode" to "boolean",
             "accent_color" to "string",
+            "custom_accent_color" to "int",
             "settings_button_x" to "float",
             "settings_button_y" to "float",
             "catalog_view_mode" to "string",
