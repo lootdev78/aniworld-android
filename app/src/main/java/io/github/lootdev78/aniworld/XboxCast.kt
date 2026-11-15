@@ -34,13 +34,13 @@ import java.util.UUID
 import javax.net.ssl.SSLSocketFactory
 
 /**
- * Lightweight DLNA/UPnP controller used to send the currently resolved stream to an Xbox One or
- * Xbox Series S/X that exposes an AVTransport renderer on the same local network.
+ * Lightweight DLNA/UPnP controller used to send the currently resolved stream to a compatible
+ * AVTransport renderer on the same local network.
  *
  * Xbox consoles do not expose a Google Cast receiver. The interoperable path is DLNA/UPnP
  * "Play To". Discovery therefore uses SSDP and playback uses the AVTransport SOAP service.
  */
-enum class XboxDeviceProfile { XBOX_ONE, XBOX_SERIES, SAMSUNG_TIZEN, GENERIC_DLNA }
+enum class XboxDeviceProfile { XBOX_ONE, XBOX_SERIES, SAMSUNG_TIZEN, AMAZON_FIRE_TV, GENERIC_DLNA }
 
 data class XboxCastDevice(
     val id: String,
@@ -59,6 +59,8 @@ data class XboxCastDevice(
             val haystack = "$friendlyName $modelName $manufacturer".lowercase(Locale.ROOT)
             return "xbox" in haystack || ("microsoft" in haystack && "media" in haystack)
         }
+    val isAmazonFireTv: Boolean
+        get() = profile == XboxDeviceProfile.AMAZON_FIRE_TV
 
     val displayName: String
         get() = friendlyName.ifBlank { modelName.ifBlank { "Xbox / DLNA" } }
@@ -520,6 +522,7 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
             XboxDeviceProfile.SAMSUNG_TIZEN -> 550L
             XboxDeviceProfile.XBOX_ONE -> 350L
             XboxDeviceProfile.XBOX_SERIES -> 250L
+            XboxDeviceProfile.AMAZON_FIRE_TV -> 300L
             XboxDeviceProfile.GENERIC_DLNA -> 180L
         })
         setTransportUri(device, playback)
@@ -667,6 +670,9 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
         fun detectProfile(friendlyName: String, modelName: String, manufacturer: String): XboxDeviceProfile {
             val value = "$friendlyName $modelName $manufacturer".lowercase(Locale.ROOT)
             return when {
+                Regex("""\baft[a-z0-9]*\b""").containsMatchIn(value) ||
+                    ("amazon" in value && "fire" in value) ||
+                    "fire tv" in value -> XboxDeviceProfile.AMAZON_FIRE_TV
                 "samsung" in value || "tizen" in value -> XboxDeviceProfile.SAMSUNG_TIZEN
                 "xbox series" in value || "scarlett" in value -> XboxDeviceProfile.XBOX_SERIES
                 "xbox" in value || "microsoft" in value -> XboxDeviceProfile.XBOX_ONE

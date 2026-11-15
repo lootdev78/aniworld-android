@@ -286,6 +286,10 @@
     <string name="initial_metadata_body">Please wait while the first catalog metadata download finishes. The rest of the app is temporarily locked.</string>
     <string name="initial_metadata_open_settings">Open metadata settings</string>
     <string name="initial_metadata_progress">%1$d of %2$d titles stored</string>
+    <string name="stream_loading_title">Opening stream</string>
+    <string name="stream_loading_body">Please wait while the player prepares the video.</string>
+    <string name="metadata_import_cancel_timeout">The metadata download did not stop in time. The import was not started.</string>
+    <string name="metadata_import_checkpoint_cleanup_failed">The download checkpoint could not be cleared. The import was not started.</string>
     <string name="about_and_credits">About &amp; Credits</string>
     <string name="credits_created_by">Development and repository: lootdev78</string>
     <string name="catalog_metadata_no_titles">Catalog metadata could not be loaded because no titles were returned.</string>
@@ -413,16 +417,17 @@
     <string name="diagnostics_disabled_hint">Diagnostics logging is disabled. New app logs will not be stored.</string>
 
     <string name="cast_playing_on">Playing on %1$s</string>
-    <string name="local_cast">Local Cast (DLNA / FCast)</string>
+    <string name="local_cast">Cast</string>
     <string name="cast_dialog_title">Cast</string>
     <string name="cast_disconnect_and_resume">Disconnect and continue on this device</string>
     <string name="cast_header_warning">Protected streams are relayed through the phone so Referer, cookies and range requests also work on external receivers.</string>
-    <string name="cast_searching">Searching the local network and phone hotspot…</string>
+    <string name="cast_searching">Searching for compatible devices on the local network…</string>
+    <string name="cast_fire_tv_device">Fire TV · DLNA compatible (%1$s)</string>
     <string name="cast_xbox_dlna_device">Xbox / UPnP-DLNA renderer</string>
     <string name="cast_dlna_device">UPnP / DLNA renderer</string>
     <string name="cast_fcast_device">Open-source FCast receiver</string>
     <string name="cast_no_local_devices">Keine kompatiblen Cast-Geräte gefunden.</string>
-    <string name="cast_refresh_local">Search DLNA and FCast again</string>
+    <string name="cast_refresh_local">Search for devices again</string>
     <string name="cast_manual_address">Search a receiver by IP address</string>
     <string name="chromecast_button">Google Cast / Chromecast</string>
     <string name="chromecast_device">Chromecast device</string>

@@ -117,8 +117,8 @@ class AppStore(
                 autoNextDelaySeconds = (prefs[AUTO_NEXT_DELAY_SECONDS] ?: 8).coerceIn(0, 30),
                 autoPlayPreferredHoster = prefs[AUTO_PLAY_PREFERRED_HOSTER] ?: false,
                 allowExternalPlayer = prefs[ALLOW_EXTERNAL_PLAYER] ?: false,
-                autoSkipOpening = prefs[AUTO_SKIP_OPENING] ?: true,
-                autoSkipEnding = prefs[AUTO_SKIP_ENDING] ?: true,
+                autoSkipOpening = prefs[AUTO_SKIP_OPENING] ?: false,
+                autoSkipEnding = prefs[AUTO_SKIP_ENDING] ?: false,
                 autoSkipRecap = prefs[AUTO_SKIP_RECAP] ?: false,
                 showSkipButtons = prefs[SHOW_SKIP_BUTTONS] ?: true,
                 skipOffsetSeconds = (prefs[SKIP_OFFSET_SECONDS] ?: 0f).coerceIn(0f, 5f),
@@ -397,6 +397,17 @@ class AppStore(
     }
 
     suspend fun offlineMetadataCount(): Int = metadataDao.count()
+
+    suspend fun offlineMetadataSlugs(): Set<String> = metadataDao.all().mapTo(mutableSetOf(), SeriesMetadataEntity::slug)
+
+    suspend fun removeNewIncompleteOfflineMetadata(downloadedSlugs: Set<String>, originalSlugs: Set<String>) = withContext(Dispatchers.IO) {
+        val removable = metadataDao.all().asSequence()
+            .filter { it.slug in downloadedSlugs && it.slug !in originalSlugs }
+            .filterNot { it.toModel().hasCompleteOfflineMetadata() }
+            .map(SeriesMetadataEntity::slug)
+            .toList()
+        if (removable.isNotEmpty()) database.withTransaction { metadataDao.deleteBySlugs(removable) }
+    }
 
     suspend fun offlineMetadataInventory(expectedSlugs: Set<String>): MetadataInventory = withContext(Dispatchers.IO) {
         val stored = metadataDao.all()

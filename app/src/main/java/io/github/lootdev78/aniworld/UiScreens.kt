@@ -2987,6 +2987,8 @@ private fun SettingsCategoryRow(category: SettingsCategory, onClick: () -> Unit)
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(category.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(26.dp))
+            Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(stringResource(category.titleRes), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(

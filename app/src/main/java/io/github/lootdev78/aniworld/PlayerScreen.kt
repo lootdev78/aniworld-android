@@ -284,7 +284,10 @@ fun PlayerScreen(
         smartViewActive -> smartViewState.connectedDevice?.displayName.orEmpty()
         chromecastActive -> chromecastState.connectedDeviceName.orEmpty()
         fcastActive -> fcastState.connectedDevice?.displayName.orEmpty()
-        else -> dlnaState.connectedDevice?.displayName.orEmpty()
+        else -> dlnaState.connectedDevice?.let { device ->
+            if (device.isAmazonFireTv) context.getString(R.string.cast_fire_tv_device, device.displayName)
+            else device.displayName
+        }.orEmpty()
     }
     val activeCastProtocol = when {
         smartViewActive -> PlayerCastProtocol.SMART_VIEW
@@ -840,16 +843,9 @@ fun PlayerScreen(
                 controlsGeneration++
             },
             onSingleTap = {
-                if (!controlsVisible) {
-                    controlsVisible = true
-                    controlsGeneration++
-                    true
-                } else if (!isPlaying) {
-                    controlsVisible = false
-                    true
-                } else {
-                    false
-                }
+                controlsVisible = !controlsVisible
+                controlsGeneration++
+                true
             },
             onPlayingChanged = { playing ->
                 if (!castActive) {
@@ -891,16 +887,7 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = .88f))
                     .clickable {
-                        if (!controlsVisible) {
-                            controlsVisible = true
-                        } else {
-                            when {
-                                smartViewActive -> smartViewController.togglePlayPause()
-                                chromecastActive -> chromecastController.togglePlayPause()
-                                fcastActive -> fcastController.togglePlayPause()
-                                else -> dlnaController.togglePlayPause()
-                            }
-                        }
+                        controlsVisible = !controlsVisible
                         controlsGeneration++
                     },
                 contentAlignment = Alignment.Center
@@ -1183,7 +1170,12 @@ fun PlayerScreen(
                 }
             }
             dlnaState.devices.forEach { device ->
-                addCastChoice(device.displayName, PlayerCastProtocol.DLNA) {
+                val displayName = if (device.isAmazonFireTv) {
+                    context.getString(R.string.cast_fire_tv_device, device.displayName)
+                } else {
+                    device.displayName
+                }
+                addCastChoice(displayName, PlayerCastProtocol.DLNA) {
                     beginRemoteCast(PlayerCastProtocol.DLNA)
                     dlnaController.cast(device, playback, position)
                 }

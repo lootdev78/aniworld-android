@@ -345,6 +345,9 @@ interface SeriesMetadataDao {
 
     @Query("DELETE FROM series_metadata")
     suspend fun clear()
+
+    @Query("DELETE FROM series_metadata WHERE slug IN (:slugs)")
+    suspend fun deleteBySlugs(slugs: List<String>)
 }
 
 @Dao

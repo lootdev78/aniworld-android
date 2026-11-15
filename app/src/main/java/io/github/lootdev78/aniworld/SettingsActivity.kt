@@ -11,17 +11,27 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Web
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 
 internal const val SETTINGS_ACTIVITY_VIEWMODEL_ARG = "settings_activity"
 
-enum class SettingsCategory(val titleRes: Int, val descriptionRes: Int) {
-    PREFERRED(R.string.settings_category_preferred, R.string.settings_category_preferred_desc),
-    APPEARANCE(R.string.settings_category_appearance, R.string.settings_category_appearance_desc),
-    METADATA(R.string.settings_category_metadata, R.string.settings_category_metadata_desc),
-    BROWSER(R.string.settings_category_browser, R.string.settings_category_browser_desc),
-    DIAGNOSTICS(R.string.settings_category_diagnostics, R.string.settings_category_diagnostics_desc),
-    MAINTENANCE(R.string.settings_category_maintenance, R.string.settings_category_maintenance_desc),
-    CREDITS(R.string.settings_category_credits, R.string.settings_category_credits_desc)
+enum class SettingsCategory(val titleRes: Int, val descriptionRes: Int, val icon: ImageVector) {
+    PREFERRED(R.string.settings_category_preferred, R.string.settings_category_preferred_desc, Icons.Default.PlayCircle),
+    APPEARANCE(R.string.settings_category_appearance, R.string.settings_category_appearance_desc, Icons.Default.Palette),
+    METADATA(R.string.settings_category_metadata, R.string.settings_category_metadata_desc, Icons.Default.CloudDownload),
+    BROWSER(R.string.settings_category_browser, R.string.settings_category_browser_desc, Icons.Default.Web),
+    DIAGNOSTICS(R.string.settings_category_diagnostics, R.string.settings_category_diagnostics_desc, Icons.Default.BugReport),
+    MAINTENANCE(R.string.settings_category_maintenance, R.string.settings_category_maintenance_desc, Icons.Default.Tune),
+    CREDITS(R.string.settings_category_credits, R.string.settings_category_credits_desc, Icons.Default.Settings)
 }
 
 private fun settingsActivity(category: SettingsCategory): Class<out ComponentActivity> = when (category) {

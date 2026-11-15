@@ -18,6 +18,11 @@ import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.WorkInfo
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.security.MessageDigest
 
@@ -28,6 +33,7 @@ class CatalogMetadataWorker(
     override suspend fun doWork(): Result {
         val app = applicationContext as AniWorldApplication
         val force = inputData.getBoolean(KEY_FORCE, true)
+        var catalogSlugs = emptySet<String>()
         createChannel()
         setProgress(Data.Builder().putInt(KEY_COMPLETED, 0).putInt(KEY_TOTAL, 0).build())
         setForeground(notification(0, 0, indeterminate = true))
@@ -39,8 +45,16 @@ class CatalogMetadataWorker(
                 Result.failure(Data.Builder().putString(KEY_ERROR, message).build())
             } else {
                 val checkpoint = checkpointPreferences()
+                catalogSlugs = catalog.items.map(Series::slug).filter(String::isNotBlank).toSet()
+                val originalSlugs = app.store.offlineMetadataSlugs()
                 val fingerprint = catalogFingerprint(catalog.items)
                 val completedSlugs = loadCompletedSlugs(checkpoint, fingerprint).toMutableSet()
+                check(
+                    checkpoint.edit()
+                        .putString(KEY_CATALOG_SLUGS, JSONArray(catalogSlugs.sorted()).toString())
+                        .putString(KEY_ORIGINAL_SLUGS, JSONArray(originalSlugs.sorted()).toString())
+                        .commit()
+                ) { "Metadaten-Checkpoint konnte nicht gespeichert werden" }
                 setProgress(Data.Builder().putInt(KEY_COMPLETED, completedSlugs.size).putInt(KEY_TOTAL, catalog.items.size).build())
                 setForeground(notification(completedSlugs.size, catalog.items.size, indeterminate = false))
                 app.repository.preloadCatalogMetadata(
@@ -73,6 +87,22 @@ class CatalogMetadataWorker(
                         .build()
                 )
             }
+        } catch (error: CancellationException) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                try {
+                    val checkpoint = checkpointPreferences()
+                    app.store.removeNewIncompleteOfflineMetadata(
+                        loadStringSet(checkpoint, KEY_CATALOG_SLUGS),
+                        loadStringSet(checkpoint, KEY_ORIGINAL_SLUGS)
+                    )
+                    checkpoint.edit().clear().commit()
+                } catch (cleanupError: Exception) {
+                    error.addSuppressed(cleanupError)
+                    checkpointPreferences().edit().clear().putBoolean(KEY_CLEANUP_FAILED, true).commit()
+                    AppLogger.error("Metadaten", "Abgebrochene Metadaten konnten nicht vollständig bereinigt werden", cleanupError)
+                }
+            }
+            throw error
         } catch (error: Exception) {
             AppLogger.error("Metadaten", "Hintergrundaktualisierung fehlgeschlagen", error)
             val message = error.message ?: applicationContext.getString(R.string.catalog_metadata_update_failed)
@@ -104,6 +134,12 @@ class CatalogMetadataWorker(
             val array = JSONArray(raw)
             buildSet { for (index in 0 until array.length()) array.optString(index).takeIf(String::isNotBlank)?.let(::add) }
         }.getOrDefault(emptySet())
+    }
+
+    private fun loadStringSet(preferences: SharedPreferences, key: String): Set<String> {
+        val raw = preferences.getString(key, "[]").orEmpty()
+        val array = JSONArray(raw)
+        return buildSet { for (index in 0 until array.length()) array.optString(index).takeIf(String::isNotBlank)?.let(::add) }
     }
 
     private fun saveCheckpoint(preferences: SharedPreferences, fingerprint: String, completed: Set<String>) {
@@ -194,12 +230,15 @@ class CatalogMetadataWorker(
         const val KEY_COMPLETED = "completed"
         const val KEY_TOTAL = "total"
         const val KEY_ERROR = "error"
+        private const val KEY_CLEANUP_FAILED = "cleanup_failed"
         private const val CHANNEL_ID = "metadata_updates"
         private const val NOTIFICATION_ID = 1410
         private const val FINISHED_NOTIFICATION_ID = 1411
         private const val CHECKPOINT_PREFERENCES = "catalog_metadata_checkpoint"
         private const val KEY_FINGERPRINT = "catalog_fingerprint"
         private const val KEY_COMPLETED_SLUGS = "completed_slugs"
+        private const val KEY_CATALOG_SLUGS = "catalog_slugs"
+        private const val KEY_ORIGINAL_SLUGS = "original_slugs"
 
         fun enqueue(context: Context, force: Boolean = true) {
             val request = OneTimeWorkRequestBuilder<CatalogMetadataWorker>()
@@ -207,6 +246,40 @@ class CatalogMetadataWorker(
                 .setInputData(Data.Builder().putBoolean(KEY_FORCE, force).build())
                 .build()
             WorkManager.getInstance(context).enqueueUniqueWork(UNIQUE_WORK, ExistingWorkPolicy.KEEP, request)
+        }
+
+        suspend fun cancelAndClearCheckpoint(context: Context) {
+            val workManager = WorkManager.getInstance(context.applicationContext)
+            withContext(Dispatchers.IO) {
+                workManager.cancelUniqueWork(UNIQUE_WORK).result.get()
+            }
+
+            val deadline = android.os.SystemClock.elapsedRealtime() + 15_000L
+            while (true) {
+                val work = withContext(Dispatchers.IO) {
+                    workManager.getWorkInfosForUniqueWork(UNIQUE_WORK).get()
+                }
+                if (work.none {
+                        it.state == WorkInfo.State.ENQUEUED ||
+                            it.state == WorkInfo.State.RUNNING ||
+                            it.state == WorkInfo.State.BLOCKED
+                    }
+                ) {
+                    break
+                }
+                check(android.os.SystemClock.elapsedRealtime() < deadline) {
+                    context.getString(R.string.metadata_import_cancel_timeout)
+                }
+                kotlinx.coroutines.delay(100L)
+            }
+
+            val checkpoint = context.applicationContext.getSharedPreferences(CHECKPOINT_PREFERENCES, Context.MODE_PRIVATE)
+            if (checkpoint.getBoolean(KEY_CLEANUP_FAILED, false)) {
+                checkpoint.edit().clear().commit()
+                error(context.getString(R.string.metadata_import_checkpoint_cleanup_failed))
+            }
+            val cleared = checkpoint.edit().clear().commit()
+            check(cleared) { context.getString(R.string.metadata_import_checkpoint_cleanup_failed) }
         }
     }
 }

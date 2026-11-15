@@ -1315,6 +1315,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
     fun importOfflineMetadata(uri: Uri) {
         viewModelScope.launch {
             runCatching {
+                CatalogMetadataWorker.cancelAndClearCheckpoint(getApplication())
                 val raw = withContext(Dispatchers.IO) {
                     val resolver = getApplication<Application>().contentResolver
                     resolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
@@ -1327,6 +1328,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 loadCatalog(force = true)
                 if (_state.value.preferences.homeOfflineMode) loadHome(force = true)
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 AppLogger.error("Metadaten", text(R.string.metadata_import_failed), error)
                 _state.update { it.copy(error = text(R.string.metadata_import_failed_detail, error.message.orEmpty())) }
             }
