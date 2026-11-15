@@ -233,7 +233,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        deepLink.value = intent.dataString
+        intent.dataString?.let(activityViewModel::openDeepLink)
         if (intent.action == PlaybackService.ACTION_OPEN_PLAYER) {
             // Route the notification tap through the same lifecycle-aware action stream.
             playbackAction.value = PlaybackService.ACTION_OPEN_PLAYER
@@ -430,6 +430,14 @@ fun AniWorldApp(vm: AppViewModel) {
     val firstStartNotificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { vm.markNotificationPermissionAsked() }
+
+    LaunchedEffect(st.deepLinkNavigationVersion) {
+        if (st.deepLinkNavigationVersion > 0L) {
+            navController.navigate(DETAIL_ROUTE) {
+                launchSingleTop = true
+            }
+        }
+    }
 
     LaunchedEffect(st.preferencesReady, st.preferences.notificationPermissionAsked) {
         if (!st.preferencesReady || st.preferences.notificationPermissionAsked) return@LaunchedEffect

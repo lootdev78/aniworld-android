@@ -514,6 +514,10 @@
     <string name="cast_volume_sync_desc">Android- und Gerätelautstärke werden synchronisiert, sofern das Ziel dies unterstützt.</string>
     <string name="aniskip_settings_title">AniSkip &amp; Player-Automatik</string>
     <string name="aniskip_settings_desc">Openings, Endings und Recaps überspringen; Wiedergabe und Skip-Zeiten pro Staffel merken.</string>
+    <string name="aniskip_mapping_mode_title">MAL-Zuordnung</string>
+    <string name="aniskip_mapping_mode_desc">Automatisch werden nur Anime mit exakt gleichem Titel zugeordnet (Groß-/Kleinschreibung wird ignoriert). Manuell sucht und wählt die Zuordnung im Player.</string>
+    <string name="aniskip_mapping_manual">Manuell</string>
+    <string name="aniskip_mapping_automatic">Automatisch</string>
     <string name="aniskip_auto_opening">Openings automatisch überspringen</string>
     <string name="aniskip_auto_opening_desc">Überspringt bekannte Opening-Segmente automatisch.</string>
     <string name="aniskip_auto_ending">Endings automatisch überspringen</string>
@@ -591,7 +595,8 @@
     <string name="settings_backup_merge_complete">%1$d Einstellungen aus der Sicherung wurden zusammengeführt.</string>
     <string name="settings_backup_import_failed">Wiederherstellung der Einstellungen fehlgeschlagen</string>
     <string name="settings_backup_import_failed_detail">Die Einstellungssicherung konnte nicht wiederhergestellt werden: %1$s</string>
-    <string name="shortcut_pin">Launcher-Verknüpfung erstellen</string>
+    <string name="shortcut_pin">Verknüpfung erstellen</string>
+    <string name="shortcut_select_one">Nur einen Anime auswählen</string>
     <string name="shortcut_requested">Android wurde gebeten, die Anime-Verknüpfung zum Startbildschirm hinzuzufügen.</string>
     <string name="shortcut_unsupported">Dieser Launcher unterstützt keine angehefteten Verknüpfungen.</string>
     <string name="shortcut_invalid_anime">Diese Anime-Verknüpfung hat eine ungültige oder fehlende Anime-ID.</string>

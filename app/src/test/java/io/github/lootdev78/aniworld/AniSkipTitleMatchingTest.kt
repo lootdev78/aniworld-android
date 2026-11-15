@@ -18,4 +18,11 @@ class AniSkipTitleMatchingTest {
     fun `surrounding whitespace is ignored`() {
         assertTrue(aniWorldTitleEquals("  Anime Title  ", "anime title"))
     }
+
+    @Test
+    fun `manual mode never auto resolves and stored mapping takes precedence`() {
+        assertFalse(shouldAutoResolveAniSkipMapping(AniSkipMappingMode.MANUAL, hasStoredMapping = false))
+        assertFalse(shouldAutoResolveAniSkipMapping(AniSkipMappingMode.AUTOMATIC, hasStoredMapping = true))
+        assertTrue(shouldAutoResolveAniSkipMapping(AniSkipMappingMode.AUTOMATIC, hasStoredMapping = false))
+    }
 }

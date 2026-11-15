@@ -14,6 +14,7 @@ import android.content.pm.ShortcutManager
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.widget.Toast
+import androidx.core.graphics.drawable.toBitmap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -48,6 +49,8 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -153,12 +156,16 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.SingletonImageLoader
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import androidx.core.content.ContextCompat
-import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(st: UiState, vm: AppViewModel) {
@@ -890,7 +897,6 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     var filter by rememberSaveable { mutableStateOf("") }
     var selectedSlugs by remember { mutableStateOf(emptySet<String>()) }
     var confirmDelete by remember { mutableStateOf(false) }
-    var favoriteActions by remember { mutableStateOf<FavoriteEntry?>(null) }
     val context = LocalContext.current
     val favoritesGridPosition = vm.savedListPosition("favorites:grid")
     val favoritesListPosition = vm.savedListPosition("favorites:list")
@@ -932,7 +938,7 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     }
 
     fun onFavoriteLongPress(entry: FavoriteEntry) {
-        if (selectionMode) toggleSelection(entry.slug) else favoriteActions = entry
+        toggleSelection(entry.slug)
     }
 
     Column(Modifier.fillMaxSize().nestedScroll(controlsState.nestedScrollConnection)) {
@@ -955,6 +961,13 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                 count = selectedSlugs.size,
                 allSelected = selectedSlugs.size == ordered.size && ordered.isNotEmpty(),
                 onSelectAll = { selectedSlugs = if (selectedSlugs.size == ordered.size) emptySet() else ordered.map { it.slug }.toSet() },
+                onCreateShortcut = {
+                    selectedSlugs.singleOrNull()?.let { slug ->
+                        ordered.firstOrNull { it.slug == slug }?.let { entry ->
+                            scope.launch { pinAnimeShortcut(context, entry.asSeries()) }
+                        }
+                    }
+                },
                 onDelete = { confirmDelete = true },
                 onCancel = { selectedSlugs = emptySet() }
             )
@@ -1060,40 +1073,6 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                 confirmDelete = false
             },
             onDismiss = { confirmDelete = false }
-        )
-    }
-    favoriteActions?.let { entry ->
-        AlertDialog(
-            onDismissRequest = { favoriteActions = null },
-            title = { Text(entry.title) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(stringResource(R.string.favorite_context_message))
-                    TextButton(
-                        onClick = {
-                            favoriteActions = null
-                            pinAnimeShortcut(context, entry.asSeries())
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.favorite_action_pin_shortcut))
-                    }
-                    TextButton(
-                        onClick = {
-                            favoriteActions = null
-                            toggleSelection(entry.slug)
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(stringResource(R.string.favorite_action_select))
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { favoriteActions = null }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
         )
     }
 }
@@ -1367,6 +1346,7 @@ private fun LibrarySelectionToolbar(
     count: Int,
     allSelected: Boolean,
     onSelectAll: () -> Unit,
+    onCreateShortcut: () -> Unit = {},
     onDelete: () -> Unit,
     onCancel: () -> Unit
 ) {
@@ -1380,6 +1360,17 @@ private fun LibrarySelectionToolbar(
             Text(stringResource(R.string.selected_count, count), modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
             IconButton(onClick = onSelectAll) {
                 Icon(if (allSelected) Icons.Default.DoneAll else Icons.Default.SelectAll, stringResource(R.string.select_all))
+            }
+            IconButton(onClick = onCreateShortcut, enabled = count == 1) {
+                Icon(Icons.Default.Home, stringResource(R.string.shortcut_pin))
+            }
+            if (count > 1) {
+                Text(
+                    stringResource(R.string.shortcut_select_one),
+                    modifier = Modifier.widthIn(max = 90.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, stringResource(R.string.delete)) }
             IconButton(onClick = onCancel) { Icon(Icons.Default.Close, stringResource(R.string.cancel)) }
@@ -1465,7 +1456,6 @@ private enum class EpisodeFilter(@StringRes val labelRes: Int) { ALL(R.string.al
 @Composable
 fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val series = st.selected ?: return
-    val context = LocalContext.current
     var episodeFilter by rememberSaveable(series.slug, st.season) { mutableStateOf(EpisodeFilter.ALL) }
     if (st.season == null) key(series.slug) {
         val seasonListKey = "detail:${series.slug}:seasons"
@@ -1498,11 +1488,6 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                    }
-                    OutlinedButton(onClick = { pinAnimeShortcut(context, series) }) {
-                        Icon(Icons.Default.Home, null)
-                        Spacer(Modifier.width(6.dp))
-                        Text(stringResource(R.string.shortcut_pin))
                     }
                 }
             }
@@ -1631,7 +1616,13 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                                     Text(episode.localizedLabel(), fontWeight = FontWeight.Bold)
                                     Text(episode.localizedDisplayTitle(), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     if (episode.releasedAt.isNotBlank()) Text(episode.releasedAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-                                    if (episode.description.isNotBlank()) Text(episode.description, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (episode.description.isNotBlank()) {
+                                        ExpandableDescriptionText(
+                                            episode.description,
+                                            collapsedLines = 1,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                     if (watch != null && !watch.completed && watch.positionMs > 0L) {
                                         LinearProgressIndicator(progress = { watch.progressFraction }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
                                         Text(formatPlaybackTimeRange(watch.positionMs, watch.durationMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1651,6 +1642,8 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
 
 @Composable
 private fun NetflixDetailHeader(series: Series, st: UiState, vm: AppViewModel, expanded: Boolean) {
+    val context = LocalContext.current
+    val shortcutScope = rememberCoroutineScope()
     Box(Modifier.fillMaxWidth().height(if (expanded) 500.dp else 430.dp)) {
         AnimeImage(series.coverUrl, series.title, series.slug, Modifier.fillMaxSize(), ContentScale.Crop)
         Box(
@@ -1682,9 +1675,14 @@ private fun NetflixDetailHeader(series: Series, st: UiState, vm: AppViewModel, e
                 ExpandableDescriptionText(series.description.ifBlank { stringResource(R.string.no_description) }, collapsedLines = if (expanded) 5 else 3, color = Color.White.copy(alpha = .88f))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Button(onClick = vm::resumeSelected) { Icon(Icons.Default.PlayArrow, null); Text(" " + stringResource(if (st.preferences.progress.containsKey(series.slug)) R.string.continue_playback else R.string.play_now)) }
-                    OutlinedButton(onClick = { vm.toggleFavorite(series) }) {
-                        Icon(if (st.preferences.isFavorite(series.slug)) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
-                        Text(" " + stringResource(if (st.preferences.isFavorite(series.slug)) R.string.remove_favorite else R.string.favorite))
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedButton(onClick = { vm.toggleFavorite(series) }) {
+                            Icon(if (st.preferences.isFavorite(series.slug)) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
+                            Text(" " + stringResource(if (st.preferences.isFavorite(series.slug)) R.string.remove_favorite else R.string.favorite))
+                        }
+                        OutlinedButton(onClick = { shortcutScope.launch { pinAnimeShortcut(context, series) } }) {
+                            Text(stringResource(R.string.shortcut_pin))
+                        }
                     }
                     OutlinedButton(onClick = { vm.openAnimeInfo(series) }) { Icon(Icons.Default.Info, null); Text(" " + stringResource(R.string.info)) }
                 }
@@ -1754,9 +1752,11 @@ private fun ExpandableDescriptionText(
 ) {
     var expanded by rememberSaveable(text) { mutableStateOf(false) }
     var hasOverflow by remember(text) { mutableStateOf(false) }
+    val expandedScrollState = rememberScrollState()
     Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
             text = text,
+            modifier = if (expanded) Modifier.heightIn(max = 320.dp).verticalScroll(expandedScrollState) else Modifier,
             color = color,
             maxLines = if (expanded) Int.MAX_VALUE else collapsedLines,
             overflow = TextOverflow.Ellipsis,
@@ -2404,7 +2404,7 @@ fun EpisodeOptionsScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(stringResource(R.string.description), fontWeight = FontWeight.Bold)
-                        Text(episode.description.ifBlank { stringResource(R.string.no_description) }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        ExpandableDescriptionText(episode.description.ifBlank { stringResource(R.string.no_description) })
                     }
                 }
             }
@@ -2699,6 +2699,25 @@ fun SettingsScreen(
                         title = stringResource(R.string.aniskip_settings_title),
                         subtitle = stringResource(R.string.aniskip_settings_desc)
                     ) {
+                        Text(stringResource(R.string.aniskip_mapping_mode_title), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            stringResource(R.string.aniskip_mapping_mode_desc),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = prefs.aniSkipMappingMode == AniSkipMappingMode.MANUAL,
+                                onClick = { vm.setAniSkipMappingMode(AniSkipMappingMode.MANUAL) },
+                                label = { Text(stringResource(R.string.aniskip_mapping_manual)) }
+                            )
+                            FilterChip(
+                                selected = prefs.aniSkipMappingMode == AniSkipMappingMode.AUTOMATIC,
+                                onClick = { vm.setAniSkipMappingMode(AniSkipMappingMode.AUTOMATIC) },
+                                label = { Text(stringResource(R.string.aniskip_mapping_automatic)) }
+                            )
+                        }
+                        HorizontalDivider()
                         SettingSwitch(stringResource(R.string.aniskip_auto_opening), stringResource(R.string.aniskip_auto_opening_desc), prefs.autoSkipOpening, vm::setAutoSkipOpening)
                         SettingSwitch(stringResource(R.string.aniskip_auto_ending), stringResource(R.string.aniskip_auto_ending_desc), prefs.autoSkipEnding, vm::setAutoSkipEnding)
                         SettingSwitch(stringResource(R.string.aniskip_auto_recap), stringResource(R.string.aniskip_auto_recap_desc), prefs.autoSkipRecap, vm::setAutoSkipRecap)
@@ -3302,7 +3321,7 @@ private fun CustomAccentColorPicker(
     )
 }
 
-private fun pinAnimeShortcut(context: android.content.Context, series: Series) {
+private suspend fun pinAnimeShortcut(context: android.content.Context, series: Series) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
         Toast.makeText(context, R.string.shortcut_unsupported, Toast.LENGTH_LONG).show()
         return
@@ -3324,10 +3343,34 @@ private fun pinAnimeShortcut(context: android.content.Context, series: Series) {
     val shortcutIntent = Intent(Intent.ACTION_VIEW, deepLink, context, MainActivity::class.java).apply {
         flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
     }
+    val iconBitmap = if (series.coverUrl.isNotBlank()) {
+        try {
+            withContext(Dispatchers.IO) {
+                val cacheKey = (context.applicationContext as? AniWorldApplication)
+                    ?.coverCacheKey(series.slug, series.coverUrl)
+                    ?: "anime-cover:${series.slug.lowercase()}:${series.coverUrl.trim()}"
+                val request = ImageRequest.Builder(context)
+                    .data(series.coverUrl)
+                    .memoryCacheKey(cacheKey)
+                    .diskCacheKey(cacheKey)
+                    .allowHardware(false)
+                    .size(192, 192)
+                    .build()
+                val loader = SingletonImageLoader.get(context)
+                (loader.execute(request).drawable ?: error("Anime cover could not be decoded")).toBitmap(192, 192)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            AppLogger.warn("Shortcut", "Anime-Cover für Launcher-Verknüpfung nicht verfügbar", error.message.orEmpty())
+            null
+        }
+    } else null
+    val icon = iconBitmap?.let { bitmap -> Icon.createWithBitmap(bitmap) }
     val shortcut = ShortcutInfo.Builder(context, "anime-${series.slug}")
         .setShortLabel(series.title.ifBlank { series.slug }.take(10))
         .setLongLabel(series.title)
-        .setIcon(Icon.createWithResource(context, R.mipmap.ic_launcher))
+        .setIcon(icon ?: Icon.createWithResource(context, R.mipmap.ic_launcher))
         .setIntent(shortcutIntent)
         .build()
     val result = try {

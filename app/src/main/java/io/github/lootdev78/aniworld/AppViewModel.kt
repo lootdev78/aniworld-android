@@ -54,6 +54,7 @@ data class UiState(
     val episodeCollection: EpisodeCollectionPage? = null,
     val playback: ResolvedPlayback? = null,
     val playerMinimized: Boolean = false,
+    val deepLinkNavigationVersion: Long = 0L,
     val externalPlayback: ResolvedPlayback? = null,
     val skipEpisodeKey: String? = null,
     val skipSegments: List<AniSkipSegment> = emptyList(),
@@ -1053,6 +1054,21 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             _state.update { it.copy(error = text(R.string.shortcut_invalid_anime)) }
             return
         }
+        _state.update {
+            it.copy(
+                deepLinkNavigationVersion = it.deepLinkNavigationVersion + 1L,
+                playerMinimized = it.playback != null,
+                pendingEpisode = null,
+                pendingHosters = emptyList(),
+                infoSeries = null,
+                infoEpisode = null,
+                seriesCollection = null,
+                episodeCollection = null,
+                newsPage = null,
+                challenge = null,
+                error = null
+            )
+        }
         select(Series(slug.replace('-', ' ').replaceFirstChar { it.uppercase() }, slug, "https://aniworld.to/anime/stream/$slug"))
     }
 
@@ -1314,7 +1330,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 val prefs = _state.value.preferences
                 val mappingKey = seasonKey(playback.series.slug, playback.episode.season)
                 var mapping = _state.value.preferences.aniSkipMappings[mappingKey] ?: prefs.aniSkipMappings[mappingKey]
-                if (mapping == null) {
+                if (shouldAutoResolveAniSkipMapping(prefs.aniSkipMappingMode, mapping != null)) {
                     val candidate = aniSkipRepository.findExactTitleMatch(playback.series.title)
                     mapping = _state.value.preferences.aniSkipMappings[mappingKey]
                     if (mapping == null && candidate != null) {
@@ -1363,6 +1379,20 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         }
     }
     fun setAutoPlayPreferredHoster(enabled: Boolean) = viewModelScope.launch { store.setAutoPlayPreferredHoster(enabled) }.let { Unit }
+    fun setAniSkipMappingMode(mode: AniSkipMappingMode) {
+        viewModelScope.launch {
+            store.setAniSkipMappingMode(mode)
+            _state.update { state ->
+                state.copy(preferences = state.preferences.copy(aniSkipMappingMode = mode))
+            }
+            if (mode == AniSkipMappingMode.AUTOMATIC) {
+                val playback = _state.value.playback
+                playback?.knownDurationMs?.takeIf { it > 0L && it != Long.MAX_VALUE }?.let {
+                    ensureAniSkipSegments(playback, it, force = true)
+                }
+            }
+        }
+    }
     fun setAllowExternalPlayer(enabled: Boolean) = viewModelScope.launch { store.setAllowExternalPlayer(enabled) }.let { Unit }
     fun setStartupTab(tab: HomeTab) = viewModelScope.launch { store.setStartupTab(tab.name) }.let { Unit }
     fun setHomeOfflineMode(enabled: Boolean) {

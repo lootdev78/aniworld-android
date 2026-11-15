@@ -467,6 +467,9 @@ class AniSkipAndroidCore(context: Context) {
 internal fun aniWorldTitleEquals(aniWorldTitle: String, aniSkipTitle: String): Boolean =
     aniWorldTitle.trim().equals(aniSkipTitle.trim(), ignoreCase = true)
 
+internal fun shouldAutoResolveAniSkipMapping(mode: AniSkipMappingMode, hasStoredMapping: Boolean): Boolean =
+    mode == AniSkipMappingMode.AUTOMATIC && !hasStoredMapping
+
 /** Shared seek calculation matching upstream ani-skip's endTime - offset behavior. */
 object AniSkipPlaybackLogic {
     fun targetPositionMs(segment: AniSkipSegment, durationMs: Long, offsetSeconds: Float): Long {

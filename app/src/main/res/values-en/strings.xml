@@ -514,6 +514,10 @@
     <string name="cast_volume_sync_desc">Android and device volume are synchronized when the receiver supports it.</string>
     <string name="aniskip_settings_title">AniSkip &amp; playback automation</string>
     <string name="aniskip_settings_desc">Skip openings, endings and recaps; remember playback preferences and segment data per season.</string>
+    <string name="aniskip_mapping_mode_title">MAL mapping</string>
+    <string name="aniskip_mapping_mode_desc">Automatic mapping only applies when anime titles match exactly (case is ignored). In manual mode, search and choose the mapping in the player.</string>
+    <string name="aniskip_mapping_manual">Manual</string>
+    <string name="aniskip_mapping_automatic">Automatic</string>
     <string name="aniskip_auto_opening">Automatically skip openings</string>
     <string name="aniskip_auto_opening_desc">Automatically skips known opening segments.</string>
     <string name="aniskip_auto_ending">Automatically skip endings</string>
@@ -591,7 +595,8 @@
     <string name="settings_backup_merge_complete">Merged %1$d settings from the backup.</string>
     <string name="settings_backup_import_failed">Settings backup restore failed</string>
     <string name="settings_backup_import_failed_detail">The settings backup could not be restored: %1$s</string>
-    <string name="shortcut_pin">Create launcher shortcut</string>
+    <string name="shortcut_pin">Create shortcut</string>
+    <string name="shortcut_select_one">Select one anime</string>
     <string name="shortcut_requested">Android was asked to add the anime shortcut to your home screen.</string>
     <string name="shortcut_unsupported">This launcher does not support pinned shortcuts.</string>
     <string name="shortcut_invalid_anime">This anime shortcut has an invalid or missing anime ID.</string>

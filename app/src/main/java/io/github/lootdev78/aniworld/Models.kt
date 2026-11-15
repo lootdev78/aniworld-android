@@ -301,6 +301,11 @@ enum class HomeSection(@StringRes val labelRes: Int) {
     }
 }
 
+enum class AniSkipMappingMode {
+    MANUAL,
+    AUTOMATIC
+}
+
 data class AppPreferences(
     val languagePriority: List<Language> = Language.DEFAULT_PRIORITY,
     val hosterPriority: List<String> = HosterCatalog.DEFAULT_PRIORITY,
@@ -339,6 +344,7 @@ data class AppPreferences(
     val rememberVolume: Boolean = true,
     val savedVolumePercent: Int = -1,
     val aniSkipMappings: Map<String, AniSkipAnimeMapping> = emptyMap(),
+    val aniSkipMappingMode: AniSkipMappingMode = AniSkipMappingMode.AUTOMATIC,
     val startupTab: String = "START",
     val homeOfflineMode: Boolean = false,
     val accentColor: AppAccent = AppAccent.RED,

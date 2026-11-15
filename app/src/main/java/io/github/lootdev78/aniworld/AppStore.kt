@@ -53,6 +53,7 @@ private data class SettingsSnapshot(
     val rememberVolume: Boolean,
     val savedVolumePercent: Int,
     val aniSkipMappings: Map<String, AniSkipAnimeMapping>,
+    val aniSkipMappingMode: AniSkipMappingMode,
     val startupTab: String,
     val homeOfflineMode: Boolean,
     val accentColor: AppAccent,
@@ -130,6 +131,9 @@ class AppStore(
                 rememberVolume = prefs[REMEMBER_VOLUME] ?: true,
                 savedVolumePercent = (prefs[SAVED_VOLUME_PERCENT] ?: -1).coerceIn(-1, 100),
                 aniSkipMappings = parseAniSkipMappings(prefs[ANISKIP_MAPPINGS]),
+                aniSkipMappingMode = prefs[ANISKIP_MAPPING_MODE]?.let { raw ->
+                    AniSkipMappingMode.entries.firstOrNull { it.name == raw }
+                } ?: AniSkipMappingMode.AUTOMATIC,
                 startupTab = prefs[STARTUP_TAB] ?: "START",
                 homeOfflineMode = prefs[HOME_OFFLINE_MODE] ?: false,
                 accentColor = prefs[ACCENT_COLOR]?.let { raw -> AppAccent.entries.firstOrNull { it.name == raw } } ?: AppAccent.RED,
@@ -217,6 +221,7 @@ class AppStore(
             rememberVolume = settings.rememberVolume,
             savedVolumePercent = settings.savedVolumePercent,
             aniSkipMappings = settings.aniSkipMappings,
+            aniSkipMappingMode = settings.aniSkipMappingMode,
             startupTab = settings.startupTab,
             homeOfflineMode = settings.homeOfflineMode,
             accentColor = settings.accentColor,
@@ -332,6 +337,9 @@ class AppStore(
                 put(mapKey, JSONObject().put("malId", value.malId).put("title", value.title).put("url", value.url))
             }
         }.toString()
+    }
+    suspend fun setAniSkipMappingMode(mode: AniSkipMappingMode) = editSafely("AniSkip-Zuordnungsmodus speichern") {
+        it[ANISKIP_MAPPING_MODE] = mode.name
     }
     suspend fun setAutoPlayPreferredHoster(enabled: Boolean) = editSafely("Automatischen Hosterstart speichern") {
         it[AUTO_PLAY_PREFERRED_HOSTER] = enabled
@@ -1312,6 +1320,7 @@ class AppStore(
         private val REMEMBER_VOLUME = booleanPreferencesKey("remember_volume")
         private val SAVED_VOLUME_PERCENT = intPreferencesKey("saved_volume_percent")
         private val ANISKIP_MAPPINGS = stringPreferencesKey("aniskip_mappings")
+        private val ANISKIP_MAPPING_MODE = stringPreferencesKey("aniskip_mapping_mode")
         private val STARTUP_TAB = stringPreferencesKey("startup_tab")
         private val HOME_OFFLINE_MODE = booleanPreferencesKey("home_offline_mode")
         private val ACCENT_COLOR = stringPreferencesKey("accent_color")
@@ -1369,6 +1378,7 @@ class AppStore(
             "remember_volume" to "boolean",
             "saved_volume_percent" to "int",
             "aniskip_mappings" to "string",
+            "aniskip_mapping_mode" to "string",
             "last_home_tab" to "string",
             "startup_tab" to "string",
             "home_offline_mode" to "boolean",

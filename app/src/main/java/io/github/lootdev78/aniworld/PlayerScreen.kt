@@ -1536,13 +1536,6 @@ fun PlayerScreen(
                 tonalElevation = 8.dp
             ) {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text(
-                        "${playback.seriesTitle} · ${playback.episode.localizedLabel(context)} · ${playback.episode.localizedDisplayTitle(context)}",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1
-                    )
                     Slider(
                         value = displayedPosition.toFloat(),
                         onValueChange = { value ->
