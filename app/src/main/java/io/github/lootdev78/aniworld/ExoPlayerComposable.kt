@@ -16,7 +16,6 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -57,11 +56,13 @@ private enum class GestureMode { BRIGHTNESS, VOLUME }
 fun EmbeddedExoPlayer(
     playback: ResolvedPlayback,
     modifier: Modifier = Modifier,
+    loading: Boolean = false,
     onProgress: (positionMs: Long, durationMs: Long) -> Unit,
     onEnded: (positionMs: Long, durationMs: Long) -> Unit,
     onError: (String) -> Unit,
     onInteraction: () -> Unit = {},
     onSingleTap: () -> Boolean = { false },
+    onLoadingChanged: (Boolean) -> Unit = {},
     onPlayingChanged: (Boolean) -> Unit = {},
     rememberVolume: Boolean = true,
     savedVolumePercent: Int = -1,
@@ -80,6 +81,9 @@ fun EmbeddedExoPlayer(
     var gestureVisible by remember { mutableStateOf(false) }
     var playStateVisible by remember { mutableStateOf(false) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
+    fun isCurrentMedia(activePlayer: MediaController): Boolean =
+        activePlayer.currentMediaItem?.mediaId == playback.episode.key
+
     val latestOnVolumeChanged by rememberUpdatedState(onVolumeChanged)
     val latestSavedVolumePercent by rememberUpdatedState(savedVolumePercent)
 
@@ -126,7 +130,9 @@ fun EmbeddedExoPlayer(
     }
 
     LaunchedEffect(playback.id) {
+        buffering = true
         if (!playback.stream.url.startsWith("https://") && !playback.stream.url.startsWith("http://")) {
+            buffering = false
             onError(context.getString(R.string.invalid_stream_url))
             return@LaunchedEffect
         }
@@ -139,8 +145,10 @@ fun EmbeddedExoPlayer(
         if (activePlayer == null) return@DisposableEffect onDispose { }
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                buffering = state == Player.STATE_BUFFERING
+                buffering = !isCurrentMedia(activePlayer) ||
+                    state == Player.STATE_BUFFERING || state == Player.STATE_IDLE
                 if (state == Player.STATE_ENDED && !endedSent) {
+                    if (!isCurrentMedia(activePlayer)) return
                     endedSent = true
                     val finalPosition = activePlayer.currentPosition.coerceAtLeast(0L)
                     val finalDuration = activePlayer.duration.coerceAtLeast(0L)
@@ -150,11 +158,13 @@ fun EmbeddedExoPlayer(
             }
 
             override fun onIsPlayingChanged(value: Boolean) {
+                if (!isCurrentMedia(activePlayer)) return
                 isPlaying = value
                 onPlayingChanged(value)
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                if (!isCurrentMedia(activePlayer)) return
                 buffering = false
                 val detail = buildString {
                     append(error.errorCodeName).append(": ").append(error.message ?: context.getString(R.string.playback_error))
@@ -162,23 +172,38 @@ fun EmbeddedExoPlayer(
                 }
                 onError(detail)
             }
+
+            override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+                buffering = mediaItem?.mediaId != playback.episode.key ||
+                    activePlayer.playbackState == Player.STATE_BUFFERING ||
+                    activePlayer.playbackState == Player.STATE_IDLE
+            }
         }
         activePlayer.addListener(listener)
-        buffering = activePlayer.playbackState == Player.STATE_BUFFERING || activePlayer.playbackState == Player.STATE_IDLE
-        isPlaying = activePlayer.isPlaying
-        onPlayingChanged(activePlayer.isPlaying)
+        buffering = !isCurrentMedia(activePlayer) ||
+            activePlayer.playbackState == Player.STATE_BUFFERING ||
+            activePlayer.playbackState == Player.STATE_IDLE
+        if (isCurrentMedia(activePlayer)) {
+            isPlaying = activePlayer.isPlaying
+            onPlayingChanged(activePlayer.isPlaying)
+        }
         onDispose {
-            runCatching { onProgress(activePlayer.currentPosition.coerceAtLeast(0L), activePlayer.duration.coerceAtLeast(0L)) }
+            if (isCurrentMedia(activePlayer)) {
+                runCatching { onProgress(activePlayer.currentPosition.coerceAtLeast(0L), activePlayer.duration.coerceAtLeast(0L)) }
+            }
             activePlayer.removeListener(listener)
         }
     }
 
-    LaunchedEffect(player) {
+    LaunchedEffect(player, playback.id) {
         while (isActive) {
             delay(1_000L)
-            player?.let { onProgress(it.currentPosition.coerceAtLeast(0L), it.duration.coerceAtLeast(0L)) }
+            player?.takeIf(::isCurrentMedia)?.let {
+                onProgress(it.currentPosition.coerceAtLeast(0L), it.duration.coerceAtLeast(0L))
+            }
         }
     }
+    LaunchedEffect(buffering, loading) { onLoadingChanged(buffering || loading) }
     LaunchedEffect(gestureVisible, gestureValue) {
         if (gestureVisible) {
             delay(900L)
@@ -195,9 +220,10 @@ fun EmbeddedExoPlayer(
     Box(
         modifier = modifier
             .background(Color.Black)
-            .pointerInput(playback.id, player) {
+            .pointerInput(playback.id, player, buffering, loading) {
                 detectTapGestures(
                     onTap = {
+                        if (buffering || loading) return@detectTapGestures
                         val consumed = onSingleTap()
                         onInteraction()
                         if (!consumed) {
@@ -210,12 +236,13 @@ fun EmbeddedExoPlayer(
                     }
                 )
             }
-            .pointerInput(playback.id) {
+            .pointerInput(playback.id, buffering, loading) {
                 var startBrightness = 0.5f
                 var startVolumeFraction = 0f
                 var totalDrag = 0f
                 detectVerticalDragGestures(
                     onDragStart = { offset ->
+                        if (buffering || loading) return@detectVerticalDragGestures
                         onInteraction()
                         totalDrag = 0f
                         val edgeFraction = offset.x / size.width.coerceAtLeast(1).toFloat()
@@ -271,14 +298,16 @@ fun EmbeddedExoPlayer(
                     setShowSubtitleButton(false)
                     setShowVrButton(false)
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     keepScreenOn = true
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 }
             },
             update = { it.player = player }
         )
-        if (buffering) CircularProgressIndicator()
         if (playStateVisible) {
             Surface(color = Color.Black.copy(alpha = 0.68f), shape = androidx.compose.foundation.shape.CircleShape) {
                 Icon(

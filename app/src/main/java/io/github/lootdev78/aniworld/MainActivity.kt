@@ -348,6 +348,7 @@ fun AniWorldApp(vm: AppViewModel) {
         val currentIndex = st.episodes.indexOfFirst { it.key == playback.episode.key }
         PlayerScreen(
             playback = playback,
+            loading = st.resolving,
             hasPrevious = (currentIndex > 0) || st.seasons.any { it < playback.episode.season },
             hasNext = (currentIndex >= 0 && currentIndex < st.episodes.lastIndex) || st.seasons.any { it > playback.episode.season },
             autoNextEnabled = st.preferences.autoNextEnabled,
@@ -557,7 +558,7 @@ private fun DraggableSettingsButton(
         var dragging by remember { mutableStateOf(false) }
         var draggedSinceLastClick by remember { mutableStateOf(false) }
 
-        LaunchedEffect(x, y, maxXPx, maxYPx, dragging) {
+        LaunchedEffect(x, y, maxXPx, maxYPx) {
             if (!dragging) {
                 localX = x.coerceIn(0f, 1f) * maxXPx
                 localY = y.coerceIn(0f, 1f) * maxYPx

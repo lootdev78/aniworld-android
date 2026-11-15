@@ -531,6 +531,12 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val importMetadataLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(vm::importOfflineMetadata) }
+    val exportLibraryBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let(vm::exportLibraryBackup) }
+    val importLibraryBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(vm::importLibraryBackup) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { vm.refreshCatalogMetadata() }
@@ -2646,8 +2652,8 @@ fun SettingsScreen(
 
                 item {
                     SettingsSectionCard(
-                        title = stringResource(R.string.home_screen_settings),
-                        subtitle = stringResource(R.string.home_screen_settings_desc)
+                        title = stringResource(R.string.display_settings),
+                        subtitle = stringResource(R.string.display_settings_desc)
                     ) {
                         Text(stringResource(R.string.startup_area), fontWeight = FontWeight.Bold)
                         Text(stringResource(R.string.startup_area_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2698,6 +2704,43 @@ fun SettingsScreen(
                         OutlinedButton(onClick = vm::refreshHomeMetadata, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Refresh, null)
                             Text(" " + stringResource(R.string.refresh_home_metadata))
+                        }
+                        HorizontalDivider()
+                        SettingSwitch(stringResource(R.string.dynamic_colors), stringResource(R.string.dynamic_colors_desc), prefs.useDynamicColors, vm::setDynamicColors)
+                        SettingSwitch(
+                            stringResource(R.string.highlight_started_seasons),
+                            stringResource(R.string.highlight_started_seasons_desc),
+                            prefs.highlightStartedSeasons,
+                            vm::setHighlightStartedSeasons
+                        )
+                        if (prefs.highlightStartedSeasons) {
+                            Text(stringResource(R.string.highlight_strength), fontWeight = FontWeight.Bold)
+                            Slider(
+                                value = prefs.startedSeasonHighlightAlpha,
+                                onValueChange = vm::setStartedSeasonHighlightAlpha,
+                                valueRange = 0.08f..0.60f
+                            )
+                        }
+                        Text(stringResource(R.string.accent_color), fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.accent_color_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AppAccent.entries.forEach { accent ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Surface(
+                                        modifier = Modifier.size(46.dp).clip(CircleShape).clickable { vm.setAccentColor(accent) },
+                                        shape = CircleShape,
+                                        color = accentPreviewColor(accent),
+                                        tonalElevation = if (prefs.accentColor == accent) 8.dp else 0.dp
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            if (prefs.accentColor == accent && !prefs.useDynamicColors) {
+                                                Icon(Icons.Default.CheckCircle, stringResource(R.string.selected), tint = accentPreviewContentColor(accent))
+                                            }
+                                        }
+                                    }
+                                    Text(stringResource(accent.labelRes()), style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
                         }
                     }
                 }
@@ -2789,49 +2832,26 @@ fun SettingsScreen(
                             Text(" " + stringResource(R.string.metadata_action_import))
                         }
                         Text(stringResource(R.string.metadata_file_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
-                item {
-                    SettingsSectionCard(
-                        title = stringResource(R.string.display_settings),
-                        subtitle = stringResource(R.string.display_settings_desc)
-                    ) {
-                        SettingSwitch(stringResource(R.string.dynamic_colors), stringResource(R.string.dynamic_colors_desc), prefs.useDynamicColors, vm::setDynamicColors)
-                        SettingSwitch(
-                            stringResource(R.string.highlight_started_seasons),
-                            stringResource(R.string.highlight_started_seasons_desc),
-                            prefs.highlightStartedSeasons,
-                            vm::setHighlightStartedSeasons
+                        HorizontalDivider()
+                        Text(stringResource(R.string.library_backup_title), fontWeight = FontWeight.Bold)
+                        Text(
+                            stringResource(R.string.library_backup_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        if (prefs.highlightStartedSeasons) {
-                            Text(stringResource(R.string.highlight_strength), fontWeight = FontWeight.Bold)
-                            Slider(
-                                value = prefs.startedSeasonHighlightAlpha,
-                                onValueChange = vm::setStartedSeasonHighlightAlpha,
-                                valueRange = 0.08f..0.60f
-                            )
+                        OutlinedButton(
+                            onClick = { exportLibraryBackupLauncher.launch("aniworld-library-backup.json") },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.FileDownload, null)
+                            Text(" " + stringResource(R.string.library_backup_export))
                         }
-                        Text(stringResource(R.string.accent_color), fontWeight = FontWeight.Bold)
-                        Text(stringResource(R.string.accent_color_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            AppAccent.entries.forEach { accent ->
-                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Surface(
-                                        modifier = Modifier.size(46.dp).clip(CircleShape).clickable { vm.setAccentColor(accent) },
-                                        shape = CircleShape,
-                                        color = accentPreviewColor(accent),
-                                        tonalElevation = if (prefs.accentColor == accent) 8.dp else 0.dp
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            if (prefs.accentColor == accent && !prefs.useDynamicColors) {
-                                                Icon(Icons.Default.CheckCircle, stringResource(R.string.selected), tint = accentPreviewContentColor(accent))
-                                            }
-                                        }
-                                    }
-                                    Text(stringResource(accent.labelRes()), style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
+                        OutlinedButton(
+                            onClick = { importLibraryBackupLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.FileUpload, null)
+                            Text(" " + stringResource(R.string.library_backup_import))
                         }
                     }
                 }

@@ -547,6 +547,212 @@ class AppStore(
         MetadataImportResult(entities.size, root.optJSONObject("homeFeed") != null)
     }
 
+    suspend fun exportLibraryBackup(): String = withContext(Dispatchers.IO) {
+        val favoriteArray = JSONArray().apply {
+            dao.favoritesNow().forEach { favorite ->
+                put(JSONObject()
+                    .put("slug", favorite.slug)
+                    .put("title", favorite.title)
+                    .put("url", favorite.url)
+                    .put("coverUrl", favorite.coverUrl)
+                    .put("description", favorite.description)
+                    .put("genres", JSONArray(favorite.genres.split("\u001F").filter(String::isNotBlank)))
+                    .put("updatedAt", favorite.updatedAt))
+            }
+        }
+        val progressArray = JSONArray().apply {
+            dao.progressNow().forEach { progress ->
+                put(JSONObject()
+                    .put("seriesSlug", progress.seriesSlug)
+                    .put("seriesTitle", progress.seriesTitle)
+                    .put("seriesUrl", progress.seriesUrl)
+                    .put("coverUrl", progress.coverUrl)
+                    .put("season", progress.season)
+                    .put("episode", progress.episode)
+                    .put("episodeTitle", progress.episodeTitle)
+                    .put("episodeUrl", progress.episodeUrl)
+                    .put("updatedAt", progress.updatedAt))
+            }
+        }
+        val episodeArray = JSONArray().apply {
+            dao.episodeStatesNow().forEach { episode ->
+                put(JSONObject()
+                    .put("seriesSlug", episode.seriesSlug)
+                    .put("seriesTitle", episode.seriesTitle)
+                    .put("seriesUrl", episode.seriesUrl)
+                    .put("coverUrl", episode.coverUrl)
+                    .put("season", episode.season)
+                    .put("episode", episode.episode)
+                    .put("episodeTitle", episode.episodeTitle)
+                    .put("episodeUrl", episode.episodeUrl)
+                    .put("positionMs", episode.positionMs)
+                    .put("durationMs", episode.durationMs)
+                    .put("completed", episode.completed)
+                    .put("updatedAt", episode.updatedAt))
+            }
+        }
+        JSONObject()
+            .put("format", LIBRARY_BACKUP_FORMAT)
+            .put("version", LIBRARY_BACKUP_VERSION)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("favorites", favoriteArray)
+            .put("progress", progressArray)
+            .put("episodes", episodeArray)
+            .toString(2)
+    }
+
+    suspend fun importLibraryBackup(raw: String): LibraryBackupImportResult = withContext(Dispatchers.IO) {
+        val root = JSONObject(raw)
+        require(root.optString("format") == LIBRARY_BACKUP_FORMAT) { "Unbekanntes Sicherungsformat" }
+        require(root.optInt("version", -1) == LIBRARY_BACKUP_VERSION) { "Nicht unterstützte Sicherungsversion" }
+        require(root.has("favorites") || root.has("progress") || root.has("episodes")) {
+            "Die Sicherung enthält keine Bibliotheksdaten"
+        }
+
+        var skippedEntries = 0
+        val favorites = linkedMapOf<String, FavoriteEntity>()
+        val favoriteArray = root.optJSONArray("favorites") ?: JSONArray()
+        for (index in 0 until favoriteArray.length()) {
+            val item = favoriteArray.optJSONObject(index)
+            val slug = item?.optString("slug").orEmpty().trim().trim('/').lowercase()
+            val title = item?.optString("title").orEmpty().trim()
+            if (item == null || !isValidBackupSlug(slug) || title.isBlank()) {
+                skippedEntries++
+                continue
+            }
+            val genres = item.optJSONArray("genres")?.let { values ->
+                (0 until values.length()).mapNotNull { values.optString(it).trim().takeIf(String::isNotBlank) }.distinct()
+            }.orEmpty()
+            val candidate = FavoriteEntity(
+                slug = slug,
+                title = title,
+                url = item.optString("url").trim().ifBlank { "https://aniworld.to/anime/stream/$slug" },
+                coverUrl = item.optString("coverUrl").trim(),
+                description = item.optString("description"),
+                genres = genres.joinToString("\u001F"),
+                updatedAt = item.optLong("updatedAt", root.optLong("exportedAt", 0L)).coerceAtLeast(0L),
+                sortIndex = index
+            )
+            val previous = favorites[slug]
+            if (previous == null || candidate.updatedAt > previous.updatedAt) {
+                if (previous != null) skippedEntries++
+                favorites[slug] = candidate
+            } else skippedEntries++
+        }
+
+        val progress = linkedMapOf<String, ProgressEntity>()
+        val progressArray = root.optJSONArray("progress") ?: JSONArray()
+        for (index in 0 until progressArray.length()) {
+            val item = progressArray.optJSONObject(index)
+            val slug = item?.optString("seriesSlug").orEmpty().trim().trim('/').lowercase()
+            val season = item?.optInt("season", -1) ?: -1
+            val episode = item?.optInt("episode", -1) ?: -1
+            val title = item?.optString("seriesTitle").orEmpty().trim()
+            if (item == null || !isValidBackupSlug(slug) || title.isBlank() || season < 0 || episode < 1) {
+                skippedEntries++
+                continue
+            }
+            val candidate = ProgressEntity(
+                seriesSlug = slug,
+                seriesTitle = title,
+                seriesUrl = item.optString("seriesUrl").trim().ifBlank { "https://aniworld.to/anime/stream/$slug" },
+                coverUrl = item.optString("coverUrl").trim(),
+                season = season,
+                episode = episode,
+                episodeTitle = item.optString("episodeTitle"),
+                episodeUrl = item.optString("episodeUrl"),
+                updatedAt = item.optLong("updatedAt", root.optLong("exportedAt", 0L)).coerceAtLeast(0L)
+            )
+            val previous = progress[slug]
+            if (previous == null || candidate.updatedAt > previous.updatedAt) {
+                if (previous != null) skippedEntries++
+                progress[slug] = candidate
+            } else skippedEntries++
+        }
+
+        val episodes = linkedMapOf<String, EpisodeStateEntity>()
+        val episodeArray = root.optJSONArray("episodes") ?: JSONArray()
+        for (index in 0 until episodeArray.length()) {
+            val item = episodeArray.optJSONObject(index)
+            val slug = item?.optString("seriesSlug").orEmpty().trim().trim('/').lowercase()
+            val season = item?.optInt("season", -1) ?: -1
+            val episode = item?.optInt("episode", -1) ?: -1
+            val title = item?.optString("seriesTitle").orEmpty().trim()
+            if (item == null || !isValidBackupSlug(slug) || title.isBlank() || season < 0 || episode < 1) {
+                skippedEntries++
+                continue
+            }
+            val duration = item.optLong("durationMs", 0L).coerceAtLeast(0L)
+            val completed = item.optBoolean("completed")
+            val position = item.optLong("positionMs", 0L).coerceAtLeast(0L)
+                .let { if (completed) maxOf(it, duration) else it }
+            val candidate = EpisodeStateEntity(
+                key = episodeKey(slug, season, episode),
+                seriesTitle = title,
+                seriesSlug = slug,
+                seriesUrl = item.optString("seriesUrl").trim().ifBlank { "https://aniworld.to/anime/stream/$slug" },
+                coverUrl = item.optString("coverUrl").trim(),
+                season = season,
+                episode = episode,
+                episodeTitle = item.optString("episodeTitle"),
+                episodeUrl = item.optString("episodeUrl"),
+                positionMs = position,
+                durationMs = duration,
+                completed = completed,
+                updatedAt = item.optLong("updatedAt", root.optLong("exportedAt", 0L)).coerceAtLeast(0L)
+            )
+            val previous = episodes[candidate.key]
+            if (previous == null || candidate.updatedAt > previous.updatedAt) {
+                if (previous != null) skippedEntries++
+                episodes[candidate.key] = candidate
+            } else skippedEntries++
+        }
+
+        var importedFavorites = 0
+        var importedProgress = 0
+        var importedEpisodes = 0
+        database.withTransaction {
+            val localFavorites = dao.favoritesNow().associateBy(FavoriteEntity::slug)
+            var nextFavoriteOrder = (localFavorites.values.maxOfOrNull(FavoriteEntity::sortIndex) ?: -1) + 1
+            val favoritesToWrite = favorites.values.mapNotNull { imported ->
+                val local = localFavorites[imported.slug]
+                when {
+                    local == null -> {
+                        importedFavorites++
+                        imported.copy(sortIndex = nextFavoriteOrder++)
+                    }
+                    imported.updatedAt > local.updatedAt -> {
+                        importedFavorites++
+                        imported.copy(sortIndex = local.sortIndex)
+                    }
+                    else -> null
+                }
+            }
+            val localProgress = dao.progressNow().associateBy(ProgressEntity::seriesSlug)
+            val progressToWrite = progress.values.filter { imported ->
+                imported.updatedAt > (localProgress[imported.seriesSlug]?.updatedAt ?: Long.MIN_VALUE)
+            }
+            importedProgress = progressToWrite.size
+
+            val localEpisodes = dao.episodeStatesNow().associateBy(EpisodeStateEntity::key)
+            val episodesToWrite = episodes.values.filter { imported ->
+                imported.updatedAt > (localEpisodes[imported.key]?.updatedAt ?: Long.MIN_VALUE)
+            }
+            importedEpisodes = episodesToWrite.size
+            skippedEntries += favorites.size - favoritesToWrite.size
+            skippedEntries += progress.size - progressToWrite.size
+            skippedEntries += episodes.size - episodesToWrite.size
+
+            if (favoritesToWrite.isNotEmpty()) dao.upsertFavorites(favoritesToWrite)
+            if (progressToWrite.isNotEmpty()) dao.upsertProgress(progressToWrite)
+            if (episodesToWrite.isNotEmpty()) dao.upsertEpisodeStates(episodesToWrite)
+        }
+        LibraryBackupImportResult(importedFavorites, importedProgress, importedEpisodes, skippedEntries)
+    }
+
+    private fun isValidBackupSlug(slug: String): Boolean =
+        slug.matches(Regex("[a-z0-9][a-z0-9._-]*"))
+
     private fun homeFeedCacheFile() = context.filesDir.resolve(HOME_FEED_CACHE_FILE)
     private fun coverCacheDirectory() = context.filesDir.resolve("anime_cover_cache")
 
@@ -1020,6 +1226,8 @@ class AppStore(
         private val LEGACY_SEASON_TOTALS_JSON = stringPreferencesKey("season_totals_json")
         private val LEGACY_FAVORITE_ORDER = stringPreferencesKey("favorite_order")
         private val LEGACY_WATCHED_ORDER = stringPreferencesKey("watched_order")
+        private const val LIBRARY_BACKUP_FORMAT = "aniworld-library-backup"
+        private const val LIBRARY_BACKUP_VERSION = 1
         private const val HOME_FEED_CACHE_FILE = "home_feed_offline.json"
     }
 }

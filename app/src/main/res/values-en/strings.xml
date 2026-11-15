@@ -125,6 +125,7 @@
     <string name="playback_error">Playback error</string>
     <string name="playback_running">Playback running</string>
     <string name="playback_paused">Playback paused</string>
+    <string name="player_loading">Loading video</string>
     <string name="brightness_percent">Brightness %1$d%%</string>
     <string name="volume_percent">Volume %1$d%%</string>
     <string name="challenge_reload">Reload</string>
@@ -247,8 +248,8 @@
     <string name="movie_description">Movie description</string>
     <string name="description">Description</string>
     <string name="episodes_count">%1$d episodes</string>
-    <string name="playback_settings">Playback</string>
-    <string name="display_settings">Appearance</string>
+    <string name="playback_settings">Preferred settings</string>
+    <string name="display_settings">Appearance &amp; display</string>
     <string name="catalog_and_cache">Catalog and cache</string>
     <string name="tools">Tools</string>
     <string name="status_hoster_fallback">%1$s requires a browser check. Trying another hoster first…</string>
@@ -355,16 +356,16 @@
     <string name="metadata_import_open_failed">The selected file could not be opened.</string>
 
     <string name="settings_subtitle">Playback, home screen, metadata and diagnostics</string>
-    <string name="playback_settings_desc">Language, hoster and player behavior</string>
-    <string name="web_and_security">Web &amp; privacy</string>
+    <string name="playback_settings_desc">Preferred language, hoster, auto-next and playback behavior</string>
+    <string name="web_and_security">Browser settings</string>
     <string name="web_and_security_desc">Filtering for manual web pages and hoster pages</string>
     <string name="home_screen_settings">Home screen</string>
     <string name="home_screen_settings_desc">Startup target, visible sections and their order</string>
     <string name="home_sections">Sections and order</string>
     <string name="home_sections_desc">Turn sections on or off and move them up or down.</string>
     <string name="home_section_featured">Featured title</string>
-    <string name="metadata_management">Catalog metadata</string>
-    <string name="metadata_management_desc">Update, delete, export or import the offline catalog</string>
+    <string name="metadata_management">Metadata &amp; backup</string>
+    <string name="metadata_management_desc">Manage offline catalog metadata and back up your favorites and viewing progress</string>
     <string name="metadata_inventory_checking">Checking existing metadata…</string>
     <string name="metadata_inventory_count">%1$d titles are stored offline.</string>
     <string name="metadata_inventory_empty">No offline catalog metadata is stored.</string>
@@ -373,7 +374,7 @@
     <string name="metadata_action_export">Export metadata</string>
     <string name="metadata_action_import">Import metadata</string>
     <string name="metadata_action_download">Download</string>
-    <string name="display_settings_desc">Theme, colors and interface appearance</string>
+    <string name="display_settings_desc">Home layout, startup area, colors and interface appearance</string>
     <string name="diagnostics_and_logs">Diagnostics &amp; app logs</string>
     <string name="diagnostics_and_logs_desc">Global logging switch and diagnostic viewer</string>
     <string name="diagnostics_logging">Record app logs</string>
@@ -420,7 +421,7 @@
     <string name="miracast_system_settings_desc">Open Android system Cast settings</string>
     <string name="miracast_settings_failed">Android Cast settings could not be opened.</string>
 
-    <string name="cast_remote_settings">Cast &amp; playback</string>
+    <string name="cast_remote_settings">TV &amp; casting</string>
     <string name="cast_remote_settings_desc">Manage Cast and picture-in-picture features for the player.</string>
     <string name="cast_enabled">Show Cast in player</string>
     <string name="cast_enabled_desc">Enable Chromecast, Xbox/DLNA and FCast in the player.</string>
@@ -517,5 +518,16 @@
     <string name="aniskip_mixed_opening_label">Mixed opening</string>
     <string name="aniskip_mixed_ending_label">Mixed ending</string>
     <string name="aniskip_recap_label">Recap</string>
-
+    <string name="library_backup_title">Favorites and viewing progress</string>
+    <string name="library_backup_desc">Export favorites, watched episodes, current episode and playback positions to a versioned JSON file. Import safely merges newer entries without deleting local data.</string>
+    <string name="library_backup_export">Export library backup</string>
+    <string name="library_backup_import">Import and merge library backup</string>
+    <string name="library_backup_export_open_failed">The backup file could not be opened for writing.</string>
+    <string name="library_backup_export_complete">Favorites and viewing progress exported.</string>
+    <string name="library_backup_export_failed">Library backup export failed</string>
+    <string name="library_backup_export_failed_detail">The library backup could not be exported: %1$s</string>
+    <string name="library_backup_import_open_failed">The selected backup file could not be opened.</string>
+    <string name="library_backup_import_complete">Imported %1$d favorites, %2$d history entries and %3$d episode states; skipped %4$d invalid or older entries.</string>
+    <string name="library_backup_import_failed">Library backup import failed</string>
+    <string name="library_backup_import_failed_detail">The library backup could not be imported: %1$s</string>
 </resources>

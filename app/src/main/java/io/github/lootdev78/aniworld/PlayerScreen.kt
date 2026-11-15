@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.media.AudioManager
 import android.util.Rational
+import android.view.KeyEvent
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -26,6 +27,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -98,6 +100,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.input.key.nativeKeyEvent
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -147,6 +156,8 @@ private fun normalizeCastDeviceName(value: String): String = java.text.Normalize
 @Composable
 fun PlayerScreen(
     playback: ResolvedPlayback,
+    loading: Boolean = false,
+    loadingError: String? = null,
     hasPrevious: Boolean,
     hasNext: Boolean,
     autoNextEnabled: Boolean,
@@ -196,7 +207,13 @@ fun PlayerScreen(
     var autoNextSeconds by remember(playback.id) { mutableIntStateOf(8) }
     var controlsVisible by remember(playback.id) { mutableStateOf(true) }
     var controlsGeneration by remember(playback.id) { mutableIntStateOf(0) }
+    var topControlsFocused by remember(playback.id) { mutableStateOf(false) }
+    var timelineControlsFocused by remember(playback.id) { mutableStateOf(false) }
+    var playerSurfaceFocused by remember(playback.id) { mutableStateOf(false) }
+    var videoBuffering by remember(playback.id) { mutableStateOf(true) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
+    val playerFocusRequester = remember(playback.id) { FocusRequester() }
+    val controlsFocused = topControlsFocused || timelineControlsFocused
     var languageMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var hosterMenuOpen by remember(playback.id) { mutableStateOf(false) }
     var castMenuOpen by remember(playback.id) { mutableStateOf(false) }
@@ -216,6 +233,16 @@ fun PlayerScreen(
     var submitStartText by remember(playback.id) { mutableStateOf("0") }
     var submitEndText by remember(playback.id) { mutableStateOf("90") }
     val skippedSegments = remember(playback.id) { mutableSetOf<String>() }
+    val manualSkipSegment = skipSegments.firstOrNull { segment ->
+        val autoEnabled = when {
+            AniSkipType.isOpening(segment.type) -> autoSkipOpening
+            AniSkipType.isEnding(segment.type) -> autoSkipEnding
+            segment.type == AniSkipType.RECAP -> autoSkipRecap
+            else -> false
+        }
+        !autoEnabled && position / 1000.0 >= segment.startSeconds - 5.0 &&
+            position / 1000.0 < segment.endSeconds
+    }
     val playerOverlayOpen = languageMenuOpen || hosterMenuOpen || castMenuOpen || moreMenuOpen || aniSkipMappingDialogOpen || aniSkipSubmitDialogOpen ||
         manualCastDialogOpen || streamInfoOpen || autoNextVisible || playerError != null
     val streamInfo = remember(playback.stream.url, playback.stream.mimeType) {
@@ -307,6 +334,7 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(playback.id) {
+        playerFocusRequester.requestFocus()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -314,11 +342,21 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(controlsVisible, controlsGeneration, isPlaying, playerOverlayOpen) {
-        if (controlsVisible && isPlaying && !playerOverlayOpen) {
-            delay(3_200L)
+    LaunchedEffect(controlsVisible, controlsGeneration, isPlaying, playerOverlayOpen, controlsFocused, loading, videoBuffering) {
+        if (controlsVisible && isPlaying && !playerOverlayOpen && !controlsFocused && !loading && !videoBuffering) {
+            delay(3_000L)
             controlsVisible = false
         }
+    }
+
+    LaunchedEffect(loadingError) {
+        if (!loadingError.isNullOrBlank()) {
+            playerError = loadingError
+            controlsVisible = true
+        }
+    }
+    LaunchedEffect(loading) {
+        if (loading) playerError = null
     }
 
     LaunchedEffect(autoNextVisible, autoNextSeconds) {
@@ -518,6 +556,7 @@ fun PlayerScreen(
         position = target
         scrubPosition = target.toFloat()
         onProgress(target, duration, true)
+        controlsVisible = true
         controlsGeneration++
     }
 
@@ -561,6 +600,25 @@ fun PlayerScreen(
         controlsGeneration++
     }
 
+    fun setPlaybackState(playing: Boolean) {
+        when {
+            castActive && ((remoteTransportState != XboxTransportState.PAUSED) != playing) -> when {
+                smartViewActive -> smartViewController.togglePlayPause()
+                chromecastActive -> chromecastController.togglePlayPause()
+                fcastActive -> fcastController.togglePlayPause()
+                else -> dlnaController.togglePlayPause()
+            }
+            !castActive && playing -> PlaybackService.play(context)
+            !castActive -> PlaybackService.pause(context)
+        }
+        isPlaying = playing
+        controlsVisible = true
+        controlsGeneration++
+    }
+
+    fun togglePlayback() = setPlaybackState(
+        !(if (castActive) remoteTransportState != XboxTransportState.PAUSED else isPlaying)
+    )
     fun disconnectCastAndResume() {
         val resumePosition = remotePositionMs.takeIf { it > 0L } ?: position
         if (smartViewActive) smartViewController.disconnect()
@@ -599,6 +657,13 @@ fun PlayerScreen(
         internalPausedForCast = false
     }
 
+    fun navigateEpisode(next: Boolean) {
+        autoNextVisible = false
+        onProgress(position, duration, true)
+        stopCastForNavigation()
+        if (next) onNext() else onPrevious()
+    }
+
     fun closePlayer() {
         languageMenuOpen = false
         hosterMenuOpen = false
@@ -628,11 +693,87 @@ fun PlayerScreen(
         }
     }
 
-    BackHandler { closePlayer() }
+    BackHandler {
+        when {
+            autoNextVisible -> autoNextVisible = false
+            playerError != null -> playerError = null
+            controlsVisible -> controlsVisible = false
+            else -> closePlayer()
+        }
+    }
 
-    Box(Modifier.fillMaxSize().background(AniWorldPlayerBackground)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(AniWorldPlayerBackground)
+            .focusRequester(playerFocusRequester)
+            .focusable()
+            .onFocusChanged { playerSurfaceFocused = it.isFocused }
+            .onPreviewKeyEvent { event ->
+                val keyEvent = event.nativeKeyEvent
+                if (keyEvent.keyCode == KeyEvent.KEYCODE_BACK || keyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                    return@onPreviewKeyEvent false
+                }
+                if (videoBuffering || loading) return@onPreviewKeyEvent true
+                if (keyEvent.action != KeyEvent.ACTION_DOWN || keyEvent.repeatCount > 0) return@onPreviewKeyEvent false
+                when (keyEvent.keyCode) {
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
+                        togglePlayback()
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        setPlaybackState(true)
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        setPlaybackState(false)
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        seekPlayback(position - 10_000L)
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                        seekPlayback(position + 10_000L)
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                        if (hasPrevious) navigateEpisode(next = false)
+                        true
+                    }
+                    KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        if (hasNext) navigateEpisode(next = true)
+                        true
+                    }
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER -> when {
+                        !controlsVisible -> {
+                            controlsVisible = true
+                            controlsGeneration++
+                            true
+                        }
+                        playerSurfaceFocused -> {
+                            togglePlayback()
+                            true
+                        }
+                        else -> false
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> if (!controlsVisible) {
+                        controlsVisible = true
+                        controlsGeneration++
+                        true
+                    } else false
+                    else -> false
+                }
+            }
+    ) {
         EmbeddedExoPlayer(
             playback = playback,
+            loading = loading,
             modifier = Modifier.fillMaxSize(),
             onProgress = { pos, dur ->
                 if (!castActive) {
@@ -654,10 +795,12 @@ fun PlayerScreen(
                 }
             },
             onError = { message ->
+                videoBuffering = false
                 playerError = message
                 controlsVisible = true
                 onError(message)
             },
+            onLoadingChanged = { videoBuffering = it },
             onInteraction = {
                 controlsGeneration++
             },
@@ -680,6 +823,29 @@ fun PlayerScreen(
             savedVolumePercent = savedVolumePercent,
             onVolumeChanged = onVolumeChanged
         )
+
+        AnimatedVisibility(
+            visible = manualSkipSegment != null && showSkipButtons && !videoBuffering && !loading,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(
+                end = 28.dp,
+                bottom = if (controlsVisible) 250.dp else 88.dp
+            )
+        ) {
+            manualSkipSegment?.let { segment ->
+                Button(
+                    onClick = { skipSegment(segment) },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black.copy(alpha = .82f))
+                ) {
+                    Text(
+                        stringResource(R.string.aniskip_skip_segment, skipTypeLabel(context, segment.type)),
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
 
         if (castActive) {
             Box(
@@ -735,7 +901,15 @@ fun PlayerScreen(
                 Modifier
                     .fillMaxWidth()
                     .background(AniWorldPlayerBackground.copy(alpha = .92f))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                    .padding(horizontal = 14.dp, vertical = 10.dp)
+                    .focusGroup()
+                    .onFocusChanged {
+                        topControlsFocused = it.hasFocus
+                        if (it.hasFocus) {
+                            controlsVisible = true
+                            controlsGeneration++
+                        }
+                    },
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
@@ -787,6 +961,35 @@ fun PlayerScreen(
                             maxLines = 1
                         )
                     }
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (skipLoading) {
+                        Text(
+                            stringResource(R.string.aniskip_loading),
+                            color = AniWorldPlayerTextMuted,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                    (skipSubmitMessage ?: skipMessage)?.let {
+                        Text(it, color = AniWorldPlayerTextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = {
+                            aniSkipSearchQuery = playback.series.title
+                            aniSkipMappingDialogOpen = true
+                            controlsGeneration++
+                        }) { Text(stringResource(R.string.aniskip_lookup_button), color = AniWorldPlayerAccent, maxLines = 1) }
+                        TextButton(onClick = { openAniSkipSubmitDialog() }, enabled = aniSkipMapping != null && duration > 0L) {
+                            Text(stringResource(R.string.aniskip_submit_button), color = AniWorldPlayerAccent, maxLines = 1)
+                        }
+                    }
+                }
+                PlayerRoundButton(Icons.Default.SkipPrevious, stringResource(R.string.player_previous_episode), enabled = hasPrevious, size = 42.dp) {
+                    navigateEpisode(next = false)
+                }
+                PlayerRoundButton(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), enabled = hasNext, size = 42.dp) {
+                    navigateEpisode(next = true)
                 }
             }
         }
@@ -1397,7 +1600,17 @@ fun PlayerScreen(
             val timelineMaximum = knownDuration ?: maxOf(position, playback.startPositionMs, 1L)
             val displayedPosition = (if (scrubbing) scrubPosition.toLong() else position).coerceIn(0L, timelineMaximum)
             Surface(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 14.dp)
+                    .focusGroup()
+                    .onFocusChanged {
+                        timelineControlsFocused = it.hasFocus
+                        if (it.hasFocus) {
+                            controlsVisible = true
+                            controlsGeneration++
+                        }
+                    },
                 color = AniWorldPlayerPanel,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
                 tonalElevation = 8.dp
@@ -1426,75 +1639,43 @@ fun PlayerScreen(
                                 }
                             }
                         }
-                        Slider(
-                            value = displayedPosition.toFloat(),
-                            onValueChange = { value ->
-                                if (knownDuration != null) {
-                                    scrubbing = true
-                                    scrubPosition = value
-                                    controlsVisible = true
-                                    controlsGeneration++
-                                }
-                            },
-                            onValueChangeFinished = {
-                                knownDuration?.let { maximum ->
-                                    seekPlayback(scrubPosition.toLong().coerceIn(0L, maximum))
-                                    scrubbing = false
-                                }
-                            },
-                            valueRange = 0f..timelineMaximum.toFloat(),
-                            enabled = knownDuration != null,
-                            colors = SliderDefaults.colors(
-                                thumbColor = Color.White,
-                                activeTrackColor = AniWorldPlayerAccent,
-                                inactiveTrackColor = AniWorldPlayerControl
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
+                    Text(
+                        "${playback.seriesTitle} · ${playback.episode.localizedLabel(context)} · ${playback.episode.localizedDisplayTitle(context)}",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1
+                    )
+                    Slider(
+                        value = displayedPosition.toFloat(),
+                        onValueChange = { value ->
+                            if (knownDuration != null) {
+                                scrubbing = true
+                                scrubPosition = value
+                                controlsVisible = true
+                                controlsGeneration++
+                            }
+                        },
+                        onValueChangeFinished = {
+                            knownDuration?.let { maximum ->
+                                seekPlayback(scrubPosition.toLong().coerceIn(0L, maximum))
+                                scrubbing = false
+                            }
+                        },
+                        valueRange = 0f..timelineMaximum.toFloat(),
+                        enabled = knownDuration != null,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = AniWorldPlayerAccent,
+                            inactiveTrackColor = AniWorldPlayerControl
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(formatTime(displayedPosition), color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.weight(1f))
                         Text(knownDuration?.let(::formatTime) ?: "--:--", color = AniWorldPlayerTextMuted, style = MaterialTheme.typography.labelMedium)
-                    }
-
-                    val positionSecondsForSkip = displayedPosition / 1000.0
-                    val manualSkipSegment = skipSegments.firstOrNull { segment ->
-                        val autoEnabled = when {
-                            AniSkipType.isOpening(segment.type) -> autoSkipOpening
-                            AniSkipType.isEnding(segment.type) -> autoSkipEnding
-                            segment.type == AniSkipType.RECAP -> autoSkipRecap
-                            else -> false
-                        }
-                        !autoEnabled && positionSecondsForSkip >= segment.startSeconds - 5.0 && positionSecondsForSkip < segment.endSeconds
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        if (manualSkipSegment != null && showSkipButtons) {
-                            Button(
-                                onClick = { skipSegment(manualSkipSegment) },
-                                colors = ButtonDefaults.buttonColors(containerColor = AniWorldPlayerAccentStrong)
-                            ) {
-                                Text(stringResource(R.string.aniskip_skip_segment, skipTypeLabel(context, manualSkipSegment.type)), color = Color.White, maxLines = 1)
-                            }
-                        }
-                        Column(Modifier.weight(1f)) {
-                            if (skipLoading) Text(stringResource(R.string.aniskip_loading), color = AniWorldPlayerTextMuted, style = MaterialTheme.typography.labelSmall)
-                            (skipSubmitMessage ?: skipMessage)?.let {
-                                Text(it, color = AniWorldPlayerTextMuted, style = MaterialTheme.typography.labelSmall, maxLines = 2)
-                            }
-                        }
-                        TextButton(onClick = {
-                            aniSkipSearchQuery = playback.series.title
-                            aniSkipMappingDialogOpen = true
-                            controlsGeneration++
-                        }) { Text(stringResource(R.string.aniskip_lookup_button), color = AniWorldPlayerAccent, maxLines = 1) }
-                        TextButton(onClick = { openAniSkipSubmitDialog() }, enabled = aniSkipMapping != null && duration > 0L) {
-                            Text(stringResource(R.string.aniskip_submit_button), color = AniWorldPlayerAccent, maxLines = 1)
-                        }
                     }
 
                     Row(
@@ -1502,9 +1683,6 @@ fun PlayerScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        PlayerRoundButton(Icons.Default.SkipPrevious, stringResource(R.string.player_previous_episode), enabled = hasPrevious, size = 46.dp) {
-                            autoNextVisible = false; onProgress(position, duration, true); stopCastForNavigation(); onPrevious()
-                        }
                         PlayerRoundButton(Icons.Default.Replay10, stringResource(R.string.seek_back_seconds), size = 50.dp) {
                             seekPlayback((position - 10_000L).coerceAtLeast(0L))
                         }
@@ -1512,21 +1690,10 @@ fun PlayerScreen(
                             icon = if ((castActive && remoteTransportState != XboxTransportState.PAUSED) || (!castActive && isPlaying)) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) stringResource(R.string.playback_paused) else stringResource(R.string.play)
                         ) {
-                            when {
-                                smartViewActive -> smartViewController.togglePlayPause()
-                                chromecastActive -> chromecastController.togglePlayPause()
-                                fcastActive -> fcastController.togglePlayPause()
-                                dlnaActive -> dlnaController.togglePlayPause()
-                                isPlaying -> PlaybackService.pause(context)
-                                else -> PlaybackService.play(context)
-                            }
-                            controlsGeneration++
+                            togglePlayback()
                         }
                         PlayerRoundButton(Icons.Default.Forward10, stringResource(R.string.seek_forward_seconds), size = 50.dp) {
                             seekPlayback(knownDuration?.let { (position + 10_000L).coerceAtMost(it) } ?: (position + 10_000L))
-                        }
-                        PlayerRoundButton(Icons.Default.SkipNext, stringResource(R.string.player_next_episode), enabled = hasNext, size = 46.dp) {
-                            autoNextVisible = false; onProgress(position, duration, true); stopCastForNavigation(); onNext()
                         }
                     }
 
@@ -1651,6 +1818,26 @@ fun PlayerScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if ((loading || videoBuffering) && playerError == null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = .72f))
+                    .semantics { contentDescription = context.getString(R.string.player_loading) }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) { },
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(
+                    color = AniWorldPlayerAccent,
+                    strokeWidth = 4.dp,
+                    modifier = Modifier.size(56.dp)
+                )
             }
         }
 

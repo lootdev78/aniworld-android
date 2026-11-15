@@ -164,8 +164,14 @@ interface LibraryDao {
     @Query("SELECT * FROM progress ORDER BY updatedAt DESC")
     fun observeProgress(): Flow<List<ProgressEntity>>
 
+    @Query("SELECT * FROM progress")
+    suspend fun progressNow(): List<ProgressEntity>
+
     @Query("SELECT * FROM episode_states ORDER BY updatedAt DESC")
     fun observeEpisodeStates(): Flow<List<EpisodeStateEntity>>
+
+    @Query("SELECT * FROM episode_states")
+    suspend fun episodeStatesNow(): List<EpisodeStateEntity>
 
     @Query("SELECT * FROM season_totals")
     fun observeSeasonTotals(): Flow<List<SeasonTotalEntity>>

@@ -65,6 +65,13 @@ data class MetadataImportResult(
     val homeFeedImported: Boolean
 )
 
+data class LibraryBackupImportResult(
+    val favoritesImported: Int,
+    val progressImported: Int,
+    val episodeStatesImported: Int,
+    val skippedEntries: Int
+)
+
 data class HomeFeed(
     val news: List<HomeNews> = emptyList(),
     val featured: Series? = null,

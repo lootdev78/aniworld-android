@@ -2,6 +2,7 @@ package io.github.lootdev78.aniworld
 
 import android.app.Application
 import android.net.Uri
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -1330,6 +1331,62 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
             }.onFailure { error ->
                 AppLogger.error("Metadaten", text(R.string.metadata_import_failed), error)
                 _state.update { it.copy(error = text(R.string.metadata_import_failed_detail, error.message.orEmpty())) }
+            }
+        }
+    }
+
+    fun exportLibraryBackup(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val json = store.exportLibraryBackup()
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
+                        ?.bufferedWriter()
+                        ?.use { it.write(json) }
+                        ?: error(text(R.string.library_backup_export_open_failed))
+                }
+                val message = text(R.string.library_backup_export_complete)
+                _state.update { it.copy(status = message, error = null) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.info("Sicherung", message)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val message = text(R.string.library_backup_export_failed_detail, error.message.orEmpty())
+                _state.update { it.copy(error = message) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.error("Sicherung", text(R.string.library_backup_export_failed), error)
+            }
+        }
+    }
+
+    fun importLibraryBackup(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val raw = withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openInputStream(uri)
+                        ?.bufferedReader()
+                        ?.use { it.readText() }
+                        ?: error(text(R.string.library_backup_import_open_failed))
+                }
+                val result = store.importLibraryBackup(raw)
+                val message = text(
+                    R.string.library_backup_import_complete,
+                    result.favoritesImported,
+                    result.progressImported,
+                    result.episodeStatesImported,
+                    result.skippedEntries
+                )
+                _state.update { it.copy(status = message, error = null) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.info("Sicherung", message)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val message = text(R.string.library_backup_import_failed_detail, error.message.orEmpty())
+                _state.update { it.copy(error = message) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.error("Sicherung", text(R.string.library_backup_import_failed), error)
             }
         }
     }
