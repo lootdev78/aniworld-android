@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.withTransaction
@@ -612,6 +613,85 @@ class AppStore(
             .toString(2)
     }
 
+    suspend fun exportSettingsBackup(): String = withContext(Dispatchers.IO) {
+        val preferences = context.aniWorldDataStore.data.first()
+        val settings = JSONObject()
+        preferences.asMap().forEach { (key, value) ->
+            if (key.name in SETTINGS_BACKUP_KEY_TYPES && value.isJsonBackupValue()) {
+                settings.put(key.name, value)
+            }
+        }
+        JSONObject()
+            .put("format", SETTINGS_BACKUP_FORMAT)
+            .put("version", SETTINGS_BACKUP_VERSION)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("settings", settings)
+            .toString(2)
+    }
+
+    suspend fun importSettingsBackup(raw: String, replaceExisting: Boolean): Int = withContext(Dispatchers.IO) {
+        val root = JSONObject(raw)
+        require(root.optString("format") == SETTINGS_BACKUP_FORMAT) { "Unbekanntes Einstellungsformat" }
+        require(root.optInt("version", -1) == SETTINGS_BACKUP_VERSION) { "Nicht unterstützte Sicherungsversion" }
+        val settings = root.optJSONObject("settings")
+            ?: error("Die Sicherung enthält keine Einstellungen")
+        require(settings.length() > 0) { "Die Sicherung enthält keine Einstellungen" }
+
+        val imported = linkedMapOf<String, Any>()
+        val keys = settings.keys()
+        while (keys.hasNext()) {
+            val name = keys.next()
+            val expectedType = SETTINGS_BACKUP_KEY_TYPES[name]
+                ?: error("Unbekannte Einstellung in der Sicherung: $name")
+            val value = settings.get(name)
+            val valid = when (expectedType) {
+                "boolean" -> value is Boolean
+                "int" -> value is Int
+                "float" -> value is Number && value.toFloat().isFinite()
+                "string" -> value is String
+                else -> false
+            }
+            require(valid) { "Ungültiger Wert für Einstellung: $name" }
+            imported[name] = value
+        }
+
+        context.aniWorldDataStore.edit { preferences ->
+            if (replaceExisting) {
+                SETTINGS_BACKUP_KEY_TYPES.forEach { (name, type) ->
+                    removeSettingsBackupValue(preferences, name, type)
+                }
+            }
+            imported.forEach { (name, value) -> writeSettingsBackupValue(preferences, name, value) }
+        }
+        imported.size
+    }
+
+    private fun removeSettingsBackupValue(preferences: MutablePreferences, name: String, type: String) {
+        when (type) {
+            "boolean" -> preferences.remove(booleanPreferencesKey(name))
+            "int" -> preferences.remove(intPreferencesKey(name))
+            "float" -> preferences.remove(floatPreferencesKey(name))
+            "string" -> preferences.remove(stringPreferencesKey(name))
+        }
+    }
+
+    private fun writeSettingsBackupValue(preferences: MutablePreferences, name: String, value: Any) {
+        when (SETTINGS_BACKUP_KEY_TYPES[name]) {
+            "boolean" -> preferences[booleanPreferencesKey(name)] = value as? Boolean
+                ?: error("Ungültiger boolescher Wert für Einstellung: $name")
+            "int" -> preferences[intPreferencesKey(name)] = value as? Int
+                ?: error("Ungültiger Zahlenwert für Einstellung: $name")
+            "float" -> preferences[floatPreferencesKey(name)] = (value as? Number)?.toFloat()
+                ?: error("Ungültiger Zahlenwert für Einstellung: $name")
+            "string" -> preferences[stringPreferencesKey(name)] = value as? String
+                ?: error("Ungültiger Textwert für Einstellung: $name")
+            else -> error("Unbekannte Einstellung in der Sicherung: $name")
+        }
+    }
+
+    private fun Any.isJsonBackupValue(): Boolean =
+        this is Boolean || this is Int || this is Float || this is String
+
     suspend fun importLibraryBackup(raw: String): LibraryBackupImportResult = withContext(Dispatchers.IO) {
         val root = JSONObject(raw)
         require(root.optString("format") == LIBRARY_BACKUP_FORMAT) { "Unbekanntes Sicherungsformat" }
@@ -932,6 +1012,14 @@ class AppStore(
         }
     }
 
+    suspend fun clearFavorites() = database.withTransaction { dao.deleteAllFavorites() }
+
+    suspend fun clearPlaybackProgress() = database.withTransaction {
+        dao.deleteAllProgress()
+        dao.deleteAllEpisodeStates()
+        dao.deleteAllWatchedOrder()
+    }
+
     suspend fun rememberSeasonTotal(seriesSlug: String, season: Int, total: Int) {
         if (total > 0) dao.upsertSeasonTotal(SeasonTotalEntity(seasonKey(seriesSlug, season), total))
     }
@@ -1239,7 +1327,52 @@ class AppStore(
         private val LEGACY_WATCHED_ORDER = stringPreferencesKey("watched_order")
         private const val LIBRARY_BACKUP_FORMAT = "aniworld-library-backup"
         private const val LIBRARY_BACKUP_VERSION = 1
+        private const val SETTINGS_BACKUP_FORMAT = "aniworld-settings-backup"
+        private const val SETTINGS_BACKUP_VERSION = 1
         private const val HOME_FEED_CACHE_FILE = "home_feed_offline.json"
+        private val SETTINGS_BACKUP_KEY_TYPES = mapOf(
+            "language_priority" to "string",
+            "hoster_priority" to "string",
+            "verify_streams" to "boolean",
+            "favorite_sort" to "string",
+            "watched_sort" to "string",
+            "dynamic_colors" to "boolean",
+            "web_adblock_enabled" to "boolean",
+            "web_filter_lists" to "string",
+            "web_session_panel_expanded" to "boolean",
+            "web_media_panel_expanded" to "boolean",
+            "auto_next_enabled" to "boolean",
+            "auto_next_delay_seconds" to "int",
+            "auto_play_preferred_hoster" to "boolean",
+            "allow_external_player" to "boolean",
+            "auto_skip_opening" to "boolean",
+            "auto_skip_ending" to "boolean",
+            "auto_skip_recap" to "boolean",
+            "show_skip_buttons" to "boolean",
+            "skip_offset_seconds" to "float",
+            "play_after_skip" to "boolean",
+            "remember_playback_position" to "boolean",
+            "playback_position_expiry_days" to "int",
+            "remember_volume" to "boolean",
+            "saved_volume_percent" to "int",
+            "aniskip_mappings" to "string",
+            "last_home_tab" to "string",
+            "startup_tab" to "string",
+            "home_offline_mode" to "boolean",
+            "accent_color" to "string",
+            "settings_button_x" to "float",
+            "settings_button_y" to "float",
+            "catalog_view_mode" to "string",
+            "favorites_view_mode" to "string",
+            "history_view_mode" to "string",
+            "diagnostics_enabled" to "boolean",
+            "cast_enabled" to "boolean",
+            "pip_enabled" to "boolean",
+            "highlight_started_seasons" to "boolean",
+            "started_season_highlight_alpha" to "float",
+            "home_section_order" to "string",
+            "hidden_home_sections" to "string"
+        )
     }
 }
 

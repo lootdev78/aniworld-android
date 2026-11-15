@@ -197,6 +197,9 @@ interface LibraryDao {
     @Query("DELETE FROM favorites WHERE slug = :slug")
     suspend fun deleteFavorite(slug: String)
 
+    @Query("DELETE FROM favorites")
+    suspend fun deleteAllFavorites()
+
     @Query("SELECT * FROM favorites ORDER BY sortIndex ASC, updatedAt DESC")
     suspend fun favoritesNow(): List<FavoriteEntity>
 
@@ -224,6 +227,9 @@ interface LibraryDao {
     @Query("DELETE FROM progress WHERE seriesSlug = :slug")
     suspend fun deleteProgress(slug: String)
 
+    @Query("DELETE FROM progress")
+    suspend fun deleteAllProgress()
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertEpisodeState(entity: EpisodeStateEntity)
 
@@ -238,6 +244,9 @@ interface LibraryDao {
 
     @Query("DELETE FROM episode_states WHERE seriesSlug = :slug")
     suspend fun deleteEpisodeStatesForSeries(slug: String)
+
+    @Query("DELETE FROM episode_states")
+    suspend fun deleteAllEpisodeStates()
 
     @Query("SELECT COUNT(*) FROM episode_states WHERE seriesSlug = :slug")
     suspend fun episodeStateCount(slug: String): Int
@@ -268,6 +277,9 @@ interface LibraryDao {
 
     @Query("DELETE FROM watched_order WHERE slug = :slug")
     suspend fun deleteWatchedOrder(slug: String)
+
+    @Query("DELETE FROM watched_order")
+    suspend fun deleteAllWatchedOrder()
 
     @Query("SELECT * FROM watched_order ORDER BY sortIndex ASC")
     suspend fun watchedOrderNow(): List<WatchedOrderEntity>

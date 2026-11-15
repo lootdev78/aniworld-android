@@ -7,8 +7,13 @@
 package io.github.lootdev78.aniworld
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ShortcutInfo
+import android.content.pm.ShortcutManager
+import android.graphics.drawable.Icon
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -75,6 +80,7 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Movie
@@ -651,18 +657,23 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
                                 color = if (st.catalogMetadataError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             if (!st.catalogMetadataUpdating) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { importMetadataLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
-                                    ) {
-                                        Icon(Icons.Default.FileUpload, null)
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(stringResource(R.string.metadata_action_import))
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = { importMetadataLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }
+                                        ) {
+                                            Icon(Icons.Default.FileUpload, null)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(stringResource(R.string.metadata_action_import))
+                                        }
+                                        Button(onClick = downloadMetadata) {
+                                            Icon(Icons.Default.CloudDownload, null)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(stringResource(R.string.metadata_action_download))
+                                        }
                                     }
-                                    Button(onClick = downloadMetadata) {
-                                        Icon(Icons.Default.CloudDownload, null)
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(stringResource(R.string.metadata_action_download))
+                                    TextButton(onClick = { openSettingsCategory(context, SettingsCategory.METADATA) }) {
+                                        Text(stringResource(R.string.initial_metadata_open_settings))
                                     }
                                 }
                             }
@@ -1610,6 +1621,10 @@ private fun NetflixDetailHeader(series: Series, st: UiState, vm: AppViewModel, e
                         Icon(if (st.preferences.isFavorite(series.slug)) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null)
                         Text(" " + stringResource(if (st.preferences.isFavorite(series.slug)) R.string.remove_favorite else R.string.favorite))
                     }
+                    OutlinedButton(onClick = { pinAnimeShortcut(context, series) }) {
+                        Icon(Icons.Default.Home, null)
+                        Text(" " + stringResource(R.string.shortcut_pin))
+                    }
                     OutlinedButton(onClick = { vm.openAnimeInfo(series) }) { Icon(Icons.Default.Info, null); Text(" " + stringResource(R.string.info)) }
                 }
             }
@@ -2512,6 +2527,9 @@ fun SettingsScreen(
     val prefs = st.preferences
     val context = LocalContext.current
     var confirmMetadataDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmFavoritesDelete by rememberSaveable { mutableStateOf(false) }
+    var confirmProgressDelete by rememberSaveable { mutableStateOf(false) }
+    var settingsBackupToRestore by rememberSaveable { mutableStateOf<String?>(null) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         vm.refreshCatalogMetadata()
     }
@@ -2527,6 +2545,12 @@ fun SettingsScreen(
     val importLibraryBackupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(vm::importLibraryBackup) }
+    val exportSettingsBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let(vm::exportSettingsBackup) }
+    val importSettingsBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> settingsBackupToRestore = uri?.toString() }
     val startMetadataRefresh = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -2897,8 +2921,52 @@ fun SettingsScreen(
                             onClick = { importLibraryBackupLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.FileUpload, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(stringResource(R.string.library_backup_import))
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = { confirmFavoritesDelete = true },
+                            enabled = prefs.favorites.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Delete, null)
+                            Text(" " + stringResource(R.string.favorites_clear))
+                        }
+                        OutlinedButton(
+                            onClick = { confirmProgressDelete = true },
+                            enabled = prefs.progress.isNotEmpty() || prefs.episodeWatchStates.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Delete, null)
+                            Text(" " + stringResource(R.string.playback_progress_clear))
+                        }
+                        HorizontalDivider()
+                        Text(stringResource(R.string.settings_backup_title), fontWeight = FontWeight.Bold)
+                        Text(
+                            stringResource(R.string.settings_backup_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(
+                            onClick = { exportSettingsBackupLauncher.launch("aniworld-settings-backup.json") },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.FileDownload, null)
+                            Text(" " + stringResource(R.string.settings_backup_export))
+                        }
+                        OutlinedButton(
+                            onClick = { importSettingsBackupLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Icon(Icons.Default.FileUpload, null)
-                            Text(" " + stringResource(R.string.library_backup_import))
+                            Text(" " + stringResource(R.string.settings_backup_import))
                         }
                     }
                 }
@@ -2974,6 +3042,95 @@ fun SettingsScreen(
             }
         )
     }
+    if (confirmFavoritesDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmFavoritesDelete = false },
+            title = { Text(stringResource(R.string.favorites_clear_confirm_title)) },
+            text = { Text(stringResource(R.string.favorites_clear_confirm_body, prefs.favorites.size)) },
+            confirmButton = {
+                Button(onClick = {
+                    confirmFavoritesDelete = false
+                    vm.clearFavorites()
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmFavoritesDelete = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+    if (confirmProgressDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmProgressDelete = false },
+            title = { Text(stringResource(R.string.playback_progress_clear_confirm_title)) },
+            text = {
+                Text(stringResource(
+                    R.string.playback_progress_clear_confirm_body,
+                    prefs.progress.size,
+                    prefs.episodeWatchStates.size
+                ))
+            },
+            confirmButton = {
+                Button(onClick = {
+                    confirmProgressDelete = false
+                    vm.clearPlaybackProgress()
+                }) { Text(stringResource(R.string.delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmProgressDelete = false }) { Text(stringResource(R.string.cancel)) }
+            }
+        )
+    }
+    settingsBackupToRestore?.let { rawUri ->
+        AlertDialog(
+            onDismissRequest = { settingsBackupToRestore = null },
+            title = { Text(stringResource(R.string.settings_backup_restore_title)) },
+            text = { Text(stringResource(R.string.settings_backup_restore_body)) },
+            confirmButton = {
+                Button(onClick = {
+                    settingsBackupToRestore = null
+                    vm.importSettingsBackup(android.net.Uri.parse(rawUri), replaceExisting = true)
+                }) { Text(stringResource(R.string.settings_backup_replace)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    settingsBackupToRestore = null
+                    vm.importSettingsBackup(android.net.Uri.parse(rawUri), replaceExisting = false)
+                }) { Text(stringResource(R.string.settings_backup_merge)) }
+            }
+        )
+    }
+}
+
+private fun pinAnimeShortcut(context: android.content.Context, series: Series) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        Toast.makeText(context, R.string.shortcut_unsupported, Toast.LENGTH_LONG).show()
+        return
+    }
+    val shortcutManager = context.getSystemService(ShortcutManager::class.java)
+    if (shortcutManager == null || !shortcutManager.isRequestPinShortcutSupported) {
+        Toast.makeText(context, R.string.shortcut_unsupported, Toast.LENGTH_LONG).show()
+        return
+    }
+    val deepLink = android.net.Uri.Builder()
+        .scheme("aniworldapp")
+        .authority("anime")
+        .appendPath(series.slug)
+        .build()
+    val shortcutIntent = Intent(Intent.ACTION_VIEW, deepLink, context, MainActivity::class.java).apply {
+        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+    }
+    val shortcut = ShortcutInfo.Builder(context, "anime-${series.slug}")
+        .setShortLabel(series.title.ifBlank { series.slug }.take(10))
+        .setLongLabel(series.title)
+        .setIcon(Icon.createWithResource(context, R.mipmap.ic_launcher))
+        .setIntent(shortcutIntent)
+        .build()
+    val result = shortcutManager.requestPinShortcut(shortcut, null)
+    Toast.makeText(
+        context,
+        if (result) R.string.shortcut_requested else R.string.shortcut_unsupported,
+        Toast.LENGTH_LONG
+    ).show()
 }
 
 @Composable

@@ -53,6 +53,8 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.runtime.Composable
@@ -139,6 +141,23 @@ class MainActivity : ComponentActivity() {
             val state by vm.state.collectAsStateWithLifecycle()
             val link by deepLink.collectAsStateWithLifecycle()
             val mediaAction by playbackAction.collectAsStateWithLifecycle()
+            var metadataPromptDismissed by rememberSaveable { mutableStateOf(false) }
+            val metadataImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                if (uri != null) {
+                    metadataPromptDismissed = true
+                    vm.importOfflineMetadata(uri)
+                }
+            }
+            val metadataPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (granted) vm.refreshCatalogMetadata() else metadataPromptDismissed = false
+            }
+            val fetchMetadata = {
+                metadataPromptDismissed = true
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) metadataPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                else vm.refreshCatalogMetadata()
+            }
             LaunchedEffect(link) { vm.openDeepLink(link) }
             LaunchedEffect(intent?.action) {
                 if (intent?.action == PlaybackService.ACTION_OPEN_PLAYER) vm.restorePlayer()
@@ -155,10 +174,20 @@ class MainActivity : ComponentActivity() {
             AniWorldTheme(useDynamicColors = state.preferences.useDynamicColors, accentColor = state.preferences.accentColor) {
                 Box(Modifier.fillMaxSize()) {
                     AniWorldApp(vm)
-                    if (state.catalogMetadataUpdating && !state.preferences.initialPreloadCompleted) {
+                    if (state.preferencesReady &&
+                        !state.metadataInventoryChecking &&
+                        state.offlineMetadataCount == 0 &&
+                        !metadataPromptDismissed
+                    ) {
                         InitialMetadataBlockingDialog(
                             state = state,
-                            onOpenSettings = { openSettingsCategory(this@MainActivity, SettingsCategory.METADATA) }
+                            onFetch = fetchMetadata,
+                            onImport = { metadataImportLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                            onOpenSettings = {
+                                metadataPromptDismissed = true
+                                openSettingsCategory(this@MainActivity, SettingsCategory.METADATA)
+                            },
+                            onDismiss = { metadataPromptDismissed = true }
                         )
                     }
                     if (state.resolving) {
@@ -209,12 +238,18 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun InitialMetadataBlockingDialog(state: UiState, onOpenSettings: () -> Unit) {
+private fun InitialMetadataBlockingDialog(
+    state: UiState,
+    onFetch: () -> Unit,
+    onImport: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit
+) {
     androidx.compose.ui.window.Dialog(
-        onDismissRequest = {},
+        onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(
-            dismissOnBackPress = false,
-            dismissOnClickOutside = false
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
         )
     ) {
         Surface(
@@ -228,15 +263,15 @@ private fun InitialMetadataBlockingDialog(state: UiState, onOpenSettings: () -> 
                 verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)
             ) {
                 Text(stringResource(R.string.initial_metadata_title), style = MaterialTheme.typography.titleLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-                Text(stringResource(R.string.initial_metadata_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (state.catalogMetadataTotal > 0) {
+                Text(stringResource(R.string.missing_metadata_dialog_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.catalogMetadataUpdating && state.catalogMetadataTotal > 0) {
                     val progress = (state.catalogMetadataCompleted.toFloat() / state.catalogMetadataTotal).coerceIn(0f, 1f)
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                     Text(
                         stringResource(R.string.initial_metadata_progress, state.catalogMetadataCompleted, state.catalogMetadataTotal),
                         style = MaterialTheme.typography.labelLarge
                     )
-                } else {
+                } else if (state.catalogMetadataUpdating) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     Text(stringResource(R.string.metadata_notification_preparing), style = MaterialTheme.typography.labelLarge)
                 }
@@ -244,8 +279,17 @@ private fun InitialMetadataBlockingDialog(state: UiState, onOpenSettings: () -> 
                 state.catalogMetadataError?.let {
                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 }
-                Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onFetch, enabled = !state.catalogMetadataUpdating, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.metadata_action_download))
+                }
+                OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.import_offline_backup))
+                }
+                TextButton(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.initial_metadata_open_settings))
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.not_now))
                 }
             }
         }

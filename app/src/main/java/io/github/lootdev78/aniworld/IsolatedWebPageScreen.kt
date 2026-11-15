@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
+import android.view.MotionEvent
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -91,11 +92,23 @@ fun IsolatedWebPageScreen(
                     isFocusableInTouchMode = true
                     isVerticalScrollBarEnabled = true
                     isHorizontalScrollBarEnabled = true
-                    isNestedScrollingEnabled = true
+                    isNestedScrollingEnabled = false
                     setOnLongClickListener(null)
+                    setOnTouchListener { view, event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE ->
+                                view.parent?.requestDisallowInterceptTouchEvent(true)
+                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                                view.parent?.requestDisallowInterceptTouchEvent(false)
+                        }
+                        false
+                    }
                     settings.apply {
                         javaScriptEnabled = true
                         domStorageEnabled = true
+                        setSupportZoom(true)
+                        builtInZoomControls = true
+                        displayZoomControls = false
                         userAgentString = AniWorldRepository.UA
                         allowFileAccess = false
                         allowContentAccess = false

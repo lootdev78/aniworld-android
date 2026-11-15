@@ -66,7 +66,7 @@ data class UiState(
     val preferences: AppPreferences = AppPreferences(),
     val preferencesReady: Boolean = false,
     val diagnostics: List<DiagnosticEntry> = emptyList(),
-    val metadataInventoryChecking: Boolean = false,
+    val metadataInventoryChecking: Boolean = true,
     val offlineMetadataCount: Int = 0,
     val offlineMetadataExpectedCount: Int = 0,
     val offlineMetadataMissingCount: Int = 0,
@@ -143,6 +143,7 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 if (!startupTriggered) {
                     startupTriggered = true
                     if (savedStateHandle.get<Boolean>(SETTINGS_ACTIVITY_VIEWMODEL_ARG) != true) {
+                        checkOfflineMetadata()
                         loadHome()
                         restoreSavedSelection()
                     }
@@ -212,6 +213,59 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                     _state.update { it.copy(homeError = friendlyMessage(error)) }
                 }
             } finally { _state.update { it.copy(homeLoading = false) } }
+        }
+    }
+
+    fun exportSettingsBackup(uri: Uri) {
+        viewModelScope.launch {
+            try {
+                val json = store.exportSettingsBackup()
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openOutputStream(uri, "wt")
+                        ?.bufferedWriter()
+                        ?.use { it.write(json) }
+                        ?: error(text(R.string.settings_backup_export_open_failed))
+                }
+                val message = text(R.string.settings_backup_export_complete)
+                _state.update { it.copy(status = message, error = null) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.info("Sicherung", message)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val message = text(R.string.settings_backup_export_failed_detail, error.message.orEmpty())
+                _state.update { it.copy(error = message) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.error("Sicherung", text(R.string.settings_backup_export_failed), error)
+            }
+        }
+    }
+
+    fun importSettingsBackup(uri: Uri, replaceExisting: Boolean) {
+        viewModelScope.launch {
+            try {
+                val raw = withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver.openInputStream(uri)
+                        ?.bufferedReader()
+                        ?.use { it.readText() }
+                        ?: error(text(R.string.settings_backup_import_open_failed))
+                }
+                val count = store.importSettingsBackup(raw, replaceExisting)
+                val message = text(
+                    if (replaceExisting) R.string.settings_backup_replace_complete else R.string.settings_backup_merge_complete,
+                    count
+                )
+                _state.update { it.copy(status = message, error = null) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.info("Sicherung", message)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val message = text(R.string.settings_backup_import_failed_detail, error.message.orEmpty())
+                _state.update { it.copy(error = message) }
+                Toast.makeText(getApplication(), message, Toast.LENGTH_LONG).show()
+                AppLogger.error("Sicherung", text(R.string.settings_backup_import_failed), error)
+            }
         }
     }
 
@@ -895,6 +949,33 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
 
     fun toggleFavorite(series: Series) = viewModelScope.launch { store.toggleFavorite(series) }.let { Unit }
     fun removeFavorites(slugs: Set<String>) = viewModelScope.launch { store.removeFavorites(slugs) }.let { Unit }
+    fun clearFavorites() {
+        viewModelScope.launch {
+            try {
+                store.clearFavorites()
+                _state.update { it.copy(status = text(R.string.favorites_clear_complete)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.error("Bibliothek", text(R.string.favorites_clear_failed), error)
+                _state.update { it.copy(error = text(R.string.favorites_clear_failed_detail, error.message.orEmpty())) }
+            }
+        }
+    }
+
+    fun clearPlaybackProgress() {
+        viewModelScope.launch {
+            try {
+                store.clearPlaybackProgress()
+                _state.update { it.copy(status = text(R.string.playback_progress_clear_complete)) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                AppLogger.error("Bibliothek", text(R.string.playback_progress_clear_failed), error)
+                _state.update { it.copy(error = text(R.string.playback_progress_clear_failed_detail, error.message.orEmpty())) }
+            }
+        }
+    }
     fun removeWatch(slug: String) = viewModelScope.launch { store.removeSeries(slug) }.let { Unit }
     fun removeWatched(slug: String) = viewModelScope.launch { store.removeWatchedSeries(slug) }.let { Unit }
     fun removeWatched(slugs: Set<String>) = viewModelScope.launch { store.removeWatchedSeries(slugs) }.let { Unit }
@@ -966,7 +1047,10 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         val uri = runCatching { Uri.parse(value.orEmpty()) }.getOrNull() ?: return
         if (uri.scheme != "aniworldapp" || uri.host != "anime") return
         val slug = uri.lastPathSegment.orEmpty().trim()
-        if (slug.isBlank()) return
+        if (!slug.matches(Regex("[a-z0-9][a-z0-9._-]{0,159}"))) {
+            _state.update { it.copy(error = text(R.string.shortcut_invalid_anime)) }
+            return
+        }
         select(Series(slug.replace('-', ' ').replaceFirstChar { it.uppercase() }, slug, "https://aniworld.to/anime/stream/$slug"))
     }
 

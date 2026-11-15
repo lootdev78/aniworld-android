@@ -128,15 +128,6 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// Player-only palette inspired by the original AniWorld.to website.
-private val AniWorldPlayerAccent = Color(0xFF627BEE)
-private val AniWorldPlayerAccentStrong = Color(0xFF4C63C7)
-private val AniWorldPlayerBackground = Color(0xFF101C24)
-private val AniWorldPlayerPanel = Color(0xF21A2B35)
-private val AniWorldPlayerControl = Color(0xFF263B49)
-private val AniWorldPlayerTextMuted = Color(0xFFB9C5CC)
-private val AniWorldPlayerDivider = Color(0xFF3A4D59)
-
 private enum class PlayerCastProtocol { GOOGLE_CAST, SMART_VIEW, DLNA, FCAST }
 
 private data class PlayerCastChoice(
@@ -198,6 +189,13 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context.findActivity()
+    val AniWorldPlayerAccent = MaterialTheme.colorScheme.primary
+    val AniWorldPlayerAccentStrong = MaterialTheme.colorScheme.primaryContainer
+    val AniWorldPlayerBackground = MaterialTheme.colorScheme.background
+    val AniWorldPlayerPanel = MaterialTheme.colorScheme.surface
+    val AniWorldPlayerControl = MaterialTheme.colorScheme.surfaceVariant
+    val AniWorldPlayerTextMuted = MaterialTheme.colorScheme.onSurfaceVariant
+    val AniWorldPlayerDivider = MaterialTheme.colorScheme.outlineVariant
     var position by remember(playback.id) { mutableLongStateOf(playback.startPositionMs) }
     var duration by remember(playback.id) { mutableLongStateOf(playback.knownDurationMs.coerceAtLeast(0L)) }
     var scrubPosition by remember(playback.id) { mutableFloatStateOf(playback.startPositionMs.toFloat()) }
@@ -1882,10 +1880,10 @@ private fun PlayerRoundButton(
     Surface(
         modifier = Modifier.padding(horizontal = 5.dp),
         shape = androidx.compose.foundation.shape.CircleShape,
-        color = Color.White.copy(alpha = if (enabled) .12f else .05f)
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (enabled) .72f else .38f)
     ) {
         IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(size)) {
-            Icon(icon, contentDescription, tint = Color.White.copy(alpha = if (enabled) 1f else .28f), modifier = Modifier.size(size * .52f))
+            Icon(icon, contentDescription, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .38f), modifier = Modifier.size(size * .52f))
         }
     }
 }
@@ -1897,6 +1895,7 @@ private fun PlayerPrimaryButton(
     size: androidx.compose.ui.unit.Dp = 68.dp,
     onClick: () -> Unit
 ) {
+    val AniWorldPlayerAccentStrong = MaterialTheme.colorScheme.primaryContainer
     Surface(
         modifier = Modifier.padding(horizontal = 6.dp),
         shape = androidx.compose.foundation.shape.CircleShape,
@@ -1919,6 +1918,9 @@ private fun PlayerFeatureButton(
     var labelVisible by remember { mutableStateOf(false) }
     var focused by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
+    val AniWorldPlayerAccent = MaterialTheme.colorScheme.primary
+    val AniWorldPlayerAccentStrong = MaterialTheme.colorScheme.primaryContainer
+    val AniWorldPlayerControl = MaterialTheme.colorScheme.surfaceVariant
     Box(
         modifier = Modifier.padding(horizontal = 2.dp),
         contentAlignment = Alignment.BottomCenter
@@ -2015,6 +2017,7 @@ private fun skipTypeLabel(context: Context, type: AniSkipType): String = when (t
 
 @Composable
 private fun PlayerMetadataBadge(label: String) {
+    val AniWorldPlayerAccent = MaterialTheme.colorScheme.primary
     Surface(
         shape = androidx.compose.foundation.shape.RoundedCornerShape(7.dp),
         color = AniWorldPlayerAccent.copy(alpha = .20f)
@@ -2036,6 +2039,9 @@ private fun PlayerCastListItem(
     connected: Boolean,
     onClick: () -> Unit
 ) {
+    val AniWorldPlayerAccent = MaterialTheme.colorScheme.primary
+    val AniWorldPlayerControl = MaterialTheme.colorScheme.surfaceVariant
+    val AniWorldPlayerTextMuted = MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = onClick,
         color = if (connected) AniWorldPlayerAccent.copy(alpha = .16f) else Color.Transparent,
@@ -2067,6 +2073,8 @@ private fun PlayerCastListItem(
 
 @Composable
 private fun PlayerCastProtocolItem(label: String, onClick: () -> Unit) {
+    val AniWorldPlayerAccent = MaterialTheme.colorScheme.primary
+    val AniWorldPlayerControl = MaterialTheme.colorScheme.surfaceVariant
     Surface(
         onClick = onClick,
         color = AniWorldPlayerControl.copy(alpha = .50f),
@@ -2085,6 +2093,7 @@ private fun PlayerCastProtocolItem(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun PlayerCastActionItem(icon: ImageVector, label: String, onClick: () -> Unit) {
+    val AniWorldPlayerAccent = MaterialTheme.colorScheme.primary
     Surface(
         onClick = onClick,
         color = Color.Transparent,
@@ -2103,6 +2112,7 @@ private fun PlayerCastActionItem(icon: ImageVector, label: String, onClick: () -
 
 @Composable
 private fun PlayerStreamInfoRow(label: String, value: String) {
+    val AniWorldPlayerTextMuted = MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.Top

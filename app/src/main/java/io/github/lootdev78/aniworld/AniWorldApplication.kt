@@ -89,8 +89,7 @@ class AniWorldApplication : Application(), SingletonImageLoader.Factory {
                     store.clearStoredCovers()
                     clearImageCaches()
                     migrations.edit().putInt("cover_parser_version", 2).apply()
-                    CatalogMetadataWorker.enqueue(this@AniWorldApplication, force = true)
-                    AppLogger.info("Cover", "Veraltete Cover-Zuordnungen wurden zurückgesetzt; Metadaten werden neu geladen")
+                    AppLogger.info("Cover", "Veraltete Cover-Zuordnungen wurden zurückgesetzt; Metadaten können in den Einstellungen aktualisiert werden")
                 }
             }.onFailure { AppLogger.warn("Cover", "Cover-Zuordnungen konnten nicht migriert werden", it.message.orEmpty()) }
         }
