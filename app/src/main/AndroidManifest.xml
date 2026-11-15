@@ -64,5 +64,13 @@
                 <data android:scheme="aniworldapp" android:host="anime" />
             </intent-filter>
         </activity>
+        <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".PlaybackSettingsActivity" android:exported="false" />
+        <activity android:name=".AppearanceSettingsActivity" android:exported="false" />
+        <activity android:name=".MetadataSettingsActivity" android:exported="false" />
+        <activity android:name=".BrowserSettingsActivity" android:exported="false" />
+        <activity android:name=".DiagnosticsSettingsActivity" android:exported="false" />
+        <activity android:name=".MaintenanceSettingsActivity" android:exported="false" />
+        <activity android:name=".CreditsSettingsActivity" android:exported="false" />
     </application>
 </manifest>

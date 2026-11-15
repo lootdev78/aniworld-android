@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
@@ -151,7 +152,15 @@ class MainActivity : ComponentActivity() {
                 if (mediaAction != null) playbackAction.value = null
             }
             AniWorldTheme(useDynamicColors = state.preferences.useDynamicColors, accentColor = state.preferences.accentColor) {
-                AniWorldApp(vm)
+                Box(Modifier.fillMaxSize()) {
+                    AniWorldApp(vm)
+                    if (state.catalogMetadataUpdating && !state.preferences.initialPreloadCompleted) {
+                        InitialMetadataBlockingDialog(
+                            state = state,
+                            onOpenSettings = { openSettingsCategory(this@MainActivity, SettingsCategory.METADATA) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -191,6 +200,49 @@ class MainActivity : ComponentActivity() {
         if (intent.action == PlaybackService.ACTION_OPEN_PLAYER) {
             // Route the notification tap through the same lifecycle-aware action stream.
             playbackAction.value = PlaybackService.ACTION_OPEN_PLAYER
+        }
+    }
+}
+
+@Composable
+private fun InitialMetadataBlockingDialog(state: UiState, onOpenSettings: () -> Unit) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = {},
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp
+        ) {
+            Column(
+                Modifier.fillMaxWidth().padding(24.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(14.dp)
+            ) {
+                Text(stringResource(R.string.initial_metadata_title), style = MaterialTheme.typography.titleLarge, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                Text(stringResource(R.string.initial_metadata_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.catalogMetadataTotal > 0) {
+                    val progress = (state.catalogMetadataCompleted.toFloat() / state.catalogMetadataTotal).coerceIn(0f, 1f)
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    Text(
+                        stringResource(R.string.initial_metadata_progress, state.catalogMetadataCompleted, state.catalogMetadataTotal),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.metadata_notification_preparing), style = MaterialTheme.typography.labelLarge)
+                }
+                state.catalogMetadataError?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.initial_metadata_open_settings))
+                }
+            }
         }
     }
 }
@@ -263,7 +315,6 @@ fun AniWorldApp(vm: AppViewModel) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: HomeTab.START.route
     val currentTab = HomeTab.fromRoute(currentRoute)
-    var settingsOpen by remember { mutableStateOf(false) }
     var diagnosticsOpen by remember { mutableStateOf(false) }
     var restoredTab by rememberSaveable { mutableStateOf(false) }
     val firstStartNotificationPermission = rememberLauncherForActivityResult(
@@ -440,17 +491,6 @@ fun AniWorldApp(vm: AppViewModel) {
         return
     }
 
-    if (settingsOpen) {
-        BackHandler { settingsOpen = false }
-        SettingsScreen(
-            st = st,
-            vm = vm,
-            onDismiss = { settingsOpen = false },
-            onDiagnostics = { settingsOpen = false; diagnosticsOpen = true }
-        )
-        return
-    }
-
     val collectionExpanded = LocalConfiguration.current.screenWidthDp >= 720
     st.seriesCollection?.let { page ->
         BackHandler { vm.closeCollection() }
@@ -529,7 +569,7 @@ fun AniWorldApp(vm: AppViewModel) {
                             DraggableSettingsButton(
                                 x = st.preferences.settingsButtonX,
                                 y = st.preferences.settingsButtonY,
-                                onOpen = { settingsOpen = true },
+                                onOpen = { openSettingsHub(context) },
                                 onPosition = vm::setSettingsButtonPosition,
                                 modifier = Modifier.fillMaxSize()
                             )

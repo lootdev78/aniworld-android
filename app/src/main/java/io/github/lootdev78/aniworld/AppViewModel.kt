@@ -80,10 +80,6 @@ data class UiState(
     val status: String? = null,
     val error: String? = null,
     val resolveLog: List<String> = emptyList(),
-    val detailScrollIndex: Int = 0,
-    val detailScrollOffset: Int = 0,
-    val episodeScrollIndex: Int = 0,
-    val episodeScrollOffset: Int = 0
 ) {
     val catalogMetadataReady: Boolean get() = catalog.items.isNotEmpty() && preferences.initialPreloadCompleted
 
@@ -146,8 +142,10 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
                 }
                 if (!startupTriggered) {
                     startupTriggered = true
-                    loadHome()
-                    restoreSavedSelection()
+                    if (savedStateHandle.get<Boolean>(SETTINGS_ACTIVITY_VIEWMODEL_ARG) != true) {
+                        loadHome()
+                        restoreSavedSelection()
+                    }
                 }
             }
         }
@@ -1418,12 +1416,13 @@ class AppViewModel(application: Application, private val savedStateHandle: Saved
         }
     }
 
-    fun saveDetailScroll(index: Int, offset: Int) = _state.update {
-        it.copy(detailScrollIndex = index.coerceAtLeast(0), detailScrollOffset = offset.coerceAtLeast(0))
+    fun savedListPosition(key: String): Pair<Int, Int> {
+        val saved = savedStateHandle.get<IntArray>("list_scroll:$key") ?: return 0 to 0
+        return (saved.getOrNull(0) ?: 0).coerceAtLeast(0) to (saved.getOrNull(1) ?: 0).coerceAtLeast(0)
     }
 
-    fun saveEpisodeScroll(index: Int, offset: Int) = _state.update {
-        it.copy(episodeScrollIndex = index.coerceAtLeast(0), episodeScrollOffset = offset.coerceAtLeast(0))
+    fun saveListPosition(key: String, index: Int, offset: Int) {
+        savedStateHandle["list_scroll:$key"] = intArrayOf(index.coerceAtLeast(0), offset.coerceAtLeast(0))
     }
 
     fun resumeSelected() {

@@ -282,6 +282,10 @@
     <string name="catalog_metadata_required">Catalog metadata missing</string>
     <string name="catalog_metadata_required_hint">Import an existing metadata file with Android’s document provider or download the metadata directly.</string>
     <string name="catalog_metadata_progress">%1$d of %2$d titles stored</string>
+    <string name="initial_metadata_title">Preparing the offline catalog</string>
+    <string name="initial_metadata_body">Please wait while the first catalog metadata download finishes. The rest of the app is temporarily locked.</string>
+    <string name="initial_metadata_open_settings">Open metadata settings</string>
+    <string name="initial_metadata_progress">%1$d of %2$d titles stored</string>
     <string name="about_and_credits">About &amp; Credits</string>
     <string name="credits_created_by">Development and repository: lootdev78</string>
     <string name="catalog_metadata_no_titles">Catalog metadata could not be loaded because no titles were returned.</string>
@@ -357,7 +361,21 @@
     <string name="metadata_import_failed_detail">Metadata import failed: %1$s</string>
     <string name="metadata_import_open_failed">The selected file could not be opened.</string>
 
-    <string name="settings_subtitle">Playback, home screen, metadata and diagnostics</string>
+    <string name="settings_subtitle">Choose a settings category</string>
+    <string name="settings_category_preferred">Playback &amp; AniSkip</string>
+    <string name="settings_category_preferred_desc">Playback preferences, automatic skips, Cast and picture-in-picture.</string>
+    <string name="settings_category_appearance">Appearance &amp; home screen</string>
+    <string name="settings_category_appearance_desc">Startup area, home layout, colors and display preferences.</string>
+    <string name="settings_category_metadata">Metadata &amp; backup</string>
+    <string name="settings_category_metadata_desc">Offline metadata, catalog download progress and library backup.</string>
+    <string name="settings_category_browser">Browser</string>
+    <string name="settings_category_browser_desc">Web protection and browsing preferences.</string>
+    <string name="settings_category_diagnostics">Diagnostics</string>
+    <string name="settings_category_diagnostics_desc">Diagnostic logging and technical reports.</string>
+    <string name="settings_category_maintenance">Maintenance</string>
+    <string name="settings_category_maintenance_desc">Reset cached cover data and settings button placement.</string>
+    <string name="settings_category_credits">Credits</string>
+    <string name="settings_category_credits_desc">Project links and acknowledgements.</string>
     <string name="playback_settings_desc">Preferred language, hoster, auto-next and playback behavior</string>
     <string name="web_and_security">Browser settings</string>
     <string name="web_and_security_desc">Filtering for manual web pages and hoster pages</string>

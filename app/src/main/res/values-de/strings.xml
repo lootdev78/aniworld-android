@@ -282,6 +282,10 @@
     <string name="catalog_metadata_required">Katalog-Metadaten fehlen</string>
     <string name="catalog_metadata_required_hint">Importiere eine vorhandene Metadatendatei über den Android-Dokumentanbieter oder lade die Metadaten direkt herunter.</string>
     <string name="catalog_metadata_progress">%1$d von %2$d Titeln gespeichert</string>
+    <string name="initial_metadata_title">Offline-Katalog wird vorbereitet</string>
+    <string name="initial_metadata_body">Bitte warte, bis der erste Download der Katalogmetadaten abgeschlossen ist. Die übrige App ist vorübergehend gesperrt.</string>
+    <string name="initial_metadata_open_settings">Metadaten-Einstellungen öffnen</string>
+    <string name="initial_metadata_progress">%1$d von %2$d Titeln gespeichert</string>
     <string name="about_and_credits">Über &amp; Credits</string>
     <string name="credits_created_by">Entwicklung und Repository: lootdev78</string>
     <string name="catalog_metadata_no_titles">Die Katalogmetadaten konnten nicht geladen werden, weil keine Titel zurückgegeben wurden.</string>
@@ -357,7 +361,21 @@
     <string name="metadata_import_failed_detail">Metadatenimport fehlgeschlagen: %1$s</string>
     <string name="metadata_import_open_failed">Die ausgewählte Datei konnte nicht geöffnet werden.</string>
 
-    <string name="settings_subtitle">Player, Startseite, Metadaten und Diagnose</string>
+    <string name="settings_subtitle">Wähle eine Einstellungskategorie</string>
+    <string name="settings_category_preferred">Wiedergabe &amp; AniSkip</string>
+    <string name="settings_category_preferred_desc">Wiedergabeoptionen, automatisches Überspringen, Cast und Bild-in-Bild.</string>
+    <string name="settings_category_appearance">Aussehen &amp; Startseite</string>
+    <string name="settings_category_appearance_desc">Startbereich, Startseitenlayout, Farben und Darstellungsoptionen.</string>
+    <string name="settings_category_metadata">Metadaten &amp; Sicherung</string>
+    <string name="settings_category_metadata_desc">Offline-Metadaten, Katalog-Download und Bibliothekssicherung.</string>
+    <string name="settings_category_browser">Browser</string>
+    <string name="settings_category_browser_desc">Webschutz und Browsereinstellungen.</string>
+    <string name="settings_category_diagnostics">Diagnose</string>
+    <string name="settings_category_diagnostics_desc">Diagnoseprotokollierung und technische Berichte.</string>
+    <string name="settings_category_maintenance">Wartung</string>
+    <string name="settings_category_maintenance_desc">Cover-Cache und Position des Einstellungsbuttons zurücksetzen.</string>
+    <string name="settings_category_credits">Credits</string>
+    <string name="settings_category_credits_desc">Projektlinks und Mitwirkende.</string>
     <string name="playback_settings_desc">Bevorzugte Sprache, Hoster, automatisches Weiterschalten und Wiedergabe</string>
     <string name="web_and_security">Browser-Einstellungen</string>
     <string name="web_and_security_desc">Filter für manuelle Webseiten und Hoster-Seiten</string>

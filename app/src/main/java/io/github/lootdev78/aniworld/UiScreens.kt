@@ -117,6 +117,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -151,6 +152,11 @@ fun HomeScreen(st: UiState, vm: AppViewModel) {
     val visibleSections = st.preferences.homeSectionOrder.filterNot(st.preferences.hiddenHomeSections::contains)
     val continueWatching = st.preferences.progress.values.sortedByDescending { it.updatedAt }.take(12)
     val favoriteSeries = st.preferences.favorites.sortedByDescending { it.updatedAt }.take(12).map(FavoriteEntry::asSeries)
+    val homePosition = vm.savedListPosition("home:main")
+    val listState = rememberLazyListState(homePosition.first, homePosition.second)
+    DisposableEffect(listState) {
+        onDispose { vm.saveListPosition("home:main", listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) }
+    }
 
     Box(Modifier.fillMaxSize()) {
         PullToRefreshBox(
@@ -160,6 +166,7 @@ fun HomeScreen(st: UiState, vm: AppViewModel) {
         ) {
             LazyColumn(
                 Modifier.fillMaxSize(),
+                state = listState,
                 contentPadding = PaddingValues(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp)
             ) {
@@ -540,8 +547,16 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
         ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         else vm.refreshCatalogMetadata()
     }
-    val gridState = rememberLazyGridState()
-    val listState = rememberLazyListState()
+    val catalogGridPosition = vm.savedListPosition("catalog:grid")
+    val catalogListPosition = vm.savedListPosition("catalog:list")
+    val gridState = rememberLazyGridState(catalogGridPosition.first, catalogGridPosition.second)
+    val listState = rememberLazyListState(catalogListPosition.first, catalogListPosition.second)
+    DisposableEffect(gridState, listState) {
+        onDispose {
+            vm.saveListPosition("catalog:grid", gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
+            vm.saveListPosition("catalog:list", listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        }
+    }
     val scope = rememberCoroutineScope()
     val items = st.filteredCatalog
     val catalogSuggestions = remember(items, st.catalogQuery) {
@@ -857,8 +872,16 @@ fun FavoritesScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     var filter by rememberSaveable { mutableStateOf("") }
     var selectedSlugs by remember { mutableStateOf(emptySet<String>()) }
     var confirmDelete by remember { mutableStateOf(false) }
-    val gridState = rememberLazyGridState()
-    val listState = rememberLazyListState()
+    val favoritesGridPosition = vm.savedListPosition("favorites:grid")
+    val favoritesListPosition = vm.savedListPosition("favorites:list")
+    val gridState = rememberLazyGridState(favoritesGridPosition.first, favoritesGridPosition.second)
+    val listState = rememberLazyListState(favoritesListPosition.first, favoritesListPosition.second)
+    DisposableEffect(gridState, listState) {
+        onDispose {
+            vm.saveListPosition("favorites:grid", gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
+            vm.saveListPosition("favorites:list", listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        }
+    }
     val scope = rememberCoroutineScope()
     val allFavorites = orderFavorites(st.preferences)
     val favoriteSuggestions = remember(allFavorites, filter) {
@@ -1030,8 +1053,16 @@ fun HistoryScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     var statusFilter by rememberSaveable { mutableStateOf(HistoryFilter.ALL) }
     var selectedSlugs by remember { mutableStateOf(emptySet<String>()) }
     var confirmDelete by remember { mutableStateOf(false) }
-    val gridState = rememberLazyGridState()
-    val listState = rememberLazyListState()
+    val historyGridPosition = vm.savedListPosition("history:grid")
+    val historyListPosition = vm.savedListPosition("history:list")
+    val gridState = rememberLazyGridState(historyGridPosition.first, historyGridPosition.second)
+    val listState = rememberLazyListState(historyListPosition.first, historyListPosition.second)
+    DisposableEffect(gridState, listState) {
+        onDispose {
+            vm.saveListPosition("history:grid", gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
+            vm.saveListPosition("history:list", listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        }
+    }
     val scope = rememberCoroutineScope()
     val allWatched = orderWatched(st.preferences)
     val historySuggestions = remember(allWatched, filter) {
@@ -1377,13 +1408,15 @@ private enum class EpisodeFilter(@StringRes val labelRes: Int) { ALL(R.string.al
 fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val series = st.selected ?: return
     var episodeFilter by rememberSaveable(series.slug, st.season) { mutableStateOf(EpisodeFilter.ALL) }
-    if (st.season == null) {
+    if (st.season == null) key(series.slug) {
+        val seasonListKey = "detail:${series.slug}:seasons"
+        val seasonListPosition = vm.savedListPosition(seasonListKey)
         val listState = rememberLazyListState(
-            initialFirstVisibleItemIndex = st.detailScrollIndex,
-            initialFirstVisibleItemScrollOffset = st.detailScrollOffset
+            initialFirstVisibleItemIndex = seasonListPosition.first,
+            initialFirstVisibleItemScrollOffset = seasonListPosition.second
         )
-        DisposableEffect(listState) {
-            onDispose { vm.saveDetailScroll(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) }
+        DisposableEffect(listState, seasonListKey) {
+            onDispose { vm.saveListPosition(seasonListKey, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) }
         }
         LazyColumn(
             Modifier.fillMaxSize(),
@@ -1443,13 +1476,15 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
             }
             item { SeriesInfo(series, Modifier.padding(horizontal = 16.dp)) }
         }
-    } else {
+    } else key(series.slug, st.season) {
+        val episodeListKey = "detail:${series.slug}:episodes:${st.season}"
+        val episodeListPosition = vm.savedListPosition(episodeListKey)
         val episodeListState = rememberLazyListState(
-            initialFirstVisibleItemIndex = st.episodeScrollIndex,
-            initialFirstVisibleItemScrollOffset = st.episodeScrollOffset
+            initialFirstVisibleItemIndex = episodeListPosition.first,
+            initialFirstVisibleItemScrollOffset = episodeListPosition.second
         )
-        DisposableEffect(episodeListState) {
-            onDispose { vm.saveEpisodeScroll(episodeListState.firstVisibleItemIndex, episodeListState.firstVisibleItemScrollOffset) }
+        DisposableEffect(episodeListState, episodeListKey) {
+            onDispose { vm.saveListPosition(episodeListKey, episodeListState.firstVisibleItemIndex, episodeListState.firstVisibleItemScrollOffset) }
         }
         Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2077,6 +2112,21 @@ fun SeriesCollectionScreen(
             .take(3)
             .toList()
     }
+    val collectionKey = "series:${page.title}:${page.items.firstOrNull()?.slug.orEmpty()}"
+    val gridPosition = vm.savedListPosition("$collectionKey:grid")
+    val listPosition = vm.savedListPosition("$collectionKey:list")
+    val gridState = rememberLazyGridState(gridPosition.first, gridPosition.second)
+    val listState = rememberLazyListState(listPosition.first, listPosition.second)
+    LaunchedEffect(collectionKey, viewMode) {
+        if (viewMode == LibraryViewMode.GRID) gridState.scrollToItem(gridPosition.first, gridPosition.second)
+        else listState.scrollToItem(listPosition.first, listPosition.second)
+    }
+    DisposableEffect(collectionKey, gridState, listState) {
+        onDispose {
+            vm.saveListPosition("$collectionKey:grid", gridState.firstVisibleItemIndex, gridState.firstVisibleItemScrollOffset)
+            vm.saveListPosition("$collectionKey:list", listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+        }
+    }
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -2104,6 +2154,7 @@ fun SeriesCollectionScreen(
         when (viewMode) {
             LibraryViewMode.GRID -> LazyVerticalGrid(
                 columns = GridCells.Adaptive(if (expanded) 190.dp else 150.dp),
+                state = gridState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2123,6 +2174,7 @@ fun SeriesCollectionScreen(
                 }
             }
             LibraryViewMode.COMPACT, LibraryViewMode.DETAILED -> LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -2171,6 +2223,13 @@ fun EpisodeCollectionScreen(
             .take(3)
             .toList()
     }
+    val collectionKey = "episodes:${page.title}:${page.items.firstOrNull()?.episode?.key.orEmpty()}"
+    val listPosition = vm.savedListPosition(collectionKey)
+    val listState = rememberLazyListState(listPosition.first, listPosition.second)
+    LaunchedEffect(collectionKey) { listState.scrollToItem(listPosition.first, listPosition.second) }
+    DisposableEffect(collectionKey, listState) {
+        onDispose { vm.saveListPosition(collectionKey, listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset) }
+    }
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
@@ -2195,6 +2254,7 @@ fun EpisodeCollectionScreen(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
         )
         LazyColumn(
+            state = listState,
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -2444,6 +2504,8 @@ fun AnimeInfoScreen(
 fun SettingsScreen(
     st: UiState,
     vm: AppViewModel,
+    category: SettingsCategory?,
+    onOpenCategory: (SettingsCategory) -> Unit,
     onDismiss: () -> Unit,
     onDiagnostics: () -> Unit
 ) {
@@ -2472,7 +2534,11 @@ fun SettingsScreen(
         else vm.refreshCatalogMetadata()
     }
 
-    LaunchedEffect(Unit) { vm.checkOfflineMetadata() }
+    LaunchedEffect(category, st.catalog.items.size) {
+        if (category == SettingsCategory.METADATA) {
+            if (st.catalog.items.isEmpty()) vm.loadCatalog() else vm.checkOfflineMetadata()
+        }
+    }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -2486,9 +2552,13 @@ fun SettingsScreen(
             ) {
                 IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, stringResource(R.string.close)) }
                 Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
                     Text(
-                        stringResource(R.string.settings_subtitle),
+                        stringResource(category?.titleRes ?: R.string.settings),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        stringResource(category?.descriptionRes ?: R.string.settings_subtitle),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -2500,7 +2570,12 @@ fun SettingsScreen(
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                item {
+                if (category == null) {
+                    items(SettingsCategory.entries, key = { it.name }) { entry ->
+                        SettingsCategoryRow(entry) { onOpenCategory(entry) }
+                    }
+                } else {
+                if (category == SettingsCategory.PREFERRED) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.playback_settings),
                         subtitle = stringResource(R.string.playback_settings_desc)
@@ -2533,7 +2608,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.PREFERRED) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.aniskip_settings_title),
                         subtitle = stringResource(R.string.aniskip_settings_desc)
@@ -2570,7 +2645,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.PREFERRED) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.cast_remote_settings),
                         subtitle = stringResource(R.string.cast_remote_settings_desc)
@@ -2590,7 +2665,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.BROWSER) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.web_and_security),
                         subtitle = stringResource(R.string.web_and_security_desc)
@@ -2619,7 +2694,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.APPEARANCE) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.display_settings),
                         subtitle = stringResource(R.string.display_settings_desc)
@@ -2714,7 +2789,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.METADATA) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.metadata_management),
                         subtitle = stringResource(R.string.metadata_management_desc)
@@ -2768,6 +2843,9 @@ fun SettingsScreen(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        st.catalogMetadataError?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                         }
                         Button(
                             onClick = startMetadataRefresh,
@@ -2825,7 +2903,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.DIAGNOSTICS) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.diagnostics_and_logs),
                         subtitle = stringResource(R.string.diagnostics_and_logs_desc)
@@ -2843,7 +2921,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.MAINTENANCE) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.maintenance),
                         subtitle = stringResource(R.string.maintenance_desc)
@@ -2859,7 +2937,7 @@ fun SettingsScreen(
                     }
                 }
 
-                item {
+                if (category == SettingsCategory.CREDITS) item {
                     SettingsSectionCard(
                         title = stringResource(R.string.about_and_credits),
                         subtitle = stringResource(R.string.credits_created_by)
@@ -2875,6 +2953,7 @@ fun SettingsScreen(
                     }
                 }
                 item { Spacer(Modifier.height(18.dp)) }
+                }
             }
         }
     }
@@ -2894,6 +2973,30 @@ fun SettingsScreen(
                 TextButton(onClick = { confirmMetadataDelete = false }) { Text(stringResource(R.string.cancel)) }
             }
         )
+    }
+}
+
+@Composable
+private fun SettingsCategoryRow(category: SettingsCategory, onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(stringResource(category.titleRes), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    stringResource(category.descriptionRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
