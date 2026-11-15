@@ -209,6 +209,8 @@ fun PlayerScreen(
     var controlsGeneration by remember(playback.id) { mutableIntStateOf(0) }
     var playerSurfaceFocused by remember(playback.id) { mutableStateOf(false) }
     var videoBuffering by remember(playback.id) { mutableStateOf(true) }
+    var segmentSeekInProgress by remember(playback.id) { mutableStateOf(false) }
+    var segmentSeekGeneration by remember(playback.id) { mutableIntStateOf(0) }
     var isPlaying by remember(playback.id) { mutableStateOf(true) }
     val playerFocusRequester = remember(playback.id) { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -346,6 +348,22 @@ fun PlayerScreen(
             controlsVisible = false
             focusManager.clearFocus()
             playerFocusRequester.requestFocus()
+        }
+    }
+
+    LaunchedEffect(segmentSeekGeneration) {
+        if (segmentSeekGeneration == 0 || !segmentSeekInProgress) return@LaunchedEffect
+        val generation = segmentSeekGeneration
+        delay(250L)
+        while (generation == segmentSeekGeneration && videoBuffering && playerError == null) {
+            delay(50L)
+        }
+        if (generation == segmentSeekGeneration) {
+            segmentSeekInProgress = false
+            if (playerError == null) {
+                controlsVisible = true
+                controlsGeneration++
+            }
         }
     }
 
@@ -556,8 +574,13 @@ fun PlayerScreen(
         }
     }
 
-    fun seekPlayback(targetMs: Long) {
+    fun seekPlayback(targetMs: Long, hideNavigationDuringSeek: Boolean = false) {
         val target = targetMs.coerceAtLeast(0L)
+        if (hideNavigationDuringSeek) {
+            segmentSeekInProgress = true
+            segmentSeekGeneration++
+            controlsVisible = false
+        }
         when {
             smartViewActive -> smartViewController.seekTo(target)
             chromecastActive -> chromecastController.seekTo(target)
@@ -568,8 +591,8 @@ fun PlayerScreen(
         position = target
         scrubPosition = target.toFloat()
         onProgress(target, duration, true)
-        controlsVisible = true
         controlsGeneration++
+        if (!hideNavigationDuringSeek) controlsVisible = true
     }
 
     LaunchedEffect(
@@ -590,14 +613,14 @@ fun PlayerScreen(
         } ?: return@LaunchedEffect
         skippedSegments.add(active.id)
         val targetMs = AniSkipPlaybackLogic.targetPositionMs(active, duration, skipOffsetSeconds)
-        seekPlayback(targetMs)
+        seekPlayback(targetMs, hideNavigationDuringSeek = true)
         if (playAfterSkip) PlaybackService.play(context)
     }
 
     fun skipSegment(segment: AniSkipSegment) {
         skippedSegments.add(segment.id)
         val targetMs = AniSkipPlaybackLogic.targetPositionMs(segment, duration, skipOffsetSeconds)
-        seekPlayback(targetMs)
+        seekPlayback(targetMs, hideNavigationDuringSeek = true)
         if (playAfterSkip) PlaybackService.play(context)
     }
 
