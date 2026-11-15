@@ -105,7 +105,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
-import androidx.compose.ui.input.key.nativeKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -710,13 +710,13 @@ fun PlayerScreen(
             .focusable()
             .onFocusChanged { playerSurfaceFocused = it.isFocused }
             .onPreviewKeyEvent { event ->
-                val keyEvent = event.nativeKeyEvent
-                if (keyEvent.keyCode == KeyEvent.KEYCODE_BACK || keyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                val keyCode = event.key.keyCode.toInt()
+                if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
                     return@onPreviewKeyEvent false
                 }
                 if (videoBuffering || loading) return@onPreviewKeyEvent true
-                if (keyEvent.action != KeyEvent.ACTION_DOWN || keyEvent.repeatCount > 0) return@onPreviewKeyEvent false
-                when (keyEvent.keyCode) {
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (keyCode) {
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
                         togglePlayback()
                         true

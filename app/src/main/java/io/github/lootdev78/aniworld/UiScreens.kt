@@ -531,12 +531,6 @@ fun CatalogScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
     val importMetadataLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(vm::importOfflineMetadata) }
-    val exportLibraryBackupLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/json")
-    ) { uri -> uri?.let(vm::exportLibraryBackup) }
-    val importLibraryBackupLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri -> uri?.let(vm::importLibraryBackup) }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { vm.refreshCatalogMetadata() }
@@ -2468,6 +2462,12 @@ fun SettingsScreen(
     val importMetadataLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri -> uri?.let(vm::importOfflineMetadata) }
+    val exportLibraryBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri -> uri?.let(vm::exportLibraryBackup) }
+    val importLibraryBackupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let(vm::importLibraryBackup) }
     val startMetadataRefresh = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
