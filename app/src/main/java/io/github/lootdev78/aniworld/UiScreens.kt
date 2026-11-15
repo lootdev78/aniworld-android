@@ -1586,6 +1586,7 @@ fun DetailScreen(st: UiState, vm: AppViewModel, expanded: Boolean) {
 
 @Composable
 private fun NetflixDetailHeader(series: Series, st: UiState, vm: AppViewModel, expanded: Boolean) {
+    val context = LocalContext.current
     Box(Modifier.fillMaxWidth().height(if (expanded) 500.dp else 430.dp)) {
         AnimeImage(series.coverUrl, series.title, series.slug, Modifier.fillMaxSize(), ContentScale.Crop)
         Box(
