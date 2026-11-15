@@ -709,13 +709,13 @@ fun PlayerScreen(
             .focusable()
             .onFocusChanged { playerSurfaceFocused = it.isFocused }
             .onPreviewKeyEvent { event ->
-                val keyCode = event.keyCode
-                if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                val keyEvent = event.nativeKeyEvent
+                if (keyEvent.keyCode == KeyEvent.KEYCODE_BACK || keyEvent.keyCode == KeyEvent.KEYCODE_ESCAPE) {
                     return@onPreviewKeyEvent false
                 }
                 if (videoBuffering || loading) return@onPreviewKeyEvent true
-                if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount > 0) return@onPreviewKeyEvent false
-                when (keyCode) {
+                if (keyEvent.action != KeyEvent.ACTION_DOWN || keyEvent.repeatCount > 0) return@onPreviewKeyEvent false
+                when (keyEvent.keyCode) {
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
                         togglePlayback()
                         true
