@@ -157,7 +157,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.SingletonImageLoader
+import coil3.toBitmap
 import coil3.request.allowHardware
+import coil3.request.ErrorResult
+import coil3.request.SuccessResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -3358,7 +3361,11 @@ private suspend fun pinAnimeShortcut(context: android.content.Context, series: S
                     .size(192, 192)
                     .build()
                 val loader = SingletonImageLoader.get(context)
-                (loader.execute(request).drawable ?: error("Anime cover could not be decoded")).toBitmap(192, 192)
+                val result = loader.execute(request)
+                when (result) {
+                    is SuccessResult -> result.image.toBitmap(192, 192, android.graphics.Bitmap.Config.ARGB_8888)
+                    is ErrorResult -> throw result.throwable
+                }
             }
         } catch (error: CancellationException) {
             throw error
