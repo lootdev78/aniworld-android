@@ -178,7 +178,11 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
                 mutableState.value = mutableState.value.copy(
                     connectedDevice = null,
                     transportState = XboxTransportState.ERROR,
-                    error = readableError(error)
+                    error = appContext.getString(
+                        R.string.cast_device_error,
+                        device.displayName,
+                        readableError(error)
+                    )
                 )
             }
         }
@@ -256,7 +260,11 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
                 .onFailure { error ->
                     mutableState.value = mutableState.value.copy(
                         transportState = XboxTransportState.ERROR,
-                        error = readableError(error)
+                        error = appContext.getString(
+                            R.string.cast_device_error,
+                            device.displayName,
+                            readableError(error)
+                        )
                     )
                 }
         }
@@ -634,7 +642,7 @@ class XboxCastController(context: Context, private val relay: LocalCastRelay? = 
         val message = error.message.orEmpty()
         return when {
             "cleartext" in message.lowercase(Locale.ROOT) -> appContext.getString(R.string.xbox_cast_local_network_failed)
-            isTransitionUnavailable(error) -> "Wiedergabeübergang vom Fernseher abgelehnt. Der Stop/Neu-Laden-Fallback wurde ausgeführt."
+            isTransitionUnavailable(error) -> appContext.getString(R.string.dlna_transition_error)
             message.isNotBlank() -> message
             else -> appContext.getString(R.string.xbox_cast_failed)
         }

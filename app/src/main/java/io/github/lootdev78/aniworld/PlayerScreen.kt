@@ -197,7 +197,7 @@ fun PlayerScreen(
     onError: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
+    val activity = context.findActivity()
     var position by remember(playback.id) { mutableLongStateOf(playback.startPositionMs) }
     var duration by remember(playback.id) { mutableLongStateOf(playback.knownDurationMs.coerceAtLeast(0L)) }
     var scrubPosition by remember(playback.id) { mutableFloatStateOf(playback.startPositionMs.toFloat()) }
@@ -513,10 +513,22 @@ fun PlayerScreen(
         controlsVisible = false
         languageMenuOpen = false
         hosterMenuOpen = false
+        val sourceRect = android.graphics.Rect()
+        host.window.decorView.getGlobalVisibleRect(sourceRect)
         val params = PictureInPictureParams.Builder()
             .setAspectRatio(Rational(16, 9))
+            .apply {
+                if (!sourceRect.isEmpty) setSourceRectHint(sourceRect)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) setSeamlessResizeEnabled(true)
+            }
             .build()
         runCatching { host.enterPictureInPictureMode(params) }
+            .onSuccess { entered ->
+                if (!entered) {
+                    playerError = context.getString(R.string.pip_failed)
+                    controlsVisible = true
+                }
+            }
             .onFailure { error ->
                 playerError = error.message ?: context.getString(R.string.pip_failed)
                 controlsVisible = true
@@ -1190,7 +1202,7 @@ fun PlayerScreen(
                             tint = AniWorldPlayerAccent
                         )
                         Column(Modifier.padding(start = 12.dp)) {
-                            Text(stringResource(R.string.local_cast), fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.cast_dialog_title), fontWeight = FontWeight.Bold)
                             Text(
                                 stringResource(R.string.cast_unified_subtitle),
                                 style = MaterialTheme.typography.labelSmall,
@@ -1349,14 +1361,6 @@ fun PlayerScreen(
                                     controlsVisible = true
                                 }
                             }
-                        }
-                        item {
-                            Text(
-                                stringResource(R.string.cast_hotspot_hint),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = AniWorldPlayerTextMuted,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                            )
                         }
                     }
                 },
@@ -1844,6 +1848,12 @@ fun PlayerScreen(
         }
 
     }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 @Composable

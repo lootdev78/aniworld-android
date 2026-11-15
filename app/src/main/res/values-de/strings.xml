@@ -329,6 +329,9 @@
     <string name="xbox_cast_discovery_failed">Die Suche nach Xbox-/DLNA-Geräten ist fehlgeschlagen.</string>
     <string name="xbox_cast_local_network_failed">Die lokale Verbindung zur Xbox konnte nicht hergestellt werden.</string>
     <string name="xbox_cast_failed">Der Stream konnte nicht an die Xbox gesendet werden.</string>
+    <string name="cast_relay_unavailable">Das benötigte lokale Relay konnte nicht gestartet werden. Stelle sicher, dass Smartphone und Empfänger im selben Netzwerk sind, und versuche es erneut.</string>
+    <string name="cast_device_error">%1$s: %2$s</string>
+    <string name="dlna_transition_error">Der Empfänger hat den Wiedergabeübergang auch nach einem erneuten Versuch abgelehnt. Prüfe DLNA-Unterstützung und aktuellen Wiedergabestatus.</string>
     <string name="xbox_cast_header_warning">Geschützte Streams mit App-Headern können auf der Xbox scheitern. Wechsle dann zu einem anderen Hoster.</string>
     <string name="show_library_controls">Suche und Sortierung anzeigen</string>
     <string name="xbox_cast_manual">Empfänger-IP manuell eingeben</string>
@@ -336,7 +339,6 @@
     <string name="xbox_cast_manual_hint">Empfänger-IP im Handy-Hotspot, zum Beispiel 192.168.43.123</string>
     <string name="xbox_cast_manual_connect">Diese Adresse suchen</string>
     <string name="xbox_cast_manual_not_found">Unter %1$s antwortet kein DLNA-Renderer. Öffne die Renderer-/Medien-App auf der Xbox und prüfe die Hotspot-IP.</string>
-    <string name="xbox_cast_hotspot_hint">Hotspot-Modus: Lass die DLNA-Renderer-/Medien-App auf der Xbox geöffnet. Die App durchsucht Multicast, Broadcast und alle Geräte im Hotspot-Subnetz.</string>
 
     <string name="home_data_settings">Startseiten-Daten</string>
     <string name="home_offline_mode">Offline-Metadaten für die Startseite verwenden</string>
@@ -394,6 +396,7 @@
 
     <string name="cast_playing_on">Wiedergabe auf %1$s</string>
     <string name="local_cast">Lokales Cast (DLNA / FCast)</string>
+    <string name="cast_dialog_title">Cast</string>
     <string name="cast_disconnect_and_resume">Trennen und auf diesem Gerät fortsetzen</string>
     <string name="cast_header_warning">Geschützte Streams werden über das Handy weitergeleitet, damit Referer, Cookies und Bereichsanfragen auch auf externen Empfängern funktionieren.</string>
     <string name="cast_searching">Lokales Netzwerk und Handy-Hotspot werden durchsucht…</string>
@@ -403,7 +406,6 @@
     <string name="cast_no_local_devices">Keine kompatiblen Cast-Geräte gefunden.</string>
     <string name="cast_refresh_local">DLNA und FCast erneut suchen</string>
     <string name="cast_manual_address">Empfänger über IP-Adresse suchen</string>
-    <string name="cast_hotspot_hint">Handy-Hotspot: DLNA nutzt SSDP, Broadcast und direkte Subnetz-Suche; FCast nutzt mDNS plus TCP-Fallback. Streams werden bei Bedarf über die Hotspot-Gateway-IP des Handys weitergeleitet.</string>
     <string name="chromecast_button">Google Cast / Chromecast</string>
     <string name="chromecast_device">Chromecast-Gerät</string>
     <string name="chromecast_unavailable">Google Cast ist auf diesem Gerät nicht verfügbar.</string>

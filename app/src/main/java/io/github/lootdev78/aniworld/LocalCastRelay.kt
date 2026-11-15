@@ -45,7 +45,7 @@ class LocalCastRelay(context: Context) {
         val createdAt: Long = System.currentTimeMillis()
     )
 
-    @Suppress("unused") private val applicationContext = context.applicationContext
+    private val applicationContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val sessions = ConcurrentHashMap<String, RelaySession>()
     private val client = OkHttpClient.Builder()
@@ -61,8 +61,13 @@ class LocalCastRelay(context: Context) {
 
     /** Returns a playback copy whose stream URL is reachable by the selected receiver. */
     fun preparePlayback(playback: ResolvedPlayback, receiverHost: String?): ResolvedPlayback {
-        val server = runCatching { ensureStarted() }.getOrNull() ?: return playback
-        val localAddress = CastNetworkAddress.localAddressFor(receiverHost) ?: return playback
+        val server = try {
+            ensureStarted()
+        } catch (error: Exception) {
+            return relayUnavailableOrDirect(playback, error)
+        }
+        val localAddress = CastNetworkAddress.localAddressFor(receiverHost)
+            ?: return relayUnavailableOrDirect(playback)
         cleanupSessions()
         val token = UUID.randomUUID().toString().replace("-", "")
         sessions[token] = RelaySession(headers = playback.stream.headers)
@@ -77,6 +82,11 @@ class LocalCastRelay(context: Context) {
                 headers = emptyMap()
             )
         )
+    }
+
+    private fun relayUnavailableOrDirect(playback: ResolvedPlayback, cause: Throwable? = null): ResolvedPlayback {
+        if (playback.stream.headers.isEmpty()) return playback
+        throw IllegalStateException(applicationContext.getString(R.string.cast_relay_unavailable), cause)
     }
 
     fun close() {

@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -165,6 +166,14 @@ class MainActivity : ComponentActivity() {
             activityViewModel.minimizePlayer()
         }
         super.onStop()
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (!isInPictureInPictureMode) activityViewModel.restorePlayer()
     }
 
     override fun onDestroy() {
